@@ -1,93 +1,175 @@
-const CACHE_NAME = 'orthogro-offline-v1';
 
-// Install and cache the main app
+/* ==========================================
+   OrthoGro - Service Worker
+   Offline App Shell & Static Asset Caching
+   ========================================== */
+
+const CACHE_NAME = 'orthogro-cache-v1';
+
+const APP_URL = new URL('./', self.registration.scope).href;
+
+const APP_FILES = [
+  APP_URL
+];
+
+// External resources allowed for caching.
+// Firebase data/API requests are intentionally excluded.
+const CDN_HOSTS = [
+  'cdnjs.cloudflare.com',
+  'www.gstatic.com',
+  'fonts.googleapis.com',
+  'fonts.gstatic.com',
+  'img.icons8.com'
+];
+
+// INSTALL
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.add('/'))
-      .then(() => self.skipWaiting())
+    (async () => {
+      const cache = await caches.open(CACHE_NAME);
+
+      // Cache the main application page.
+      for (const url of APP_FILES) {
+        try {
+          const response = await fetch(url, {
+            cache: 'reload'
+          });
+
+          if (response.ok) {
+            await cache.put(url, response);
+          }
+        } catch (error) {
+          console.error('App shell caching failed:', error);
+        }
+      }
+
+      await self.skipWaiting();
+    })()
   );
 });
 
-// Activate and remove outdated app caches
+// ACTIVATE
 self.addEventListener('activate', (event) => {
   event.waitUntil(
-    caches.keys().then((cacheNames) => {
-      return Promise.all(
-        cacheNames
-          .filter((name) => name.startsWith('orthogro-') &&
-                            name !== CACHE_NAME)
-          .map((name) => caches.delete(name))
+    (async () => {
+      const keys = await caches.keys();
+
+      await Promise.all(
+        keys
+          .filter(key =>
+            key.startsWith('orthogro-cache-') &&
+            key !== CACHE_NAME
+          )
+          .map(key => caches.delete(key))
       );
-    }).then(() => self.clients.claim())
+
+      await self.clients.claim();
+    })()
   );
 });
 
-// Network and offline request handling
+// FETCH
 self.addEventListener('fetch', (event) => {
   const request = event.request;
 
+  // Only handle GET requests.
   if (request.method !== 'GET') return;
 
-  // Handle app navigation
+  const url = new URL(request.url);
+
+  // 1. HTML Navigation: Network first, then offline cache.
   if (request.mode === 'navigate') {
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
+      (async () => {
+        try {
+          const response = await fetch(request);
 
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put('/', copy);
-            });
+          if (response.ok) {
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(APP_URL, response.clone());
           }
 
           return response;
-        })
-        .catch(async () => {
-          return (
-            await caches.match(request) ||
-            await caches.match('/') ||
-            new Response('OrthoGro is not available offline yet.', {
+        } catch (error) {
+          const cachedPage = await caches.match(APP_URL);
+
+          if (cachedPage) return cachedPage;
+
+          return new Response(
+            'OrthoGro is unavailable offline. Please open the app once while connected to the internet.',
+            {
               status: 503,
               headers: {
-                'Content-Type': 'text/plain'
+                'Content-Type': 'text/plain; charset=utf-8'
               }
-            })
+            }
           );
-        })
+        }
+      })()
     );
 
     return;
   }
 
-  // Cache scripts, stylesheets, fonts and images
-  if (
-    ['script', 'style', 'font', 'image'].includes(request.destination)
-  ) {
+  // 2. External CDN resources: Cache first, then network.
+  if (CDN_HOSTS.includes(url.hostname)) {
     event.respondWith(
-      caches.match(request).then(async (cachedResponse) => {
-        if (cachedResponse) {
-          return cachedResponse;
-        }
+      (async () => {
+        const cached = await caches.match(request);
+
+        if (cached) return cached;
 
         try {
           const response = await fetch(request);
 
           if (response.ok || response.type === 'opaque') {
-            const copy = response.clone();
-
-            caches.open(CACHE_NAME).then((cache) => {
-              cache.put(request, copy);
-            });
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(request, response.clone());
           }
 
           return response;
-
         } catch (error) {
-          return new Response('', { status: 503 });
+          return new Response(
+            'Resource unavailable offline.',
+            { status: 503 }
+          );
         }
-      })
+      })()
+    );
+
+    return;
+  }
+
+  // 3. Same-origin static files: Cache first, then network.
+  if (url.origin === self.location.origin) {
+    const isStaticFile =
+      /\.(html|css|js|png|jpg|jpeg|svg|ico|webp|woff2?)$/i.test(url.pathname);
+
+    if (!isStaticFile) return;
+
+    event.respondWith(
+      (async () => {
+        const cached = await caches.match(request);
+
+        if (cached) return cached;
+
+        try {
+          const response = await fetch(request);
+
+          if (response.ok) {
+            const cache = await caches.open(CACHE_NAME);
+            await cache.put(request, response.clone());
+          }
+
+          return response;
+        } catch (error) {
+          return new Response(
+            'File unavailable offline.',
+            { status: 503 }
+          );
+        }
+      })()
     );
   }
+
 });
