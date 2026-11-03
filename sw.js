@@ -4,7 +4,7 @@
    Offline App Shell & Static Asset Caching
    ========================================== */
 
-const CACHE_NAME = 'orthogro-cache-v1';
+const CACHE_NAME = 'orthogro-cache-v2';
 
 const APP_URL = new URL('./', self.registration.scope).href;
 
@@ -143,8 +143,7 @@ self.addEventListener('fetch', (event) => {
   // 3. Same-origin static files: Cache first, then network.
   if (url.origin === self.location.origin) {
     const isStaticFile =
-      /\.(html|css|js|png|jpg|jpeg|svg|ico|webp|woff2?)$/i.test(url.pathname);
-
+  /\.(html|css|js|json|png|jpg|jpeg|svg|ico|webp|woff2?)$/i.test(url.pathname);
     if (!isStaticFile) return;
 
     event.respondWith(
