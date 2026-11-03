@@ -1,19 +1,23 @@
 
 /* ==========================================
    OrthoGro - Service Worker
-   Offline App Shell & Static Asset Caching
+   Offline App Shell & PWA Asset Caching
    ========================================== */
 
-const CACHE_NAME = 'orthogro-cache-v2';
+const CACHE_NAME = 'orthogro-cache-v3';
 
 const APP_URL = new URL('./', self.registration.scope).href;
 
+// Core PWA files to cache during installation
 const APP_FILES = [
-  APP_URL
+  APP_URL,
+  new URL('manifest.json', self.registration.scope).href,
+  new URL('icon-192.png', self.registration.scope).href,
+  new URL('icon-512.png', self.registration.scope).href
 ];
 
-// External resources allowed for caching.
-// Firebase data/API requests are intentionally excluded.
+// External resources allowed for caching
+// Firebase API/data requests are intentionally excluded.
 const CDN_HOSTS = [
   'cdnjs.cloudflare.com',
   'www.gstatic.com',
@@ -28,7 +32,6 @@ self.addEventListener('install', (event) => {
     (async () => {
       const cache = await caches.open(CACHE_NAME);
 
-      // Cache the main application page.
       for (const url of APP_FILES) {
         try {
           const response = await fetch(url, {
@@ -37,9 +40,11 @@ self.addEventListener('install', (event) => {
 
           if (response.ok) {
             await cache.put(url, response);
+          } else {
+            console.warn('Could not cache:', url, response.status);
           }
         } catch (error) {
-          console.error('App shell caching failed:', error);
+          console.error('App file caching failed:', url, error);
         }
       }
 
@@ -72,12 +77,12 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const request = event.request;
 
-  // Only handle GET requests.
+  // Only handle GET requests
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
 
-  // 1. HTML Navigation: Network first, then offline cache.
+  // 1. HTML Navigation: Network first, then cache
   if (request.mode === 'navigate') {
     event.respondWith(
       (async () => {
@@ -90,6 +95,7 @@ self.addEventListener('fetch', (event) => {
           }
 
           return response;
+
         } catch (error) {
           const cachedPage = await caches.match(APP_URL);
 
@@ -111,7 +117,7 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 2. External CDN resources: Cache first, then network.
+  // 2. External CDN resources: Cache first, then network
   if (CDN_HOSTS.includes(url.hostname)) {
     event.respondWith(
       (async () => {
@@ -128,6 +134,7 @@ self.addEventListener('fetch', (event) => {
           }
 
           return response;
+
         } catch (error) {
           return new Response(
             'Resource unavailable offline.',
@@ -140,10 +147,14 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // 3. Same-origin static files: Cache first, then network.
+  // 3. Same-origin static files: Cache first, then network
   if (url.origin === self.location.origin) {
+
     const isStaticFile =
-  /\.(html|css|js|json|png|jpg|jpeg|svg|ico|webp|woff2?)$/i.test(url.pathname);
+      /\.(html|css|js|json|png|jpg|jpeg|svg|ico|webp|woff2?)$/i.test(
+        url.pathname
+      );
+
     if (!isStaticFile) return;
 
     event.respondWith(
@@ -161,6 +172,7 @@ self.addEventListener('fetch', (event) => {
           }
 
           return response;
+
         } catch (error) {
           return new Response(
             'File unavailable offline.',
@@ -170,5 +182,4 @@ self.addEventListener('fetch', (event) => {
       })()
     );
   }
-
 });
