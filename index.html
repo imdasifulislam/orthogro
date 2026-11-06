@@ -17,7 +17,6 @@
 
 <!-- Theme Color -->
 <meta name="theme-color" content="#16845B">
-  <meta name="theme-color" content="#16845B">
 
   <!-- React & Babel Production CDNs -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.production.min.js"></script>
@@ -32,6 +31,26 @@
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
 
   <style>
+      /* Material Icons Load Fix - Prevent text glitch while loading */
+.material-icons:not(.loaded) {
+  visibility: visible;
+}
+/* যখন ফন্ট লোড হতে একটু সময় নেয়, তখন ফন্ট ফ্যামিলি নিশ্চিত করা */
+.material-icons {
+  font-family: 'Material Icons';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 24px;
+  display: inline-block;
+  line-height: 1;
+  text-transform: none;
+  letter-spacing: normal;
+  word-wrap: normal;
+  white-space: nowrap;
+  direction: ltr;
+  -webkit-font-smoothing: antialiased;
+}
+
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
     body { background-color: #F6F8F7; color: #102A43; overflow-x: hidden; font-size: 15px; }
     .app-container { display: flex; flex-direction: column; height: 100vh; }
@@ -140,6 +159,34 @@
     .loading-sub { font-size: 12px; color: #718096; margin-bottom: 25px; }
     .spinner { width: 38px; height: 38px; border: 4px solid #E5EBE7; border-top: 4px solid #16845B; border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto; }
     @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    
+    
+    
+    /* Tab Selector & Memo/Calculator UI Styles */
+.tab-selector { display: flex; background: #E5EBE7; padding: 4px; border-radius: 12px; margin-bottom: 16px; gap: 4px; }
+.tab-btn { flex: 1; padding: 12px 0; text-align: center; font-size: 14px; font-weight: 600; color: #718096; border: none; background: none; border-radius: 9px; cursor: pointer; transition: 0.2s; }
+.tab-btn.active { background: #FFFFFF; color: #16845B; font-weight: 700; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+.common-box { width: 100%; background: #F8FAF9; padding: 16px; border-radius: 16px; margin-bottom: 16px; border: 1px solid #EAEFEA; display: flex; flex-direction: column; gap: 12px; box-sizing: border-box; }
+.note-input-title { width: 100%; border: none; font-size: 20px; font-weight: 700; color: #102A43; outline: none; background: transparent; margin-bottom: 2px; }
+.note-textarea { width: 100%; border: none; font-size: 15px; color: #2D3748; outline: none; background: transparent; resize: none; min-height: 160px; line-height: 1.5; }
+
+
+
+/* Calculator Modern UI Styles */
+.calc-card { background: #FFFFFF; width: 100%; max-width: 380px; margin: 0 auto; border-radius: 24px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); overflow: hidden; border: 1px solid #E5EBE7; box-sizing: border-box; }
+.calc-display { background: #F8FAF9; padding: 16px; text-align: right; border-bottom: 1px solid #EAEFEA; height: 110px; display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden; box-sizing: border-box; }
+.calc-screen-sub { color: #94A3B8; font-size: 15px; letter-spacing: 0.05em; height: 22px; word-break: break-all; }
+.calc-screen-main { color: #102A43; font-size: 40px; font-weight: 700; letter-spacing: -0.025em; height: 46px; line-height: 46px; word-break: break-all; }
+.calc-keypad { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 16px; background: #FFFFFF; }
+.calc-btn-num { background: #F8FAF9; color: #334155; font-weight: 600; padding: 14px 0; border-radius: 14px; font-size: 18px; border: 1px solid #E2E8F0; cursor: pointer; transition: 0.1s; display: flex; align-items: center; justify-content: center; min-height: 54px; }
+.calc-btn-num:active { transform: scale(0.95); background: #EDF2F7; }
+.calc-btn-op { background: #E6FFFA; color: #16845B; font-weight: 700; padding: 14px 0; border-radius: 14px; font-size: 18px; border: 1px solid #B2F5EA; cursor: pointer; transition: 0.1s; display: flex; align-items: center; justify-content: center; min-height: 54px; }
+.calc-btn-op:active { transform: scale(0.95); background: #B2F5EA; }
+.calc-btn-ac { background: #FFF5F5; color: #E53E3E; font-weight: 600; padding: 14px 0; border-radius: 14px; font-size: 14px; border: 1px solid #FED7D7; cursor: pointer; transition: 0.1s; display: flex; align-items: center; justify-content: center; min-height: 54px; }
+.calc-btn-del { background: #F1F5F9; color: #475569; font-weight: 600; padding: 14px 0; border-radius: 14px; font-size: 14px; border: 1px solid #E2E8F0; cursor: pointer; transition: 0.1s; display: flex; align-items: center; justify-content: center; min-height: 54px; }
+.calc-btn-eq { background: #16845B; color: #FFFFFF; font-weight: 700; padding: 14px 0; border-radius: 14px; font-size: 18px; border: none; cursor: pointer; transition: 0.1s; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(22, 132, 91, 0.25); min-height: 54px; }
+.calc-btn-eq:active { transform: scale(0.95); background: #126b48; }
+
   </style>
 </head>
 <body>
@@ -173,21 +220,13 @@
 
     
 // OrthoGro Service Worker Registration
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
   window.addEventListener('load', async () => {
     try {
       const registration = await navigator.serviceWorker.register('./sw.js');
-
-      console.log(
-        'OrthoGro Service Worker registered:',
-        registration.scope
-      );
-
+      console.log('OrthoGro Service Worker registered:', registration.scope);
     } catch (error) {
-      console.error(
-        'OrthoGro Service Worker registration failed:',
-        error
-      );
+      console.error('OrthoGro Service Worker registration failed:', error);
     }
   });
 }
@@ -254,7 +293,7 @@ if ('serviceWorker' in navigator) {
                 </button>
               )}
               <div>
-                <h4 style={{ textDecoration: tx.resolved ? 'line-through' : 'none', color: tx.resolved ? '#A0AEC0' : '#102A43' }}>{tx.title}</h4>
+                <h4 style={{ color: '#102A43' }}>{tx.title}</h4>
                 <p>
                   {tx.type === 'transfer' ? (
                     <span className="t-tag" style={{background: '#EBF8FF', color: '#2B6CB0'}}>
@@ -278,7 +317,7 @@ if ('serviceWorker' in navigator) {
                 </p>
               </div>
             </div>
-            <div className={`t-amount ${getColorClass(tx.type)}`} style={{ textDecoration: tx.resolved ? 'line-through' : 'none' }}>
+            <div className={`t-amount ${getColorClass(tx.type)}`}>
               {tx.resolved ? '✓ ' : (tx.type === 'income' ? '+' : tx.type === 'expense' ? '-' : tx.type === 'lend' ? '-' : tx.type === 'borrow' ? '+' : tx.type === 'partial_payment' ? '+' : '⇄')} ৳ {tx.amount.toLocaleString()}
             </div>
           </div>
@@ -289,7 +328,16 @@ if ('serviceWorker' in navigator) {
     function App() {
       const [activeTab, setActiveTab] = React.useState('home');
       const [settingsView, setSettingsView] = React.useState('menu');
+      const getTodayDate = () => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      };
       
+      const [currentInput, setCurrentInput] = React.useState('0');
+      const [previousInput, setPreviousInput] = React.useState('');
+      const [operation, setOperation] = React.useState(null);
+      const [isResultDisplayed, setIsResultDisplayed] = React.useState(false);
+
       const [filters, setFilters] = React.useState({
         netWorth: 'all',
         lendBorrow: 'all',
@@ -320,140 +368,114 @@ if ('serviceWorker' in navigator) {
       const [transferTargetAccount, setTransferTargetAccount] = React.useState('');
 
       const [currentUser, setCurrentUser] = React.useState(null);
-const [authLoading, setAuthLoading] = React.useState(true);
-const [isGuest, setIsGuest] = React.useState(false);
-      
+      const [authLoading, setAuthLoading] = React.useState(true);
+      const [isGuest, setIsGuest] = React.useState(false);
 
-React.useEffect(() => {
-  const unsubscribe = auth.onAuthStateChanged(async (user) => {
-    if (user) {
-      setAuthLoading(true);
-      setCurrentUser(user);
-      setIsGuest(false);
+      // --- Bazar Memo & Notepad States ---
+      const [memoActiveTab, setMemoActiveTab] = React.useState('memo');
+      const [memos, setMemos] = React.useState(() => {
+        const saved = localStorage.getItem('orthogro_all_bazar_memos');
+        return saved ? JSON.parse(saved) : [];
+      });
+      const [memoDate, setMemoDate] = React.useState(getTodayDate());
+      const [memoCategory, setMemoCategory] = React.useState('Family Maintenance');
+      const [memoWallet, setMemoWallet] = React.useState('Cash');
+      const [memoRows, setMemoRows] = React.useState([
+        { name: '', price: '' },
+        { name: '', price: '' },
+        { name: '', price: '' }
+      ]);
+      const [notes, setNotes] = React.useState(() => {
+        const saved = localStorage.getItem('orthogro_saved_notes');
+        return saved ? JSON.parse(saved) : [];
+      });
+      const [noteTitle, setNoteTitle] = React.useState('');
+      const [noteContent, setNoteContent] = React.useState('');
+      const [editingNoteId, setEditingNoteId] = React.useState(null);
+      const [memoNoteText, setMemoNoteText] = React.useState('');
+      const [editingMemoId, setEditingMemoId] = React.useState(null);
 
-      const result = await loadCloudData(user.uid);
+      React.useEffect(() => {
+        const unsubscribe = auth.onAuthStateChanged(async (user) => {
+          try {
+            if (user) {
+              setCurrentUser(user);
+              setIsGuest(false);
+              const result = await loadCloudData(user.uid);
+              if (result && result.success && result.hasCloudData) {
+                [
+                  'orthogro_guest_data',
+                  'orthogro_guest_wallets',
+                  'orthogro_guest_savings',
+                  'orthogro_guest_exp_cats',
+                  'orthogro_guest_inc_cats'
+                ].forEach(key => localStorage.removeItem(key));
+              }
+              localStorage.removeItem('orthogro_guest_mode');
+            } else {
+              setCurrentUser(null);
+              const guestSession = localStorage.getItem('orthogro_guest_mode') === 'true';
+              setIsGuest(guestSession);
+            }
+          } catch (err) {
+            console.error("Auth state change error:", err);
+          } finally {
+            setAuthLoading(false);
+          }
+        });
 
-      if (result.success) {
-
-        // Existing Google Account: Restore Cloud Data
-        if (result.hasCloudData) {
-          [
-            'orthogro_guest_data',
-            'orthogro_guest_wallets',
-            'orthogro_guest_savings',
-            'orthogro_guest_exp_cats',
-            'orthogro_guest_inc_cats'
-          ].forEach(key => localStorage.removeItem(key));
-
-        
-} else {
-  // New Google Account: Check for Guest Data
-  const guestKeys = [
-    'orthogro_guest_data',
-    'orthogro_guest_wallets',
-    'orthogro_guest_savings',
-    'orthogro_guest_exp_cats',
-    'orthogro_guest_inc_cats'
-  ];
-
-  const hasGuestData = guestKeys.some(
-    key => localStorage.getItem(key) !== null
-  );
-
-  if (hasGuestData) {
-    const imported = await importGuestDataToCloud(user.uid);
-
-    if (!imported) {
-      await auth.signOut();
-      return;
-    }
-
-    guestKeys.forEach(key => localStorage.removeItem(key));
-  }
-}
-
-
-        localStorage.removeItem('orthogro_guest_mode');
-        setAuthLoading(false);
-
-      } else {
-        alert(
-          'Unable to load your cloud data. Please check your internet connection and try again.'
-        );
-
-        await auth.signOut();
-      }
-
-    } else {
-      setCurrentUser(null);
-
-      const guestSession =
-        localStorage.getItem('orthogro_guest_mode') === 'true';
-
-      setIsGuest(guestSession);
-      setAuthLoading(false);
-    }
-  });
-
-  return () => unsubscribe();
-}, []);
-
-
+        return () => unsubscribe();
+      }, []);
 
       const handleGoogleLogin = async () => {
-  const provider = new firebase.auth.GoogleAuthProvider();
-
-  try {
-    const result = await auth.signInWithPopup(provider);
-    alert('Successfully signed in with ' + result.user.email);
-  } catch (error) {
-    alert('Login failed: ' + error.message);
-  }
-};
+        const provider = new firebase.auth.GoogleAuthProvider();
+        try {
+          const result = await auth.signInWithPopup(provider);
+          alert('Successfully signed in with ' + result.user.email);
+        } catch (error) {
+          alert('Login failed: ' + error.message);
+        }
+      };
 
       const handleGuestLogin = () => {
-  setAuthLoading(true);
+        setAuthLoading(true);
+        const guestData = localStorage.getItem('orthogro_guest_data');
+        const guestWallets = localStorage.getItem('orthogro_guest_wallets');
+        const guestSavings = localStorage.getItem('orthogro_guest_savings');
+        const guestExpCats = localStorage.getItem('orthogro_guest_exp_cats');
+        const guestIncCats = localStorage.getItem('orthogro_guest_inc_cats');
 
-  // Load Guest Data from separate Local Storage
-  const guestData = localStorage.getItem('orthogro_guest_data');
-  const guestWallets = localStorage.getItem('orthogro_guest_wallets');
-  const guestSavings = localStorage.getItem('orthogro_guest_savings');
-  const guestExpCats = localStorage.getItem('orthogro_guest_exp_cats');
-  const guestIncCats = localStorage.getItem('orthogro_guest_inc_cats');
+        setTransactions(guestData ? JSON.parse(guestData) : []);
+        setWallets(guestWallets ? JSON.parse(guestWallets) : ['Bank', 'Bkash', 'Nagad', 'Cash']);
+        setSavingsList(guestSavings ? JSON.parse(guestSavings) : ['Savings', 'Samity', 'Investment']);
+        setExpenseCategories(guestExpCats ? JSON.parse(guestExpCats) : ['Family Maintenance', 'Relative', 'Personal', 'Career', 'Sadakah', 'Others']);
+        setIncomeCategories(guestIncCats ? JSON.parse(guestIncCats) : ['Salary', 'Business', 'Gift', 'Others']);
 
-  setTransactions(guestData ? JSON.parse(guestData) : []);
-  setWallets(guestWallets ? JSON.parse(guestWallets) : ['Bank', 'Bkash', 'Nagad', 'Cash']);
-  setSavingsList(guestSavings ? JSON.parse(guestSavings) : ['Savings', 'Samity', 'Investment']);
-  setExpenseCategories(guestExpCats ? JSON.parse(guestExpCats) : ['Family Maintenance', 'Relative', 'Personal', 'Career', 'Sadakah', 'Others']);
-  setIncomeCategories(guestIncCats ? JSON.parse(guestIncCats) : ['Salary', 'Business', 'Gift', 'Others']);
-
-  localStorage.setItem('orthogro_guest_mode', 'true');
-
-  setCurrentUser(null);
-  setIsGuest(true);
-  setAuthLoading(false);
-};
+        localStorage.setItem('orthogro_guest_mode', 'true');
+        setCurrentUser(null);
+        setIsGuest(true);
+        setAuthLoading(false);
+      };
       
-const handleGoogleLogout = async () => {
-  const message = isGuest
-    ? "Exit Guest Mode? Your Guest Data will remain saved on this device."
-    : "Sign out from your Google account?";
+      const handleGoogleLogout = async () => {
+        const message = isGuest
+          ? "Exit Guest Mode? Your Guest Data will remain saved on this device."
+          : "Sign out from your Google account?";
 
-  if (!window.confirm(message)) return;
+        if (!window.confirm(message)) return;
 
-  try {
-    if (isGuest) {
-      localStorage.removeItem('orthogro_guest_mode');
-      setIsGuest(false);
-      setCurrentUser(null);
-    } else {
-      await auth.signOut();
-    }
-  } catch (error) {
-    alert('Logout error: ' + error.message);
-  }
-};
-
+        try {
+          if (isGuest) {
+            localStorage.removeItem('orthogro_guest_mode');
+            setIsGuest(false);
+            setCurrentUser(null);
+          } else {
+            await auth.signOut();
+          }
+        } catch (error) {
+          alert('Logout error: ' + error.message);
+        }
+      };
 
       const handleManualSync = async () => {
         if (!navigator.onLine) {
@@ -466,181 +488,37 @@ const handleGoogleLogout = async () => {
           await syncToCloud(transactions, wallets, savingsList, expenseCategories, incomeCategories);
           alert("✅ Sync Successful!\n\nYour data has been successfully saved to Firebase.");
         } catch (err) {
-  console.error("Cloud Sync Error:", err);
-  alert("❌ Sync Failed!\n\nError: " + err.message);
-}
+          console.error("Cloud Sync Error:", err);
+          alert("❌ Sync Failed!\n\nError: " + err.message);
+        }
       };
 
-      
-const loadCloudData = async (uid) => {
-  try {
-    const docRef = db.collection('users').doc(uid);
-    const doc = await docRef.get();
+      const loadCloudData = async (uid) => {
+        try {
+          const docRef = db.collection('users').doc(uid);
+          const doc = await docRef.get();
 
-    if (doc.exists) {
-      const data = doc.data();
-
-      setTransactions(
-        Array.isArray(data.transactions) ? data.transactions : []
-      );
-
-      setWallets(
-        Array.isArray(data.wallets)
-          ? data.wallets
-          : ['Bank', 'Bkash', 'Nagad', 'Cash']
-      );
-
-      setSavingsList(
-        Array.isArray(data.savingsList)
-          ? data.savingsList
-          : ['Savings', 'Samity', 'Investment']
-      );
-
-      setExpenseCategories(
-        Array.isArray(data.expenseCategories)
-          ? data.expenseCategories
-          : ['Family Maintenance', 'Relative', 'Personal', 'Career', 'Sadakah', 'Others']
-      );
-
-      setIncomeCategories(
-        Array.isArray(data.incomeCategories)
-          ? data.incomeCategories
-          : ['Salary', 'Business', 'Gift', 'Others']
-      );
-
-      return {
-        success: true,
-        hasCloudData: true
+          if (doc.exists) {
+            const data = doc.data();
+            setTransactions(Array.isArray(data.transactions) ? data.transactions : []);
+            setWallets(Array.isArray(data.wallets) ? data.wallets : ['Bank', 'Bkash', 'Nagad', 'Cash']);
+            setSavingsList(Array.isArray(data.savingsList) ? data.savingsList : ['Savings', 'Samity', 'Investment']);
+            setExpenseCategories(Array.isArray(data.expenseCategories) ? data.expenseCategories : ['Family Maintenance', 'Relative', 'Personal', 'Career', 'Sadakah', 'Others']);
+            setIncomeCategories(Array.isArray(data.incomeCategories) ? data.incomeCategories : ['Salary', 'Business', 'Gift', 'Others']);
+            return { success: true, hasCloudData: true };
+          } else {
+            setTransactions([]);
+            setWallets(['Bank', 'Bkash', 'Nagad', 'Cash']);
+            setSavingsList(['Savings', 'Samity', 'Investment']);
+            setExpenseCategories(['Family Maintenance', 'Relative', 'Personal', 'Career', 'Sadakah', 'Others']);
+            setIncomeCategories(['Salary', 'Business', 'Gift', 'Others']);
+            return { success: true, hasCloudData: false };
+          }
+        } catch (e) {
+          console.error("Error loading cloud data:", e);
+          return { success: false, hasCloudData: false };
+        }
       };
-
-    } else {
-      setTransactions([]);
-      setWallets(['Bank', 'Bkash', 'Nagad', 'Cash']);
-      setSavingsList(['Savings', 'Samity', 'Investment']);
-
-      setExpenseCategories([
-        'Family Maintenance', 'Relative', 'Personal',
-        'Career', 'Sadakah', 'Others'
-      ]);
-
-      setIncomeCategories([
-        'Salary', 'Business', 'Gift', 'Others'
-      ]);
-
-      return {
-        success: true,
-        hasCloudData: false
-      };
-    }
-
-  } catch (e) {
-    console.error("Error loading cloud data:", e);
-
-    return {
-      success: false,
-      hasCloudData: false
-    };
-  }
-};
-
-
-const importGuestDataToCloud = async (uid) => {
-  try {
-    // Check whether Guest Data exists
-    const guestKeys = [
-      'orthogro_guest_data',
-      'orthogro_guest_wallets',
-      'orthogro_guest_savings',
-      'orthogro_guest_exp_cats',
-      'orthogro_guest_inc_cats'
-    ];
-
-    const hasGuestData = guestKeys.some(
-      key => localStorage.getItem(key) !== null
-    );
-
-    if (!hasGuestData) {
-      return false;
-    }
-
-    // Read Guest Data
-    const readGuestData = (key, fallback) => {
-      const saved = localStorage.getItem(key);
-      return saved ? JSON.parse(saved) : fallback;
-    };
-
-    const guestData = {
-      transactions: readGuestData('orthogro_guest_data', []),
-      wallets: readGuestData(
-        'orthogro_guest_wallets',
-        ['Bank', 'Bkash', 'Nagad', 'Cash']
-      ),
-      savingsList: readGuestData(
-        'orthogro_guest_savings',
-        ['Savings', 'Samity', 'Investment']
-      ),
-      expenseCategories: readGuestData(
-        'orthogro_guest_exp_cats',
-        ['Family Maintenance', 'Relative', 'Personal', 'Career', 'Sadakah', 'Others']
-      ),
-      incomeCategories: readGuestData(
-        'orthogro_guest_inc_cats',
-        ['Salary', 'Business', 'Gift', 'Others']
-      )
-    };
-
-    const confirmed = window.confirm(
-      'Your Guest Data is ready!\n\nWould you like to import your Guest Data into your new Google Account?\n\nChoose Cancel to keep your Guest Data on this device.'
-    );
-
-    if (!confirmed) {
-      return false;
-    }
-
-    // Upload Guest Data only if Cloud Account is still empty
-    const docRef = db.collection('users').doc(uid);
-
-    const imported = await db.runTransaction(async (transaction) => {
-      const doc = await transaction.get(docRef);
-
-      if (doc.exists) {
-        return false;
-      }
-
-      transaction.set(docRef, guestData);
-      return true;
-    });
-
-    if (!imported) {
-      alert(
-        'Cloud data was found in this account. Guest Data was not imported or deleted.'
-      );
-      return false;
-    }
-
-    // Update Dashboard with imported data
-    setTransactions(guestData.transactions);
-    setWallets(guestData.wallets);
-    setSavingsList(guestData.savingsList);
-    setExpenseCategories(guestData.expenseCategories);
-    setIncomeCategories(guestData.incomeCategories);
-
-    alert('Your Guest Data has been successfully imported!');
-
-    return true;
-
-  } catch (error) {
-    console.error('Guest Data Import Error:', error);
-
-    alert(
-      'Guest Data import failed. Your Guest Data is still saved on this device.\n\n' +
-      error.message
-    );
-
-    return false;
-  }
-};
-
 
       const syncToCloud = async (newData, newWallets, newSavings, newExpCats, newIncCats) => {
         if (!currentUser || !navigator.onLine) return;
@@ -673,8 +551,14 @@ const importGuestDataToCloud = async (uid) => {
 
       const toggleGrid = (key) => { setVisibleGrids(prev => ({ ...prev, [key]: !prev[key] })); };
 
-      // Drag and Drop reorder handlers for lists and grids
+      
+      
+      
+            // --- Universal Drag and Drop handlers (Desktop + Mobile Touch support) ---
+      const [draggedIndex, setDraggedIndex] = React.useState(null);
+
       const handleDragStart = (e, index, type) => {
+        setDraggedIndex(index);
         e.dataTransfer.setData('text/plain', JSON.stringify({ index, type }));
         e.dataTransfer.effectAllowed = 'move';
       };
@@ -687,18 +571,42 @@ const importGuestDataToCloud = async (uid) => {
       const handleDrop = (e, targetIndex, type, list, setList) => {
         e.preventDefault();
         const dataStr = e.dataTransfer.getData('text/plain');
-        if (!dataStr) return;
-        const data = JSON.parse(dataStr);
-        if (data.type !== type) return;
+        let sourceIndex = draggedIndex;
+        
+        if (dataStr) {
+          try {
+            const data = JSON.parse(dataStr);
+            if (data.type === type) sourceIndex = data.index;
+          } catch(err) {}
+        }
 
-        const sourceIndex = data.index;
-        if (sourceIndex === targetIndex) return;
+        if (sourceIndex === null || sourceIndex === targetIndex) return;
 
         const updated = [...list];
         const [movedItem] = updated.splice(sourceIndex, 1);
         updated.splice(targetIndex, 0, movedItem);
         setList(updated);
+        setDraggedIndex(null);
       };
+
+      // Mobile Touch Drag Helpers
+      const handleTouchStart = (index, type) => {
+        setDraggedIndex(index);
+      };
+
+      const handleTouchEnd = (targetIndex, type, list, setList) => {
+        if (draggedIndex === null || draggedIndex === targetIndex) {
+          setDraggedIndex(null);
+          return;
+        }
+        const updated = [...list];
+        const [movedItem] = updated.splice(draggedIndex, 1);
+        updated.splice(targetIndex, 0, movedItem);
+        setList(updated);
+        setDraggedIndex(null);
+      };
+
+
 
       const [transactions, setTransactions] = React.useState(() => {
         const savedData = localStorage.getItem('orthogro_data');
@@ -735,70 +643,55 @@ const importGuestDataToCloud = async (uid) => {
       const [newExpCatInput, setNewExpCatInput] = React.useState('');
       const [newIncCatInput, setNewIncCatInput] = React.useState('');
 
-      // Transactions Auto Save
-React.useEffect(() => {
-  if (authLoading) return;
+      React.useEffect(() => {
+        if (authLoading) return;
+        if (isGuest) {
+          localStorage.setItem('orthogro_guest_data', JSON.stringify(transactions));
+        } else if (currentUser) {
+          localStorage.setItem('orthogro_data', JSON.stringify(transactions));
+          syncToCloud(transactions, null, null, null, null);
+        }
+      }, [transactions, isGuest, currentUser, authLoading]);
 
-  if (isGuest) {
-    localStorage.setItem('orthogro_guest_data', JSON.stringify(transactions));
-  } else if (currentUser) {
-    localStorage.setItem('orthogro_data', JSON.stringify(transactions));
-    syncToCloud(transactions, null, null, null, null);
-  }
-}, [transactions, isGuest, currentUser, authLoading]);
+      React.useEffect(() => {
+        if (authLoading) return;
+        if (isGuest) {
+          localStorage.setItem('orthogro_guest_wallets', JSON.stringify(wallets));
+        } else if (currentUser) {
+          localStorage.setItem('orthogro_wallets', JSON.stringify(wallets));
+          syncToCloud(null, wallets, null, null, null);
+        }
+      }, [wallets, isGuest, currentUser, authLoading]);
 
-// Wallets Auto Save
-React.useEffect(() => {
-  if (authLoading) return;
+      React.useEffect(() => {
+        if (authLoading) return;
+        if (isGuest) {
+          localStorage.setItem('orthogro_guest_savings', JSON.stringify(savingsList));
+        } else if (currentUser) {
+          localStorage.setItem('orthogro_savings', JSON.stringify(savingsList));
+          syncToCloud(null, null, savingsList, null, null);
+        }
+      }, [savingsList, isGuest, currentUser, authLoading]);
 
-  if (isGuest) {
-    localStorage.setItem('orthogro_guest_wallets', JSON.stringify(wallets));
-  } else if (currentUser) {
-    localStorage.setItem('orthogro_wallets', JSON.stringify(wallets));
-    syncToCloud(null, wallets, null, null, null);
-  }
-}, [wallets, isGuest, currentUser, authLoading]);
+      React.useEffect(() => {
+        if (authLoading) return;
+        if (isGuest) {
+          localStorage.setItem('orthogro_guest_exp_cats', JSON.stringify(expenseCategories));
+        } else if (currentUser) {
+          localStorage.setItem('orthogro_exp_cats', JSON.stringify(expenseCategories));
+          syncToCloud(null, null, null, expenseCategories, null);
+        }
+      }, [expenseCategories, isGuest, currentUser, authLoading]);
 
-// Savings Auto Save
-React.useEffect(() => {
-  if (authLoading) return;
-
-  if (isGuest) {
-    localStorage.setItem('orthogro_guest_savings', JSON.stringify(savingsList));
-  } else if (currentUser) {
-    localStorage.setItem('orthogro_savings', JSON.stringify(savingsList));
-    syncToCloud(null, null, savingsList, null, null);
-  }
-}, [savingsList, isGuest, currentUser, authLoading]);
-
-// Expense Categories Auto Save
-React.useEffect(() => {
-  if (authLoading) return;
-
-  if (isGuest) {
-    localStorage.setItem('orthogro_guest_exp_cats', JSON.stringify(expenseCategories));
-  } else if (currentUser) {
-    localStorage.setItem('orthogro_exp_cats', JSON.stringify(expenseCategories));
-    syncToCloud(null, null, null, expenseCategories, null);
-  }
-}, [expenseCategories, isGuest, currentUser, authLoading]);
-
-// Income Categories Auto Save
-React.useEffect(() => {
-  if (authLoading) return;
-
-  if (isGuest) {
-    localStorage.setItem('orthogro_guest_inc_cats', JSON.stringify(incomeCategories));
-  } else if (currentUser) {
-    localStorage.setItem('orthogro_inc_cats', JSON.stringify(incomeCategories));
-    syncToCloud(null, null, null, null, incomeCategories);
-  }
-}, [incomeCategories, isGuest, currentUser, authLoading]);
-
-      const getTodayDate = () => {
-        const now = new Date();
-        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      };
+      React.useEffect(() => {
+        if (authLoading) return;
+        if (isGuest) {
+          localStorage.setItem('orthogro_guest_inc_cats', JSON.stringify(incomeCategories));
+        } else if (currentUser) {
+          localStorage.setItem('orthogro_inc_cats', JSON.stringify(incomeCategories));
+          syncToCloud(null, null, null, null, incomeCategories);
+        }
+      }, [incomeCategories, isGuest, currentUser, authLoading]);
 
       const allAccountOptions = [...wallets, ...savingsList];
       const defaultEntry = { 
@@ -1391,249 +1284,52 @@ React.useEffect(() => {
         }
       };
 
-            // Authentication Loading Screen
       if (authLoading) {
         return (
           <div className="loading-container">
             <div className="loading-brand">OrthoGro</div>
             <div className="loading-tagline">Track • Save • Grow</div>
-            <div className="loading-sub">
-              Personal Finance & Wealth Management
-            </div>
+            <div className="loading-sub">Personal Finance & Wealth Management</div>
             <div className="spinner"></div>
-            <p style={{ marginTop: '15px', color: '#718096' }}>
-              Loading your account...
-            </p>
+            <p style={{ marginTop: '15px', color: '#718096' }}>Loading your account...</p>
           </div>
         );
       }
 
-   // Login Screen - Single Box Design (With Guest Mode & Adjusted Width)
-if (!currentUser && !isGuest) {
-  return (
-    <div style={{
-      minHeight: '100vh',
-      width: '100%',
-      background: '#F6F8F7', // বাইরের ব্যাকগ্রাউন্ড
-      padding: '16px 12px',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      boxSizing: 'border-box',
-      fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif"
-    }}>
 
-      {/* Main Container */}
-      <div style={{
-        width: '100%',
-        maxWidth: '340px', // বক্সের কম্প্যাক্ট উইডথ
-        boxSizing: 'border-box',
-        textAlign: 'center'
-      }}>
-
-        {/* Brand Header (Outside the box) */}
-        <div style={{
-          marginBottom: '20px'
-        }}>
-
-          <h1 style={{
-            color: '#102A43',
-            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-            fontSize: 'clamp(26px, 6vw, 34px)',
-            fontWeight: 'bold',
-            letterSpacing: '-1px',
-            margin: '0 0 6px'
-          }}>
-            OrthoGro
-          </h1>
-
-          <div style={{
-            color: '#16845B',
-            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-            fontSize: 'clamp(13px, 3.5vw, 18px)',
-            fontWeight: 'bold',
-            letterSpacing: '1.5px',
-            marginBottom: '6px'
-          }}>
-            TRACK • SAVE • GROW
+      if (!currentUser && !isGuest) {
+        return (
+          <div style={{ minHeight: '100vh', width: '100%', background: '#F6F8F7', padding: '16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
+            <div style={{ width: '100%', maxWidth: '340px', boxSizing: 'border-box', textAlign: 'center' }}>
+              <div style={{ marginBottom: '20px' }}>
+                <h1 style={{ color: '#102A43', fontSize: 'clamp(26px, 6vw, 34px)', fontWeight: 'bold', letterSpacing: '-1px', margin: '0 0 6px' }}>OrthoGro</h1>
+                <div style={{ color: '#16845B', fontSize: 'clamp(13px, 3.5vw, 18px)', fontWeight: 'bold', letterSpacing: '1.5px', marginBottom: '6px' }}>TRACK • SAVE • GROW</div>
+                <p style={{ color: '#718096', fontSize: 'clamp(12px, 3vw, 15px)', margin: 0 }}>Personal Finance & Wealth Management</p>
+              </div>
+              <div style={{ width: '100%', background: '#FFFFFF', border: '1.5px solid #DDE5E1', borderRadius: '26px', padding: '22px 14px 22px', boxSizing: 'border-box', textAlign: 'center', boxShadow: '0 4px 16px rgba(16,42,67,0.03)' }}>
+                <div style={{ width: '60px', height: '60px', borderRadius: '50%', background: '#E8F5EE', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+                  <svg width="26" height="26" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M24 4L41 11V22C41 33 34 41 24 45C14 41 7 33 7 22V11L24 4Z" stroke="#16845B" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+                    <path d="M16 24L22 30L33 18" stroke="#16845B" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </div>
+                <h2 style={{ color: '#102A43', fontSize: 'clamp(20px, 4vw, 26px)', fontWeight: 'bold', margin: '0 0 6px' }}>Welcome Back!</h2>
+                <p style={{ color: '#718096', fontSize: 'clamp(12px, 2.8vw, 15px)', lineHeight: '1.4', margin: '0 auto 18px', maxWidth: '280px' }}>Sign in to access your personal financial dashboard.</p>
+                <button onClick={handleGoogleLogin} style={{ width: '92%', minHeight: '48px', padding: '10px', background: '#16845B', color: '#FFFFFF', border: 'none', borderRadius: '14px', fontSize: 'clamp(14px, 3vw, 16px)', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', margin: '0 auto 12px', boxSizing: 'border-box' }}>
+                  <span className="material-icons" style={{ fontSize: '20px' }}>login</span> Sign In with Google
+                </button>
+                <button onClick={handleGuestLogin} style={{ width: '82%', minHeight: '42px', padding: '8px', background: '#FFFFFF', color: '#287F65', border: '2px solid #287F65', borderRadius: '12px', fontSize: 'clamp(13px, 2.8vw, 15px)', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', margin: '0 auto', boxSizing: 'border-box' }}>
+                  <span className="material-icons" style={{ fontSize: '18px' }}>person_outline</span> Continue as Guest
+                </button>
+              </div>
+              <p style={{ color: '#94A3B8', fontSize: 'clamp(11px, 2.8vw, 13px)', margin: '14px 0 0' }}>Your financial data is protected.</p>
+            </div>
           </div>
-
-          <p style={{
-            color: '#718096',
-            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-            fontSize: 'clamp(12px, 3vw, 15px)',
-            margin: 0
-          }}>
-            Personal Finance & Wealth Management
-          </p>
-
-        </div>
-
-        {/* Single Inner Card (Lighter background than outer page) */}
-        <div style={{
-          width: '100%',
-          background: '#FFFFFF', // বক্সের ভেতরটা পরিষ্কার লাইট কালার
-          border: '1.5px solid #DDE5E1',
-          borderRadius: '26px',
-          padding: '22px 14px 22px',
-          boxSizing: 'border-box',
-          textAlign: 'center',
-          boxShadow: '0 4px 16px rgba(16,42,67,0.03)'
-        }}>
-
-          {/* Shield Check Icon */}
-          <div style={{
-            width: '60px',
-            height: '60px',
-            borderRadius: '50%',
-            background: '#E8F5EE',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            margin: '0 auto 14px'
-          }}>
-
-            <svg
-              width="26"
-              height="26"
-              viewBox="0 0 48 48"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-            >
-              <path
-                d="M24 4L41 11V22C41 33 34 41 24 45C14 41 7 33 7 22V11L24 4Z"
-                stroke="#16845B"
-                strokeWidth="3.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-              <path
-                d="M16 24L22 30L33 18"
-                stroke="#16845B"
-                strokeWidth="3.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-
-          </div>
-
-          {/* Welcome Heading */}
-          <h2 style={{
-            color: '#102A43',
-            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-            fontSize: 'clamp(20px, 4vw, 26px)',
-            fontWeight: 'bold',
-            margin: '0 0 6px'
-          }}>
-            Welcome Back!
-          </h2>
-
-          {/* Description */}
-          <p style={{
-            color: '#718096',
-            fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-            fontSize: 'clamp(12px, 2.8vw, 15px)',
-            lineHeight: '1.4',
-            margin: '0 auto 18px',
-            maxWidth: '280px'
-          }}>
-            Sign in to access your personal financial dashboard.
-          </p>
-
-          {/* Sign In with Google Button (92% Width - Primary Action) */}
-          <button
-            onClick={handleGoogleLogin}
-            style={{
-              width: '92%',
-              minHeight: '48px',
-              padding: '10px',
-              background: '#16845B',
-              color: '#FFFFFF',
-              border: 'none',
-              borderRadius: '14px',
-              fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-              fontSize: 'clamp(14px, 3vw, 16px)',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              margin: '0 auto 12px',
-              boxSizing: 'border-box'
-            }}
-          >
-
-            <span className="material-icons" style={{
-              fontSize: '20px'
-            }}>
-              login
-            </span>
-
-            Sign In with Google
-
-          </button>
-
-          {/* Continue as Guest Button (82% Width - Secondary Action) */}
-          <button
-            onClick={handleGuestLogin}
-            style={{
-              width: '82%',
-              minHeight: '42px',
-              padding: '8px',
-              background: '#FFFFFF',
-              color: '#287F65',
-              border: '2px solid #287F65',
-              borderRadius: '12px',
-              fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-              fontSize: 'clamp(13px, 2.8vw, 15px)',
-              fontWeight: 'bold',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              margin: '0 auto',
-              boxSizing: 'border-box'
-            }}
-          >
-
-            <span className="material-icons" style={{
-              fontSize: '18px'
-            }}>
-              person_outline
-            </span>
-
-            Continue as Guest
-
-          </button>
-
-        </div>
-
-        {/* Footer (Outside the box) */}
-        <p style={{
-          color: '#94A3B8',
-          fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-          fontSize: 'clamp(11px, 2.8vw, 13px)',
-          margin: '14px 0 0'
-        }}>
-          Your financial data is protected.
-        </p>
-
-      </div>
-    </div>
-  );
-}
-
-
+        );
+      }
 
       return (
-        <div 
-          className="app-container"
-          onTouchMove={handlePressEnd}
-          onScroll={handlePressEnd}
-        >
+        <div className="app-container" onTouchMove={handlePressEnd} onScroll={handlePressEnd}>
           <header className="header">
             <div>
               <h1>OrthoGro</h1>
@@ -1653,6 +1349,466 @@ if (!currentUser && !isGuest) {
               </div>
             )}
             
+            
+ 
+            {/* --- BAZAR MEMO / NOTEPAD TAB --- */}
+{activeTab === 'memo' && (
+  <div className="page" style={{ width: '100%' }}>
+    <div className="tab-selector">
+      <button className={`tab-btn ${memoActiveTab === 'memo' ? 'active' : ''}`} onClick={() => setMemoActiveTab('memo')}>Bazar Memo</button>
+      <button className={`tab-btn ${memoActiveTab === 'notepad' ? 'active' : ''}`} onClick={() => setMemoActiveTab('notepad')}>Notepad</button>
+    </div>
+
+    {memoActiveTab === 'memo' ? (
+      <div>
+        <div className="common-box">
+          <div>
+            <label style={{ fontSize: '12px', fontWeight: '600', color: '#718096', display: 'block', marginBottom: '4px' }}>Date</label>
+            <input type="date" className="form-control" value={memoDate} onChange={(e) => setMemoDate(e.target.value)} />
+          </div>
+          <div style={{ display: 'flex', gap: '10px', marginTop: '8px' }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: '12px', fontWeight: '600', color: '#718096', display: 'block', marginBottom: '4px' }}>Category</label>
+              <select className="form-control" value={memoCategory} onChange={(e) => setMemoCategory(e.target.value)}>
+                {expenseCategories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: '12px', fontWeight: '600', color: '#718096', display: 'block', marginBottom: '4px' }}>Wallet</label>
+              <select className="form-control" value={memoWallet} onChange={(e) => setMemoWallet(e.target.value)}>
+                {allAccountOptions.map(acc => <option key={acc} value={acc}>{acc}</option>)}
+              </select>
+            </div>
+          </div>
+          
+          <div style={{ marginTop: '8px' }}>
+            <label style={{ fontSize: '12px', fontWeight: '600', color: '#718096', display: 'block', marginBottom: '4px' }}>Memo Note (Optional)</label>
+            <input type="text" className="form-control" placeholder="e.g. Weekly market list" value={memoNoteText || ''} onChange={(e) => setMemoNoteText(e.target.value)} />
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #EAEFEA', paddingTop: '12px', marginTop: '10px' }}>
+            <span style={{ fontSize: '14px', fontWeight: '700', color: '#4A5568' }}>Total Amount</span>
+            <span style={{ fontSize: '18px', fontWeight: '800', color: '#16845B' }}>৳ {memoRows.reduce((sum, r) => sum + (parseFloat(r.price) || 0), 0).toLocaleString()}</span>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ fontSize: '15px', fontWeight: '700', color: '#102A43', marginBottom: '10px' }}>Items & Prices</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                       {memoRows.map((row, idx) => (
+              <div key={idx} style={{ display: 'flex', gap: '10px', marginBottom: '10px' }}>
+                <input 
+                  type="text" 
+                  className="form-control" 
+                  placeholder={`Item ${idx + 1}`} 
+                  value={row.name} 
+                  onChange={(e) => {
+                    const updated = [...memoRows];
+                    updated[idx].name = e.target.value;
+                    setMemoRows(updated);
+                  }} 
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      setMemoRows([...memoRows, { name: '', price: '' }]);
+                    }
+                  }}
+                  style={{ flex: 2 }} 
+                />
+                <input 
+                  type="number" 
+                  className="form-control" 
+                  placeholder="Price" 
+                  value={row.price} 
+                  onChange={(e) => {
+                    const updated = [...memoRows];
+                    updated[idx].price = e.target.value;
+                    setMemoRows(updated);
+                  }} 
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      setMemoRows([...memoRows, { name: '', price: '' }]);
+                    }
+                  }}
+                  style={{ flex: 1 }} 
+                />
+              </div>
+            ))}
+
+          </div>
+          <button type="button" onClick={() => setMemoRows([...memoRows, { name: '', price: '' }])} style={{ marginTop: '10px', background: 'none', border: 'none', color: '#16845B', fontSize: '14px', fontWeight: '700', cursor: 'pointer' }}>
+            + Add More Row
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '24px' }}>
+          <button onClick={() => {
+            const valid = memoRows.filter(r => r.name.trim() !== '' && r.price !== '');
+            if (valid.length === 0) return alert('Please fill at least one item!');
+            const total = memoRows.reduce((sum, r) => sum + (parseFloat(r.price) || 0), 0);
+            
+            if (editingMemoId) {
+              const updatedMemos = memos.map(m => m.id === editingMemoId ? { ...m, date: memoDate, category: memoCategory, wallet: memoWallet, items: valid, total, note: memoNoteText } : m);
+              setMemos(updatedMemos);
+              localStorage.setItem('orthogro_all_bazar_memos', JSON.stringify(updatedMemos));
+              setEditingMemoId(null);
+              alert('✅ Bazar Memo Updated!');
+            } else {
+              const newMemo = { id: Date.now(), date: memoDate, category: memoCategory, wallet: memoWallet, items: valid, total, note: memoNoteText };
+              const updatedMemos = [newMemo, ...memos];
+              setMemos(updatedMemos);
+              localStorage.setItem('orthogro_all_bazar_memos', JSON.stringify(updatedMemos));
+              alert('✅ Bazar Memo Saved!');
+            }
+            setMemoRows([{ name: '', price: '' }, { name: '', price: '' }, { name: '', price: '' }]);
+            setMemoNoteText('');
+          }} className="btn-submit" style={{ flex: 1 }}>{editingMemoId ? 'Update Memo' : 'Save Memo'}</button>
+
+          <button onClick={() => {
+            const valid = memoRows.filter(r => r.name.trim() !== '' && r.price !== '');
+            if (valid.length === 0) return alert('Please fill at least one item!');
+            const total = memoRows.reduce((sum, r) => sum + (parseFloat(r.price) || 0), 0);
+            const itemsDescription = valid.map(i => `${i.name}: ৳${i.price}`).join(', ');
+            const finalNoteText = memoNoteText ? `${memoNoteText} — [ ${itemsDescription} ]` : itemsDescription;
+            
+            const newTx = {
+              id: Date.now(),
+              title: `Bazar (${memoDate})`,
+              amount: total,
+              type: 'expense',
+              category: memoCategory,
+              wallet: memoWallet,
+              date: new Date(memoDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }),
+              rawDate: memoDate,
+              resolved: true,
+              note: finalNoteText
+            };
+            
+            setTransactions([newTx, ...transactions]);
+            alert(`✅ Added as Expense Successfully!\nTotal: ৳ ${total.toLocaleString()}`);
+            setMemoRows([{ name: '', price: '' }, { name: '', price: '' }, { name: '', price: '' }]);
+            setMemoNoteText('');
+            if (editingMemoId) setEditingMemoId(null);
+          }} className="btn-submit" style={{ flex: 1, backgroundColor: '#2B6CB0' }}>Add as Expense</button>
+        </div>
+
+        <h4 style={{ fontSize: '15px', fontWeight: '700', color: '#102A43', marginBottom: '10px' }}>Saved Bazar Memos</h4>
+        {memos.length === 0 && <p style={{ color: '#718096', textAlign: 'center', fontSize: '13px', padding: '15px 0' }}>No bazar memos saved.</p>}
+        {memos.map(memo => (
+          <div key={memo.id} className="common-box" style={{ marginBottom: '12px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+              <div>
+                <h4 style={{ fontSize: '15px', fontWeight: '700', color: '#102A43' }}>Bazar Memo ({memo.date})</h4>
+                <span style={{ fontSize: '11px', color: '#718096', background: '#EDF2F7', padding: '2px 6px', borderRadius: '4px' }}>{memo.category} • {memo.wallet}</span>
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button onClick={() => {
+                  setEditingMemoId(memo.id);
+                  setMemoDate(memo.date);
+                  setMemoCategory(memo.category);
+                  setMemoWallet(memo.wallet);
+                  setMemoNoteText(memo.note || '');
+                  const paddedRows = [...memo.items];
+                  while(paddedRows.length < 3) paddedRows.push({ name: '', price: '' });
+                  setMemoRows(paddedRows);
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                }} style={{ background: '#EBF8FF', border: 'none', color: '#2B6CB0', width: '28px', height: '28px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Edit Memo">
+                  <span className="material-icons" style={{ fontSize: '16px' }}>edit</span>
+                </button>
+
+                <button onClick={() => {
+                  const filteredMemos = memos.filter(m => m.id !== memo.id);
+                  setMemos(filteredMemos);
+                  localStorage.setItem('orthogro_all_bazar_memos', JSON.stringify(filteredMemos));
+                }} style={{ background: '#FED7D7', border: 'none', color: '#E53E3E', width: '28px', height: '28px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }} title="Delete Memo">
+                  <span className="material-icons" style={{ fontSize: '16px' }}>delete</span>
+                </button>
+              </div>
+            </div>
+            {memo.note && <div style={{ fontSize: '12px', color: '#4A5568', fontStyle: 'italic', marginBottom: '6px' }}>Note: {memo.note}</div>}
+            <div style={{ margin: '8px 0', fontSize: '13px', color: '#4A5568' }}>
+              {memo.items.map((item, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed #EAEFEA', paddingBottom: '3px', marginBottom: '3px' }}>
+                  <span>{item.name}</span>
+                  <span style={{ fontWeight: '600' }}>৳ {item.price}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #EAEFEA', paddingTop: '6px', marginTop: '6px', fontSize: '14px', fontWeight: '700', color: '#16845B' }}>
+              <span>Total</span>
+              <span>৳ {memo.total.toLocaleString()}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <div>
+        {/* Top Input Box for Adding/Editing Note */}
+        <div className="common-box" style={{ background: '#FFFFFF', border: '1px solid #E5EBE7', boxShadow: '0 4px 15px rgba(0,0,0,0.02)' }}>
+          <input 
+            type="text" 
+            className="note-input-title" 
+            placeholder="Note Title..." 
+            value={noteTitle} 
+            onChange={(e) => setNoteTitle(e.target.value)} 
+          />
+          <textarea 
+            className="note-textarea" 
+            placeholder="Start typing your note here..." 
+            value={noteContent} 
+            onChange={(e) => setNoteContent(e.target.value)}
+            style={{ minHeight: '120px' }}
+          ></textarea>
+          
+          <div style={{ display: 'flex', gap: '8px', marginTop: '8px', borderTop: '1px solid #F6F8F7', paddingTop: '10px' }}>
+            <button onClick={(e) => {
+              e.preventDefault();
+              if (!noteTitle.trim() && !noteContent.trim()) return alert('Please write something!');
+              
+              if (editingNoteId) {
+                const updatedNotes = notes.map(n => n.id === editingNoteId ? { ...n, title: noteTitle.trim() || 'Untitled', content: noteContent.trim(), date: getTodayDate() } : n);
+                setNotes(updatedNotes);
+                localStorage.setItem('orthogro_saved_notes', JSON.stringify(updatedNotes));
+                setEditingNoteId(null);
+                alert('✅ Note Updated Successfully!');
+              } else {
+                const newNote = { id: Date.now(), title: noteTitle.trim() || 'Untitled', content: noteContent.trim(), date: getTodayDate() };
+                const updatedNotes = [newNote, ...notes];
+                setNotes(updatedNotes);
+                localStorage.setItem('orthogro_saved_notes', JSON.stringify(updatedNotes));
+                alert('✅ Note Saved!');
+              }
+              setNoteTitle('');
+              setNoteContent('');
+            }} className="btn-submit" style={{ flex: 1, marginTop: '0', padding: '12px' }}>
+              {editingNoteId ? 'Update Note' : '+ Add Note'}
+            </button>
+
+            {editingNoteId && (
+              <button onClick={() => {
+                setEditingNoteId(null);
+                setNoteTitle('');
+                setNoteContent('');
+              }} className="btn-submit" style={{ flex: 1, marginTop: '0', backgroundColor: '#A0AEC0', padding: '12px' }}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+
+        <h4 style={{ fontSize: '15px', fontWeight: '700', color: '#102A43', marginBottom: '12px', marginTop: '16px' }}>Saved Notes ({notes.length})</h4>
+        
+        {notes.length === 0 && <p style={{ color: '#718096', textAlign: 'center', fontSize: '13px', padding: '20px 0' }}>No notes saved yet.</p>}
+
+        {/* 2-Column Card Grid Layout */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '12px' }}>
+          {notes.map(note => (
+            <div 
+              key={note.id} 
+              onClick={() => {
+                setEditingNoteId(note.id);
+                setNoteTitle(note.title);
+                setNoteContent(note.content);
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              style={{ 
+                background: '#FFFFFF', 
+                border: '1px solid #E5EBE7', 
+                borderRadius: '18px', 
+                padding: '16px', 
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.02)', 
+                cursor: 'pointer', 
+                display: 'flex', 
+                flexDirection: 'column', 
+                justifyContent: 'space-between',
+                transition: '0.2s',
+                position: 'relative'
+              }}
+            >
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '6px' }}>
+                  <h4 style={{ fontSize: '15px', fontWeight: '700', color: '#102A43', lineHeight: '1.3' }}>{note.title}</h4>
+                  <button onClick={(e) => {
+                    e.stopPropagation(); 
+                    if(window.confirm('Delete this note?')) {
+                      const filteredNotes = notes.filter(n => n.id !== note.id);
+                      setNotes(filteredNotes);
+                      localStorage.setItem('orthogro_saved_notes', JSON.stringify(filteredNotes));
+                    }
+                  }} style={{ background: 'transparent', border: 'none', color: '#A0AEC0', cursor: 'pointer', padding: '2px' }} title="Delete">
+                    <span className="material-icons" style={{ fontSize: '16px' }}>delete_outline</span>
+                  </button>
+                </div>
+                <p style={{ fontSize: '13px', color: '#718096', overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 4, WebkitBoxOrient: 'vertical', lineHeight: '1.4', marginBottom: '12px' }}>
+                  {note.content}
+                </p>
+              </div>
+              <div style={{ fontSize: '11px', color: '#A0AEC0', borderTop: '1px solid #F6F8F7', paddingTop: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span>{note.date}</span>
+                <span style={{ fontSize: '10px', background: '#EDF2F7', padding: '2px 6px', borderRadius: '4px', color: '#4A5568' }}>Tap to edit</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
+  </div>
+)}
+
+            
+            
+            
+            {/* --- CALCULATOR TAB --- */}
+            {activeTab === 'calculator' && (
+              <div className="page" style={{ width: '100%', padding: '0 12px', background: 'transparent', border: 'none', boxShadow: 'none', display: 'flex', flexDirection: 'column', justifyContent: 'center', minHeight: 'calc(100vh - 120px)' }}>
+                <div className="calc-card" style={{ marginBottom: '10px' }}>
+                  <div className="calc-display">
+                    <div className="calc-screen-sub">{previousInput} {operation ? operation : ''}</div>
+                    <div className="calc-screen-main">{currentInput}</div>
+                  </div>
+
+                  <div className="calc-keypad">
+                    <button onClick={() => {
+                      setCurrentInput('0');
+                      setPreviousInput('');
+                      setOperation(null);
+                      setIsResultDisplayed(false);
+                    }} className="calc-btn-ac">AC</button>
+                    
+                    <button onClick={() => {
+                      if (isResultDisplayed) {
+                        setCurrentInput('0');
+                        setPreviousInput('');
+                        setOperation(null);
+                        setIsResultDisplayed(false);
+                        return;
+                      }
+                      if (currentInput.length === 1 || currentInput === 'Error') {
+                        setCurrentInput('0');
+                      } else {
+                        setCurrentInput(currentInput.slice(0, -1));
+                      }
+                    }} className="calc-btn-del">⌫</button>
+
+                    <button onClick={() => {
+                      if (currentInput === '') return;
+                      setCurrentInput((parseFloat(currentInput) / 100).toString());
+                    }} className="calc-btn-op">%</button>
+
+                    <button onClick={() => {
+                      if (currentInput === '' && previousInput === '') return;
+                      if (previousInput !== '' && currentInput !== '' && !isResultDisplayed) {
+                        const prev = parseFloat(previousInput);
+                        const current = parseFloat(currentInput);
+                        let comp = prev / current;
+                        setPreviousInput(comp.toString());
+                      } else if (currentInput !== '') {
+                        setPreviousInput(currentInput);
+                      }
+                      setCurrentInput('');
+                      setOperation('÷');
+                      setIsResultDisplayed(false);
+                    }} className="calc-btn-op">÷</button>
+
+                    {['7', '8', '9'].map(num => (
+                      <button key={num} onClick={() => {
+                        if (isResultDisplayed) { setCurrentInput('0'); setIsResultDisplayed(false); }
+                        setCurrentInput(prev => prev === '0' ? num : prev + num);
+                      }} className="calc-btn-num">{num}</button>
+                    ))}
+
+                    <button onClick={() => {
+                      if (currentInput === '' && previousInput === '') return;
+                      if (previousInput !== '' && currentInput !== '' && !isResultDisplayed) {
+                        const prev = parseFloat(previousInput);
+                        const current = parseFloat(currentInput);
+                        let comp = prev * current;
+                        setPreviousInput(comp.toString());
+                      } else if (currentInput !== '') {
+                        setPreviousInput(currentInput);
+                      }
+                      setCurrentInput('');
+                      setOperation('×');
+                      setIsResultDisplayed(false);
+                    }} className="calc-btn-op">×</button>
+
+                    {['4', '5', '6'].map(num => (
+                      <button key={num} onClick={() => {
+                        if (isResultDisplayed) { setCurrentInput('0'); setIsResultDisplayed(false); }
+                        setCurrentInput(prev => prev === '0' ? num : prev + num);
+                      }} className="calc-btn-num">{num}</button>
+                    ))}
+
+                    <button onClick={() => {
+                      if (currentInput === '' && previousInput === '') return;
+                      if (previousInput !== '' && currentInput !== '' && !isResultDisplayed) {
+                        const prev = parseFloat(previousInput);
+                        const current = parseFloat(currentInput);
+                        let comp = prev - current;
+                        setPreviousInput(comp.toString());
+                      } else if (currentInput !== '') {
+                        setPreviousInput(currentInput);
+                      }
+                      setCurrentInput('');
+                      setOperation('-');
+                      setIsResultDisplayed(false);
+                    }} className="calc-btn-op">-</button>
+
+                    {['1', '2', '3'].map(num => (
+                      <button key={num} onClick={() => {
+                        if (isResultDisplayed) { setCurrentInput('0'); setIsResultDisplayed(false); }
+                        setCurrentInput(prev => prev === '0' ? num : prev + num);
+                      }} className="calc-btn-num">{num}</button>
+                    ))}
+
+                    <button onClick={() => {
+                      if (currentInput === '' && previousInput === '') return;
+                      if (previousInput !== '' && currentInput !== '' && !isResultDisplayed) {
+                        const prev = parseFloat(previousInput);
+                        const current = parseFloat(currentInput);
+                        let comp = prev + current;
+                        setPreviousInput(comp.toString());
+                      } else if (currentInput !== '') {
+                        setPreviousInput(currentInput);
+                      }
+                      setCurrentInput('');
+                      setOperation('+');
+                      setIsResultDisplayed(false);
+                    }} className="calc-btn-op">+</button>
+
+                    <button onClick={() => {
+                      if (isResultDisplayed) { setCurrentInput('0'); setIsResultDisplayed(false); }
+                      setCurrentInput(prev => prev === '0' ? '0' : prev + '0');
+                    }} className="calc-btn-num" style={{ gridColumn: 'span 2' }}>0</button>
+
+                    <button onClick={() => {
+                      if (currentInput.includes('.')) return;
+                      setCurrentInput(prev => prev + '.');
+                    }} className="calc-btn-num">.</button>
+
+                    <button onClick={() => {
+                      if (operation === null || previousInput === '' || currentInput === '') return;
+                      const prev = parseFloat(previousInput);
+                      const current = parseFloat(currentInput);
+                      let computation;
+                      switch (operation) {
+                        case '+': computation = prev + current; break;
+                        case '-': computation = prev - current; break;
+                        case '×': computation = prev * current; break;
+                        case '÷': computation = current === 0 ? 'Error' : prev / current; break;
+                        default: return;
+                      }
+                      setCurrentInput(computation.toString());
+                      setPreviousInput('');
+                      setOperation(null);
+                      setIsResultDisplayed(true);
+                    }} className="calc-btn-eq">=</button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {activeTab === 'transactions' && (
               <div className="page">
                 <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#102A43', marginBottom: '14px' }}>{entries[0].id ? 'Edit Transaction' : 'Add New Transaction'}</h3>
@@ -1768,78 +1924,35 @@ if (!currentUser && !isGuest) {
                     <h3 style={{ fontSize: '16px', fontWeight: '700', color: '#102A43', marginBottom: '14px' }}>Settings & Management</h3>
                     
                     {isGuest ? (
-  <div
-    className="settings-menu-item"
-    style={{
-      background: '#FFF8E1',
-      border: '1px solid #F6E0A5',
-      cursor: 'default'
-    }}
-  >
-    <div className="settings-menu-info">
-      <span className="material-icons" style={{ color: '#B7791F' }}>
-        person_outline
-      </span>
-      <div>
-        <h4 style={{ color: '#B7791F' }}>Guest Mode</h4>
-        <p style={{ fontSize: '10px', color: '#718096' }}>
-          Data saved on this device only
-        </p>
-      </div>
-    </div>
-  </div>
-) : !currentUser ? (
-  <div
-    className="settings-menu-item"
-    onClick={handleGoogleLogin}
-    style={{
-      background: '#EBF8FF',
-      border: '1px solid #BEE3F8'
-    }}
-  >
-    <div className="settings-menu-info">
-      <span className="material-icons" style={{ color: '#2B6CB0' }}>
-        account_circle
-      </span>
-      <h4 style={{ color: '#2B6CB0' }}>Sign In with Google</h4>
-    </div>
-    <span className="material-icons" style={{ color: '#2B6CB0' }}>
-      login
-    </span>
-  </div>
-) : (
-  <div
-    className="settings-menu-item"
-    style={{
-      background: '#E6FFFA',
-      border: '1px solid #B2F5EA'
-    }}
-  >
-    <div
-      className="settings-menu-info"
-      onClick={handleManualSync}
-      style={{ flex: 1, cursor: 'pointer' }}
-    >
-      <span className="material-icons" style={{ color: '#16845B' }}>
-        cloud_done
-      </span>
-      <div>
-        <h4 style={{ color: '#16845B' }}>Google Connected</h4>
-        <p style={{ fontSize: '10px', color: '#234E52' }}>
-          {currentUser.email}
-        </p>
-      </div>
-    </div>
-    <span
-      className="material-icons"
-      onClick={handleManualSync}
-      style={{ color: '#16845B', cursor: 'pointer', padding: '5px' }}
-      title="Sync Now"
-    >
-      sync
-    </span>
-  </div>
-)}
+                      <div className="settings-menu-item" style={{ background: '#FFF8E1', border: '1px solid #F6E0A5', cursor: 'default' }}>
+                        <div className="settings-menu-info">
+                          <span className="material-icons" style={{ color: '#B7791F' }}>person_outline</span>
+                          <div>
+                            <h4 style={{ color: '#B7791F' }}>Guest Mode</h4>
+                            <p style={{ fontSize: '10px', color: '#718096' }}>Data saved on this device only</p>
+                          </div>
+                        </div>
+                      </div>
+                    ) : !currentUser ? (
+                      <div className="settings-menu-item" onClick={handleGoogleLogin} style={{ background: '#EBF8FF', border: '1px solid #BEE3F8' }}>
+                        <div className="settings-menu-info">
+                          <span className="material-icons" style={{ color: '#2B6CB0' }}>account_circle</span>
+                          <h4 style={{ color: '#2B6CB0' }}>Sign In with Google</h4>
+                        </div>
+                        <span className="material-icons" style={{ color: '#2B6CB0' }}>login</span>
+                      </div>
+                    ) : (
+                      <div className="settings-menu-item" style={{ background: '#E6FFFA', border: '1px solid #B2F5EA' }}>
+                        <div className="settings-menu-info" onClick={handleManualSync} style={{ flex: 1, cursor: 'pointer' }}>
+                          <span className="material-icons" style={{ color: '#16845B' }}>cloud_done</span>
+                          <div>
+                            <h4 style={{ color: '#16845B' }}>Google Connected</h4>
+                            <p style={{ fontSize: '10px', color: '#234E52' }}>{currentUser.email}</p>
+                          </div>
+                        </div>
+                        <span className="material-icons" onClick={handleManualSync} style={{ color: '#16845B', cursor: 'pointer', padding: '5px' }} title="Sync Now">sync</span>
+                      </div>
+                    )}
 
                     <div className="settings-menu-item" onClick={() => setSettingsView('wallets')}>
                       <div className="settings-menu-info">
@@ -1873,21 +1986,15 @@ if (!currentUser && !isGuest) {
                       <span className="material-icons" style={{color: '#A0AEC0'}}>chevron_right</span>
                     </div>
 
-                   {(currentUser || isGuest) && (
-  <div
-    className="settings-menu-item"
-    onClick={handleGoogleLogout}
-    style={{ background: '#FFF5F5', border: '1px solid #FED7D7' }}
-  >
-    <div className="settings-menu-info">
-      <span className="material-icons" style={{ color: '#D94848' }}>logout</span>
-      <h4 style={{ color: '#D94848' }}>
-        {isGuest ? 'Exit Guest Mode' : 'Sign Out from Google'}
-      </h4>
-    </div>
-    <span className="material-icons" style={{ color: '#D94848' }}>chevron_right</span>
-  </div>
-)}
+                    {(currentUser || isGuest) && (
+                      <div className="settings-menu-item" onClick={handleGoogleLogout} style={{ background: '#FFF5F5', border: '1px solid #FED7D7' }}>
+                        <div className="settings-menu-info">
+                          <span className="material-icons" style={{ color: '#D94848' }}>logout</span>
+                          <h4 style={{ color: '#D94848' }}>{isGuest ? 'Exit Guest Mode' : 'Sign Out from Google'}</h4>
+                        </div>
+                        <span className="material-icons" style={{ color: '#D94848' }}>chevron_right</span>
+                      </div>
+                    )}
 
                     <button onClick={() => { if(window.confirm("Reset all data?")) { setTransactions([]); localStorage.clear(); window.location.reload(); } }} style={{backgroundColor: '#D94848', color: 'white', padding: '12px', border: 'none', borderRadius: '10px', width: '100%', marginTop: '20px', fontWeight: 'bold', cursor: 'pointer'}}>Reset All Data</button>
                   </div>
@@ -1900,14 +2007,7 @@ if (!currentUser && !isGuest) {
                     <p style={{ fontSize: '11px', color: '#718096', marginBottom: '10px' }}>Drag and drop items to reorder.</p>
                     <div onDragOver={handleDragOver}>
                       {wallets.map((w, idx) => (
-                        <div 
-                          key={w} 
-                          draggable 
-                          onDragStart={(e) => handleDragStart(e, idx, 'wallet')}
-                          onDrop={(e) => handleDrop(e, idx, 'wallet', wallets, setWallets)}
-                          className="settings-card-item"
-                          style={{ cursor: 'grab' }}
-                        >
+                        <div key={w} draggable onDragStart={(e) => handleDragStart(e, idx, 'wallet')} onDrop={(e) => handleDrop(e, idx, 'wallet', wallets, setWallets)} className="settings-card-item" style={{ cursor: 'grab' }}>
                           <div className="settings-info"><h4>{w}</h4><p>{txCountByWallet[w] || 0} transactions</p></div>
                           <div className="settings-actions">
                             <button className="icon-btn delete" onClick={() => {
@@ -1940,14 +2040,7 @@ if (!currentUser && !isGuest) {
                     <p style={{ fontSize: '11px', color: '#718096', marginBottom: '10px' }}>Drag and drop items to reorder.</p>
                     <div onDragOver={handleDragOver}>
                       {savingsList.map((s, idx) => (
-                        <div 
-                          key={s} 
-                          draggable 
-                          onDragStart={(e) => handleDragStart(e, idx, 'savings')}
-                          onDrop={(e) => handleDrop(e, idx, 'savings', savingsList, setSavingsList)}
-                          className="settings-card-item"
-                          style={{ cursor: 'grab' }}
-                        >
+                        <div key={s} draggable onDragStart={(e) => handleDragStart(e, idx, 'savings')} onDrop={(e) => handleDrop(e, idx, 'savings', savingsList, setSavingsList)} className="settings-card-item" style={{ cursor: 'grab' }}>
                           <div className="settings-info"><h4>{s}</h4><p>{txCountByWallet[s] || 0} transactions</p></div>
                           <div className="settings-actions">
                             <button className="icon-btn delete" onClick={() => {
@@ -1979,14 +2072,7 @@ if (!currentUser && !isGuest) {
                     <p style={{ fontSize: '11px', color: '#718096', marginBottom: '10px' }}>Drag and drop items to reorder.</p>
                     <div onDragOver={handleDragOver}>
                       {expenseCategories.map((c, idx) => (
-                        <div 
-                          key={c} 
-                          draggable 
-                          onDragStart={(e) => handleDragStart(e, idx, 'exp_cat')}
-                          onDrop={(e) => handleDrop(e, idx, 'exp_cat', expenseCategories, setExpenseCategories)}
-                          className="settings-card-item"
-                          style={{ cursor: 'grab' }}
-                        >
+                        <div key={c} draggable onDragStart={(e) => handleDragStart(e, idx, 'exp_cat')} onDrop={(e) => handleDrop(e, idx, 'exp_cat', expenseCategories, setExpenseCategories)} className="settings-card-item" style={{ cursor: 'grab' }}>
                           <div className="settings-info"><h4>{c}</h4><p>{txCountByCategory[c] || 0} transactions</p></div>
                           <div className="settings-actions">
                             <button className="icon-btn delete" onClick={() => {
@@ -2014,14 +2100,7 @@ if (!currentUser && !isGuest) {
                     <p style={{ fontSize: '11px', color: '#718096', marginBottom: '10px' }}>Drag and drop items to reorder.</p>
                     <div onDragOver={handleDragOver}>
                       {incomeCategories.map((c, idx) => (
-                        <div 
-                          key={c} 
-                          draggable 
-                          onDragStart={(e) => handleDragStart(e, idx, 'inc_cat')}
-                          onDrop={(e) => handleDrop(e, idx, 'inc_cat', incomeCategories, setIncomeCategories)}
-                          className="settings-card-item"
-                          style={{ cursor: 'grab' }}
-                        >
+                        <div key={c} draggable onDragStart={(e) => handleDragStart(e, idx, 'inc_cat')} onDrop={(e) => handleDrop(e, idx, 'inc_cat', incomeCategories, setIncomeCategories)} className="settings-card-item" style={{ cursor: 'grab' }}>
                           <div className="settings-info"><h4>{c}</h4><p>{txCountByCategory[c] || 0} transactions</p></div>
                           <div className="settings-actions">
                             <button className="icon-btn delete" onClick={() => {
@@ -2045,7 +2124,6 @@ if (!currentUser && !isGuest) {
             )}
           </main>
 
-          {/* Account Delete & Transfer Modal */}
           {accountToDelete && (
             <div className="modal-overlay" onClick={() => setAccountToDelete(null)}>
               <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -2082,7 +2160,6 @@ if (!currentUser && !isGuest) {
             </div>
           )}
 
-          {/* Partial Payment Modal */}
           {resolvingTx && (
             <div className="modal-overlay" onClick={() => setResolvingTx(null)}>
               <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -2112,7 +2189,6 @@ if (!currentUser && !isGuest) {
             </div>
           )}
 
-          {/* Detailed History Modal for Lend/Borrow */}
           {historyModalItem && (
             <div className="modal-overlay" onClick={() => setHistoryModalItem(null)}>
               <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -2135,18 +2211,14 @@ if (!currentUser && !isGuest) {
                   ))
                 )}
                 {!historyModalItem.resolved && (
-                  <button 
-                    className="btn-submit" 
-                    style={{ marginTop: '16px', padding: '10px', background: '#16845B' }} 
-                    onClick={() => {
-                      const item = historyModalItem;
-                      setHistoryModalItem(null);
-                      setResolvingTx(item);
-                      setResolveWallet(allAccountOptions[0]);
-                      setPartialAmount(item.remainingBalance !== undefined ? item.remainingBalance : item.amount);
-                      setPartialDate(getTodayDate());
-                    }}
-                  >
+                  <button className="btn-submit" style={{ marginTop: '16px', padding: '10px', background: '#16845B' }} onClick={() => {
+                    const item = historyModalItem;
+                    setHistoryModalItem(null);
+                    setResolvingTx(item);
+                    setResolveWallet(allAccountOptions[0]);
+                    setPartialAmount(item.remainingBalance !== undefined ? item.remainingBalance : item.amount);
+                    setPartialDate(getTodayDate());
+                  }}>
                     + Make Payment / Settle
                   </button>
                 )}
@@ -2155,18 +2227,12 @@ if (!currentUser && !isGuest) {
             </div>
           )}
 
-          {/* Drilldown Modal (Strict Isolation) */}
           {drilldownType && (
             <div className="modal-overlay" onClick={() => setDrilldownType(null)}>
               <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                   <h3 style={{ color: '#16845B', fontSize: '15px' }}>{drilldownKey || drilldownType.toUpperCase()}</h3>
-                  <select 
-                    className="form-control" 
-                    style={{ width: '130px', padding: '6px', fontSize: '12px' }}
-                    value={drilldownFilter}
-                    onChange={(e) => setDrilldownFilter(e.target.value)}
-                  >
+                  <select className="form-control" style={{ width: '130px', padding: '6px', fontSize: '12px' }} value={drilldownFilter} onChange={(e) => setDrilldownFilter(e.target.value)}>
                     <option value="all">All Time</option>
                     <option value="monthly">This Month</option>
                     <option value="previous_month">Prev Month</option>
@@ -2175,11 +2241,7 @@ if (!currentUser && !isGuest) {
                 </div>
 
                 {(drilldownType === 'wallet' || drilldownType === 'savings') && (
-                  <button 
-                    className="btn-add-more" 
-                    style={{ marginBottom: '16px', padding: '10px' }}
-                    onClick={() => { setWalletToCorrect(drilldownKey); setCorrectBalanceInput(walletBalances[drilldownKey] || 0); }}
-                  >
+                  <button className="btn-add-more" style={{ marginBottom: '16px', padding: '10px' }} onClick={() => { setWalletToCorrect(drilldownKey); setCorrectBalanceInput(walletBalances[drilldownKey] || 0); }}>
                     ⚙️ Correct Balance
                   </button>
                 )}
@@ -2205,16 +2267,12 @@ if (!currentUser && !isGuest) {
 
                   if (filtered.length === 0) return <p style={{color: '#718096', textAlign: 'center', padding: '20px'}}>No transactions found.</p>;
                   return filtered.map(tx => (
-                    <div 
-                      key={tx.id} 
-                      onClick={() => {
-                        if (tx.type === 'lend' || tx.type === 'borrow') {
-                          setDrilldownType(null);
-                          setHistoryModalItem(tx);
-                        }
-                      }}
-                      style={{padding: '10px 0', borderBottom: '1px solid #E5EBE7', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: (tx.type === 'lend' || tx.type === 'borrow') ? 'pointer' : 'default'}}
-                    >
+                    <div key={tx.id} onClick={() => {
+                      if (tx.type === 'lend' || tx.type === 'borrow') {
+                        setDrilldownType(null);
+                        setHistoryModalItem(tx);
+                      }
+                    }} style={{padding: '10px 0', borderBottom: '1px solid #E5EBE7', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: (tx.type === 'lend' || tx.type === 'borrow') ? 'pointer' : 'default'}}>
                       <div>
                         <h4 style={{fontSize: '13px', fontWeight: 'bold'}}>{tx.title} {tx.type === 'lend' || tx.type === 'borrow' ? `(Due: ৳${tx.remainingBalance !== undefined ? tx.remainingBalance : tx.amount})` : ''}</h4>
                         <p style={{fontSize: '11px', color: '#718096'}}>{tx.date} • {tx.wallet || tx.fromWallet} {(tx.type === 'lend' || tx.type === 'borrow') ? '🖱️ Tap for History' : ''}</p>
@@ -2230,7 +2288,6 @@ if (!currentUser && !isGuest) {
             </div>
           )}
 
-          {/* Time Period Filter Modal */}
           {activeFilterCard && (
             <div className="modal-overlay" onClick={() => setActiveFilterCard(null)}>
               <div className="modal-content" onClick={(e) => e.stopPropagation()}>
@@ -2289,10 +2346,7 @@ if (!currentUser && !isGuest) {
               <div className="modal-content" onClick={(e) => e.stopPropagation()}>
                 <h3 style={{ marginBottom: '10px', color: '#16845B' }}>Organize & Reorder Home Grids</h3>
                 <p style={{ fontSize: '11px', color: '#718096', marginBottom: '14px' }}>Drag and drop items to reorder them on your home screen.</p>
-                <div 
-                  style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '15px' }}
-                  onDragOver={handleDragOver}
-                >
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '15px' }} onDragOver={handleDragOver}>
                   {gridOrder.map((key, idx) => {
                     const labelNames = {
                       netWorth: 'Net Worth Grid',
@@ -2304,13 +2358,7 @@ if (!currentUser && !isGuest) {
                       transactions: 'Recent Transactions List'
                     };
                     return (
-                      <div 
-                        key={key} 
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, idx, 'grid')}
-                        onDrop={(e) => handleDrop(e, idx, 'grid', gridOrder, setGridOrder)}
-                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F6F8F7', padding: '10px 12px', borderRadius: '10px', border: '1px solid #E5EBE7', cursor: 'grab' }}
-                      >
+                      <div key={key} draggable onDragStart={(e) => handleDragStart(e, idx, 'grid')} onDrop={(e) => handleDrop(e, idx, 'grid', gridOrder, setGridOrder)} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#F6F8F7', padding: '10px 12px', borderRadius: '10px', border: '1px solid #E5EBE7', cursor: 'grab' }}>
                         <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', cursor: 'pointer', flex: 1, color: '#102A43', fontWeight: '500' }}>
                           <input type="checkbox" checked={visibleGrids[key]} onChange={() => toggleGrid(key)} style={{ width: '16px', height: '16px', accentColor: '#16845B' }} />
                           {labelNames[key]}
@@ -2329,8 +2377,14 @@ if (!currentUser && !isGuest) {
             <button className={activeTab === 'home' ? 'active' : ''} onClick={() => setActiveTab('home')}>
               <span className="material-icons">home</span>Home
             </button>
+            <button className={activeTab === 'memo' ? 'active' : ''} onClick={() => setActiveTab('memo')}>
+              <span className="material-icons">receipt_long</span>Memo
+            </button>
             <button className="btn-add-tx" onClick={() => { setActiveTab('transactions'); setEntries([{ ...defaultEntry }]); }}>
               <span className="material-icons">add</span>
+            </button>
+            <button className={activeTab === 'calculator' ? 'active' : ''} onClick={() => setActiveTab('calculator')}>
+              <span className="material-icons">calculate</span>Calculator
             </button>
             <button className={activeTab === 'settings' ? 'active' : ''} onClick={() => { setActiveTab('settings'); setSettingsView('menu'); }}>
               <span className="material-icons">settings</span>Settings
