@@ -645,10 +645,23 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
       };
 
 
-      const [wallets, setWallets] = React.useState(() => {
+            const [wallets, setWalletsRaw] = React.useState(() => {
         const saved = localStorage.getItem('orthogro_wallets');
         return saved ? JSON.parse(saved) : ['Bank', 'Bkash', 'Nagad', 'Cash'];
       });
+
+      // লগইন করা ইউজারের জন্য ওয়ালেট ইনস্ট্যান্ট সেভ ও ক্লাউড সিংক ফাংশন
+      const setWallets = (newValue) => {
+        setWalletsRaw(newValue);
+        const updatedWallets = typeof newValue === 'function' ? newValue(wallets) : newValue;
+        localStorage.setItem('orthogro_wallets', JSON.stringify(updatedWallets));
+        
+        // যদি কারেন্ট ইউজার থাকে তবে সাথে সাথে ক্লাউডেও সিংক হবে
+        if (currentUser && typeof syncToCloud === 'function') {
+          syncToCloud(null, updatedWallets, null, null, null);
+        }
+      };
+
 
       const [savingsList, setSavingsList] = React.useState(() => {
         const saved = localStorage.getItem('orthogro_savings');
