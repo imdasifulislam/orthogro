@@ -529,17 +529,26 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
         }
       };
 
-      const syncToCloud = async (newData, newWallets, newSavings, newExpCats, newIncCats) => {
+            const syncToCloud = async (newData, newWallets, newSavings, newExpCats, newIncCats) => {
         if (!currentUser || !navigator.onLine) return;
+        
+        // --- এখানে undefined ভ্যালুগুলো ফিল্টার বা নিরাপদ করে নেওয়া হচ্ছে ---
+        const cleanTransactions = Array.isArray(newData || transactions) ? (newData || transactions) : [];
+        const cleanWallets = Array.isArray(newWallets || wallets) ? (newWallets || wallets) : ['Bank', 'Bkash', 'Nagad', 'Cash'];
+        const cleanSavings = Array.isArray(newSavings || savingsList) ? (newSavings || savingsList) : ['Savings', 'Samity', 'Investment'];
+        const cleanExpCats = Array.isArray(newExpCats || expenseCategories) ? (newExpCats || expenseCategories) : ['Family Maintenance', 'Relative', 'Personal', 'Career', 'Sadakah', 'Others'];
+        const cleanIncCats = Array.isArray(newIncCats || incomeCategories) ? (newIncCats || incomeCategories) : ['Salary', 'Business', 'Gift', 'Others'];
+
         await db.collection('users').doc(currentUser.uid).set({
-          transactions: newData || transactions,
-          wallets: newWallets || wallets,
-          savingsList: newSavings || savingsList,
-          expenseCategories: newExpCats || expenseCategories,
-          incomeCategories: newIncCats || incomeCategories,
+          transactions: cleanTransactions,
+          wallets: cleanWallets,
+          savingsList: cleanSavings,
+          expenseCategories: cleanExpCats,
+          incomeCategories: cleanIncCats,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
       };
+
       
       const [gridOrder, setGridOrder] = React.useState(() => {
         const saved = localStorage.getItem('orthogro_grid_order');
