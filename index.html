@@ -529,10 +529,9 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
         }
       };
 
-            const syncToCloud = async (newData, newWallets, newSavings, newExpCats, newIncCats) => {
+      const syncToCloud = async (newData, newWallets, newSavings, newExpCats, newIncCats) => {
         if (!currentUser || !navigator.onLine) return;
         
-        // --- এখানে undefined ভ্যালুগুলো ফিল্টার বা নিরাপদ করে নেওয়া হচ্ছে ---
         const cleanTransactions = Array.isArray(newData || transactions) ? (newData || transactions) : [];
         const cleanWallets = Array.isArray(newWallets || wallets) ? (newWallets || wallets) : ['Bank', 'Bkash', 'Nagad', 'Cash'];
         const cleanSavings = Array.isArray(newSavings || savingsList) ? (newSavings || savingsList) : ['Savings', 'Samity', 'Investment'];
@@ -549,7 +548,6 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
         }, { merge: true });
       };
 
-      
       const [gridOrder, setGridOrder] = React.useState(() => {
         const saved = localStorage.getItem('orthogro_grid_order');
         return saved ? JSON.parse(saved) : ['netWorth', 'wallets', 'savings', 'incExp', 'lendBorrow', 'categoryReport', 'transactions'];
@@ -569,10 +567,7 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
 
       const toggleGrid = (key) => { setVisibleGrids(prev => ({ ...prev, [key]: !prev[key] })); };
 
-      
-      
-      
-            // --- Universal Drag and Drop handlers (Desktop + Mobile Touch support) ---
+      // --- Universal Drag and Drop handlers ---
       const [draggedIndex, setDraggedIndex] = React.useState(null);
 
       const handleDragStart = (e, index, type) => {
@@ -607,7 +602,6 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
         setDraggedIndex(null);
       };
 
-      // Mobile Touch Drag Helpers
       const handleTouchStart = (index, type) => {
         setDraggedIndex(index);
       };
@@ -624,10 +618,9 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
         setDraggedIndex(null);
       };
 
-
-
-            const [transactions, setTransactionsRaw] = React.useState(() => {
-        const savedData = localStorage.getItem(isGuest ? 'orthogro_guest_data' : 'orthogro_data');
+      // --- Transactions State & Custom Setter ---
+      const [transactions, setTransactionsRaw] = React.useState(() => {
+        const savedData = localStorage.getItem('orthogro_data') || localStorage.getItem('orthogro_guest_data');
         if (savedData) {
           let parsedData = JSON.parse(savedData);
           parsedData.sort((a, b) => new Date(b.rawDate || 0) - new Date(a.rawDate || 0));
@@ -636,32 +629,33 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
         return [];
       });
 
-      // এই কাস্টম ফাংশনটি ১৭ জায়গার সব setTransactions-কে একসাথে কন্ট্রোল করবে এবং ইনস্ট্যান্ট সেভ করবে!
       const setTransactions = (newValue) => {
         setTransactionsRaw(newValue);
         const updatedData = typeof newValue === 'function' ? newValue(transactions) : newValue;
-        const storageKey = isGuest ? 'orthogro_guest_data' : 'orthogro_data';
+        const storageKey = currentUser ? 'orthogro_data' : 'orthogro_guest_data';
         localStorage.setItem(storageKey, JSON.stringify(updatedData));
-      };
 
-
-            const [wallets, setWalletsRaw] = React.useState(() => {
-        const saved = localStorage.getItem('orthogro_wallets');
-        return saved ? JSON.parse(saved) : ['Bank', 'Bkash', 'Nagad', 'Cash'];
-      });
-
-      // লগইন করা ইউজারের জন্য ওয়ালেট ইনস্ট্যান্ট সেভ ও ক্লাউড সিংক ফাংশন
-      const setWallets = (newValue) => {
-        setWalletsRaw(newValue);
-        const updatedWallets = typeof newValue === 'function' ? newValue(wallets) : newValue;
-        localStorage.setItem('orthogro_wallets', JSON.stringify(updatedWallets));
-        
-        // যদি কারেন্ট ইউজার থাকে তবে সাথে সাথে ক্লাউডেও সিংক হবে
-        if (currentUser && typeof syncToCloud === 'function') {
-          syncToCloud(null, updatedWallets, null, null, null);
+        if (currentUser && typeof syncToCloud === 'function' && navigator.onLine) {
+          syncToCloud(updatedData, null, null, null, null);
         }
       };
 
+      // --- Wallets State & Custom Setter ---
+      const [wallets, setWalletsRaw] = React.useState(() => {
+        const saved = localStorage.getItem('orthogro_wallets') || localStorage.getItem('orthogro_guest_wallets');
+        return saved ? JSON.parse(saved) : ['Bank', 'Bkash', 'Nagad', 'Cash'];
+      });
+
+      const setWallets = (newValue) => {
+        setWalletsRaw(newValue);
+        const updatedWallets = typeof newValue === 'function' ? newValue(wallets) : newValue;
+        const storageKey = currentUser ? 'orthogro_wallets' : 'orthogro_guest_wallets';
+        localStorage.setItem(storageKey, JSON.stringify(updatedWallets));
+        
+        if (currentUser && typeof syncToCloud === 'function' && navigator.onLine) {
+          syncToCloud(null, updatedWallets, null, null, null);
+        }
+      };
 
       const [savingsList, setSavingsList] = React.useState(() => {
         const saved = localStorage.getItem('orthogro_savings');
@@ -683,55 +677,49 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
       const [newExpCatInput, setNewExpCatInput] = React.useState('');
       const [newIncCatInput, setNewIncCatInput] = React.useState('');
 
+      // --- Cleaned up & Fixed useEffects ---
       React.useEffect(() => {
-        if (authLoading) return;
-        if (isGuest) {
-          localStorage.setItem('orthogro_guest_data', JSON.stringify(transactions));
-        } else if (currentUser) {
-          localStorage.setItem('orthogro_data', JSON.stringify(transactions));
+        const storageKey = currentUser ? 'orthogro_data' : 'orthogro_guest_data';
+        localStorage.setItem(storageKey, JSON.stringify(transactions));
+        if (currentUser && !authLoading) {
           syncToCloud(transactions, null, null, null, null);
         }
-      }, [transactions, isGuest, currentUser, authLoading]);
+      }, [transactions, currentUser, authLoading]);
 
       React.useEffect(() => {
-        if (authLoading) return;
-        if (isGuest) {
-          localStorage.setItem('orthogro_guest_wallets', JSON.stringify(wallets));
-        } else if (currentUser) {
-          localStorage.setItem('orthogro_wallets', JSON.stringify(wallets));
+        const storageKey = currentUser ? 'orthogro_wallets' : 'orthogro_guest_wallets';
+        localStorage.setItem(storageKey, JSON.stringify(wallets));
+        if (currentUser && !authLoading) {
           syncToCloud(null, wallets, null, null, null);
         }
-      }, [wallets, isGuest, currentUser, authLoading]);
+      }, [wallets, currentUser, authLoading]);
 
       React.useEffect(() => {
         if (authLoading) return;
-        if (isGuest) {
-          localStorage.setItem('orthogro_guest_savings', JSON.stringify(savingsList));
-        } else if (currentUser) {
-          localStorage.setItem('orthogro_savings', JSON.stringify(savingsList));
+        const storageKey = currentUser ? 'orthogro_savings' : 'orthogro_guest_savings';
+        localStorage.setItem(storageKey, JSON.stringify(savingsList));
+        if (currentUser) {
           syncToCloud(null, null, savingsList, null, null);
         }
-      }, [savingsList, isGuest, currentUser, authLoading]);
+      }, [savingsList, currentUser, authLoading]);
 
       React.useEffect(() => {
         if (authLoading) return;
-        if (isGuest) {
-          localStorage.setItem('orthogro_guest_exp_cats', JSON.stringify(expenseCategories));
-        } else if (currentUser) {
-          localStorage.setItem('orthogro_exp_cats', JSON.stringify(expenseCategories));
+        const storageKey = currentUser ? 'orthogro_exp_cats' : 'orthogro_guest_exp_cats';
+        localStorage.setItem(storageKey, JSON.stringify(expenseCategories));
+        if (currentUser) {
           syncToCloud(null, null, null, expenseCategories, null);
         }
-      }, [expenseCategories, isGuest, currentUser, authLoading]);
+      }, [expenseCategories, currentUser, authLoading]);
 
       React.useEffect(() => {
         if (authLoading) return;
-        if (isGuest) {
-          localStorage.setItem('orthogro_guest_inc_cats', JSON.stringify(incomeCategories));
-        } else if (currentUser) {
-          localStorage.setItem('orthogro_inc_cats', JSON.stringify(incomeCategories));
+        const storageKey = currentUser ? 'orthogro_inc_cats' : 'orthogro_guest_inc_cats';
+        localStorage.setItem(storageKey, JSON.stringify(incomeCategories));
+        if (currentUser) {
           syncToCloud(null, null, null, null, incomeCategories);
         }
-      }, [incomeCategories, isGuest, currentUser, authLoading]);
+      }, [incomeCategories, currentUser, authLoading]);
 
       const allAccountOptions = [...wallets, ...savingsList];
       const defaultEntry = { 
@@ -1073,42 +1061,70 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
         setEditInputVal(item);
       };
 
-      const saveEditedItem = () => {
+                        const saveEditedItem = () => {
         if (!editingItem || !editInputVal.trim()) return;
         const val = editInputVal.trim();
         const { listType, oldName } = editingItem;
 
         if (listType === 'wallet') {
           if (wallets.includes(val)) return alert('Already exists!');
-          setWallets(wallets.map(w => w === oldName ? val : w));
-          setTransactions(transactions.map(t => ({
+          const updatedWallets = wallets.map(w => w === oldName ? val : w);
+          setWallets(updatedWallets);
+          localStorage.setItem('orthogro_wallets', JSON.stringify(updatedWallets));
+          
+          // সব ট্রানজেকশনে ওয়ালেটের নাম আপডেট করা
+          const updatedTxs = transactions.map(t => ({
             ...t,
             wallet: t.wallet === oldName ? val : t.wallet,
             fromWallet: t.fromWallet === oldName ? val : t.fromWallet,
             toWallet: t.toWallet === oldName ? val : t.toWallet,
             resolveWallet: t.resolveWallet === oldName ? val : t.resolveWallet
-          })));
-        } else if (listType === 'savings') {
+          }));
+          setTransactions(updatedTxs);
+        } 
+        else if (listType === 'savings') {
           if (savingsList.includes(val)) return alert('Already exists!');
-          setSavingsList(savingsList.map(s => s === oldName ? val : s));
-          setTransactions(transactions.map(t => ({
+          const updatedSavings = savingsList.map(s => s === oldName ? val : s);
+          setSavingsList(updatedSavings);
+          localStorage.setItem('orthogro_savings', JSON.stringify(updatedSavings));
+
+          // সব ট্রানজেকশনে সেভিংস অ্যাকাউন্ট/ওয়ালেটের নাম আপডেট করা
+          const updatedTxs = transactions.map(t => ({
             ...t,
             wallet: t.wallet === oldName ? val : t.wallet,
             fromWallet: t.fromWallet === oldName ? val : t.fromWallet,
             toWallet: t.toWallet === oldName ? val : t.toWallet
-          })));
-        } else if (listType === 'exp_cat') {
+          }));
+          setTransactions(updatedTxs);
+        } 
+        else if (listType === 'exp_cat') {
           if (expenseCategories.includes(val)) return alert('Already exists!');
-          setExpenseCategories(expenseCategories.map(c => c === oldName ? val : c));
-          setTransactions(transactions.map(t => t.category === oldName ? { ...t, category: val } : t));
-        } else if (listType === 'inc_cat') {
+          const updatedExpCats = expenseCategories.map(c => c === oldName ? val : c);
+          setExpenseCategories(updatedExpCats);
+          localStorage.setItem('orthogro_exp_cats', JSON.stringify(updatedExpCats));
+
+          const updatedTxs = transactions.map(t => t.category === oldName ? { ...t, category: val } : t);
+          setTransactions(updatedTxs);
+
+          const updatedMemos = memos.map(m => m.category === oldName ? { ...m, category: val } : m);
+          setMemos(updatedMemos);
+          localStorage.setItem('orthogro_all_bazar_memos', JSON.stringify(updatedMemos));
+        } 
+        else if (listType === 'inc_cat') {
           if (incomeCategories.includes(val)) return alert('Already exists!');
-          setIncomeCategories(incomeCategories.map(c => c === oldName ? val : c));
-          setTransactions(transactions.map(t => t.category === oldName ? { ...t, category: val } : t));
+          const updatedIncCats = incomeCategories.map(c => c === oldName ? val : c);
+          setIncomeCategories(updatedIncCats);
+          localStorage.setItem('orthogro_inc_cats', JSON.stringify(updatedIncCats));
+
+          const updatedTxs = transactions.map(t => t.category === oldName ? { ...t, category: val } : t);
+          setTransactions(updatedTxs);
         }
+
         setEditingItem(null);
         setEditInputVal('');
       };
+
+
 
       const pressTimer = React.useRef(null);
       let isLongPress = false;
@@ -1128,6 +1144,9 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
       const renderGridByKey = (key) => {
         switch (key) {
           case 'netWorth':
+            let availableCashBalance = 0;
+wallets.forEach(w => availableCashBalance += (walletBalances[w] || 0));
+
             return visibleGrids.netWorth && (
               <div 
                 key="netWorth" 
@@ -1145,12 +1164,16 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
                   <span>{getFilterName(filters.netWorth)}</span>
                 </div>
                 <h2>৳ {absoluteNetWorth.toLocaleString()}</h2>
+                <div style={{ fontSize: '13px', color: '#CBD5E0', fontWeight: '600', marginBottom: '8px' }}>
+                  Available Balance: ৳ {availableCashBalance.toLocaleString()}
+                </div>
                 <div className="sub-row">
                   <span>×{nwFilteredTxs.length} transactions</span>
                   <span>{getPeriodLabel(filters.netWorth)}</span>
                 </div>
               </div>
             );
+
           case 'wallets':
             return visibleGrids.wallets && (
               <div key="wallets">
@@ -1336,7 +1359,6 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
         );
       }
 
-
       if (!currentUser && !isGuest) {
         return (
           <div style={{ minHeight: '100vh', width: '100%', background: '#F6F8F7', padding: '16px 12px', display: 'flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box' }}>
@@ -1388,10 +1410,6 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
                 {gridOrder.map(key => renderGridByKey(key))}
               </div>
             )}
-            
-            
- 
-          
           
           {/* --- BAZAR MEMO / NOTEPAD TAB --- */}
 {activeTab === 'memo' && (
@@ -1506,25 +1524,18 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
             setMemoNoteText('');
           }} className="btn-submit" style={{ flex: 1 }}>{editingMemoId ? 'Update Memo' : 'Save Memo'}</button>
 
-                    <button onClick={() => {
+          <button onClick={() => {
             const valid = memoRows.filter(r => r.name.trim() !== '' && r.price !== '');
             if (valid.length === 0) return alert('Please fill at least one item!');
             const total = memoRows.reduce((sum, r) => sum + (parseFloat(r.price) || 0), 0);
             
-            // আইটেম ও প্রাইসের বিবরণ তৈরি করা
             const itemsDescription = valid.map(i => `${i.name}: ৳${i.price}`).join(', ');
-            
-            // ট্রানজেকশনের টাইটেল হবে আপনার দেওয়া মেমো নোট (যদি খালি থাকে তবে ডিফল্ট Bazar)
-            const transactionTitle = memoNoteText && memoNoteText.trim() !== '' 
-              ? memoNoteText.trim() 
-              : `Bazar (${memoDate})`;
-            
-            // নোটের ভেতরে শুধু আইটেম ও প্রাইসের লিস্ট থাকবে
+            const transactionTitle = memoNoteText && memoNoteText.trim() !== '' ? memoNoteText.trim() : `Bazar (${memoDate})`;
             const finalNoteText = itemsDescription;
             
             const newTx = {
               id: Date.now(),
-              title: transactionTitle, // হোম পেজে টাইটেল হিসেবে মেমো নোট দেখাবে
+              title: transactionTitle,
               amount: total,
               type: 'expense',
               category: memoCategory,
@@ -1532,7 +1543,7 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
               date: new Date(memoDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }),
               rawDate: memoDate,
               resolved: true,
-              note: finalNoteText // নোটে শুধু আইটেম ও প্রাইস দেখাবে
+              note: finalNoteText
             };
             
             setTransactions([newTx, ...transactions]);
@@ -1766,19 +1777,12 @@ const [isEditingNote, setIsEditingNote] = React.useState(false);
   </div>
 )}
 
-          
-          
-          
-
-
             {/* --- CALCULATOR TAB --- */}
             {activeTab === 'calculator' && (
               <div className="page" style={{ width: '100%', height: '100%', maxHeight: '520px', padding: '0 12px', background: 'transparent', border: 'none', boxShadow: 'none', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', overflow: 'hidden', boxSizing: 'border-box', margin: '0 auto' }}>
                 <div className="calc-card" style={{ marginBottom: '0', width: '100%', maxWidth: '360px' }}>
                   <div className="calc-display">
-                    <div
-
- className="calc-screen-sub">{previousInput} {operation ? operation : ''}</div>
+                    <div className="calc-screen-sub">{previousInput} {operation ? operation : ''}</div>
                     <div className="calc-screen-main">{currentInput}</div>
                   </div>
 
