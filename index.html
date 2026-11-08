@@ -370,6 +370,9 @@ if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
       const [currentUser, setCurrentUser] = React.useState(null);
       const [authLoading, setAuthLoading] = React.useState(true);
       const [isGuest, setIsGuest] = React.useState(false);
+const [expression, setExpression] = React.useState('');
+const [currentVal, setCurrentVal] = React.useState('0');
+const [isCalculated, setIsCalculated] = React.useState(false);
 
 
 
@@ -1777,155 +1780,130 @@ wallets.forEach(w => availableCashBalance += (walletBalances[w] || 0));
   </div>
 )}
 
-            {/* --- CALCULATOR TAB --- */}
-            {activeTab === 'calculator' && (
-              <div className="page" style={{ width: '100%', height: '100%', maxHeight: '520px', padding: '0 12px', background: 'transparent', border: 'none', boxShadow: 'none', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', overflow: 'hidden', boxSizing: 'border-box', margin: '0 auto' }}>
-                <div className="calc-card" style={{ marginBottom: '0', width: '100%', maxWidth: '360px' }}>
-                  <div className="calc-display">
-                    <div className="calc-screen-sub">{previousInput} {operation ? operation : ''}</div>
-                    <div className="calc-screen-main">{currentInput}</div>
-                  </div>
+                                                                                                           {/* --- CALCULATOR TAB --- */}
+            {activeTab === 'calculator' && (() => {
+              const handleNum = (num) => {
+                if (isCalculated) {
+                  setCurrentVal(num);
+                  setExpression('');
+                  setIsCalculated(false);
+                  return;
+                }
+                setCurrentVal(prev => prev === '0' ? num : prev + num);
+              };
 
-                  <div className="calc-keypad">
-                    <button onClick={() => {
-                      setCurrentInput('0');
-                      setPreviousInput('');
-                      setOperation(null);
-                      setIsResultDisplayed(false);
-                    }} className="calc-btn-ac">AC</button>
-                    
-                    <button onClick={() => {
-                      if (isResultDisplayed) {
-                        setCurrentInput('0');
-                        setPreviousInput('');
-                        setOperation(null);
-                        setIsResultDisplayed(false);
-                        return;
-                      }
-                      if (currentInput.length === 1 || currentInput === 'Error') {
-                        setCurrentInput('0');
-                      } else {
-                        setCurrentInput(currentInput.slice(0, -1));
-                      }
-                    }} className="calc-btn-del">⌫</button>
+              const handleOperator = (op) => {
+                let fullExpr = expression;
+                
+                if (isCalculated) {
+                  fullExpr = currentVal + ' ' + op + ' ';
+                  setExpression(fullExpr);
+                  setIsCalculated(false);
+                } else {
+                  if (expression === '') {
+                    fullExpr = currentVal + ' ' + op + ' ';
+                  } else {
+                    fullExpr = expression + currentVal + ' ' + op + ' ';
+                  }
+                  
+                  // রিয়েল-টাইম ইন্টারমিডিয়েট হিসাব বের করা
+                  try {
+                    let sanitized = fullExpr.slice(0, -3).replace(/×/g, '*').replace(/÷/g, '/');
+                    let tempRes = Function('"use strict";return (' + sanitized + ')')();
+                    if (isFinite(tempRes)) {
+                      setCurrentVal(tempRes.toString());
+                    }
+                  } catch (e) {}
 
-                    <button onClick={() => {
-                      if (currentInput === '') return;
-                      setCurrentInput((parseFloat(currentInput) / 100).toString());
-                    }} className="calc-btn-op">%</button>
+                  setExpression(fullExpr);
+                }
+                // অপারেটর প্রেস করার পর কারنٹ ইনপুট রিসেট করা যাতে নতুন নাম্বার টাইপ করা যায়
+                setCurrentVal('0');
+              };
 
-                    <button onClick={() => {
-                      if (currentInput === '' && previousInput === '') return;
-                      if (previousInput !== '' && currentInput !== '' && !isResultDisplayed) {
-                        const prev = parseFloat(previousInput);
-                        const current = parseFloat(currentInput);
-                        let comp = prev / current;
-                        setPreviousInput(comp.toString());
-                      } else if (currentInput !== '') {
-                        setPreviousInput(currentInput);
-                      }
-                      setCurrentInput('');
-                      setOperation('÷');
-                      setIsResultDisplayed(false);
-                    }} className="calc-btn-op">÷</button>
+              const handleEquals = () => {
+                if (!expression && currentVal === '0') return;
+                const fullExpr = expression + currentVal;
+                
+                try {
+                  let sanitized = fullExpr.replace(/×/g, '*').replace(/÷/g, '/');
+                  let result = Function('"use strict";return (' + sanitized + ')')();
+                  
+                  if (!isFinite(result)) {
+                    setCurrentVal('Error');
+                  } else {
+                    setCurrentVal(result.toString());
+                  }
+                  setExpression(fullExpr + ' =');
+                  setIsCalculated(true);
+                } catch (err) {
+                  setCurrentVal('Error');
+                }
+              };
 
-                    {['7', '8', '9'].map(num => (
-                      <button key={num} onClick={() => {
-                        if (isResultDisplayed) { setCurrentInput('0'); setIsResultDisplayed(false); }
-                        setCurrentInput(prev => prev === '0' ? num : prev + num);
-                      }} className="calc-btn-num">{num}</button>
-                    ))}
+              const handleClear = () => {
+                setCurrentVal('0');
+                setExpression('');
+                setIsCalculated(false);
+              };
 
-                    <button onClick={() => {
-                      if (currentInput === '' && previousInput === '') return;
-                      if (previousInput !== '' && currentInput !== '' && !isResultDisplayed) {
-                        const prev = parseFloat(previousInput);
-                        const current = parseFloat(currentInput);
-                        let comp = prev * current;
-                        setPreviousInput(comp.toString());
-                      } else if (currentInput !== '') {
-                        setPreviousInput(currentInput);
-                      }
-                      setCurrentInput('');
-                      setOperation('×');
-                      setIsResultDisplayed(false);
-                    }} className="calc-btn-op">×</button>
+              const handleDelete = () => {
+                if (isCalculated) {
+                  handleClear();
+                  return;
+                }
+                setCurrentVal(prev => prev.length === 1 || prev === 'Error' ? '0' : prev.slice(0, -1));
+              };
 
-                    {['4', '5', '6'].map(num => (
-                      <button key={num} onClick={() => {
-                        if (isResultDisplayed) { setCurrentInput('0'); setIsResultDisplayed(false); }
-                        setCurrentInput(prev => prev === '0' ? num : prev + num);
-                      }} className="calc-btn-num">{num}</button>
-                    ))}
+              const handlePercent = () => {
+                const val = parseFloat(currentVal);
+                if (!isNaN(val)) {
+                  setCurrentVal((val / 100).toString());
+                }
+              };
 
-                    <button onClick={() => {
-                      if (currentInput === '' && previousInput === '') return;
-                      if (previousInput !== '' && currentInput !== '' && !isResultDisplayed) {
-                        const prev = parseFloat(previousInput);
-                        const current = parseFloat(currentInput);
-                        let comp = prev - current;
-                        setPreviousInput(comp.toString());
-                      } else if (currentInput !== '') {
-                        setPreviousInput(currentInput);
-                      }
-                      setCurrentInput('');
-                      setOperation('-');
-                      setIsResultDisplayed(false);
-                    }} className="calc-btn-op">-</button>
+              return (
+                <div className="page" style={{ width: '100%', height: '100%', maxHeight: '520px', padding: '0 12px', background: 'transparent', border: 'none', boxShadow: 'none', display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', alignItems: 'center', overflow: 'hidden', boxSizing: 'border-box', margin: '0 auto' }}>
+                  <div className="calc-card" style={{ marginBottom: '0', width: '100%', maxWidth: '360px' }}>
+                    <div className="calc-display">
+                      <div className="calc-screen-sub">{expression}</div>
+                      <div className="calc-screen-main">{currentVal}</div>
+                    </div>
 
-                    {['1', '2', '3'].map(num => (
-                      <button key={num} onClick={() => {
-                        if (isResultDisplayed) { setCurrentInput('0'); setIsResultDisplayed(false); }
-                        setCurrentInput(prev => prev === '0' ? num : prev + num);
-                      }} className="calc-btn-num">{num}</button>
-                    ))}
+                    <div className="calc-keypad">
+                      <button onClick={handleClear} className="calc-btn-ac">AC</button>
+                      <button onClick={handleDelete} className="calc-btn-del">⌫</button>
+                      <button onClick={handlePercent} className="calc-btn-op">%</button>
+                      <button onClick={() => handleOperator('÷')} className="calc-btn-op">÷</button>
 
-                    <button onClick={() => {
-                      if (currentInput === '' && previousInput === '') return;
-                      if (previousInput !== '' && currentInput !== '' && !isResultDisplayed) {
-                        const prev = parseFloat(previousInput);
-                        const current = parseFloat(currentInput);
-                        let comp = prev + current;
-                        setPreviousInput(comp.toString());
-                      } else if (currentInput !== '') {
-                        setPreviousInput(currentInput);
-                      }
-                      setCurrentInput('');
-                      setOperation('+');
-                      setIsResultDisplayed(false);
-                    }} className="calc-btn-op">+</button>
+                      {['7', '8', '9'].map(num => (
+                        <button key={num} onClick={() => handleNum(num)} className="calc-btn-num">{num}</button>
+                      ))}
+                      <button onClick={() => handleOperator('×')} className="calc-btn-op">×</button>
 
-                    <button onClick={() => {
-                      if (isResultDisplayed) { setCurrentInput('0'); setIsResultDisplayed(false); }
-                      setCurrentInput(prev => prev === '0' ? '0' : prev + '0');
-                    }} className="calc-btn-num" style={{ gridColumn: 'span 2' }}>0</button>
+                      {['4', '5', '6'].map(num => (
+                        <button key={num} onClick={() => handleNum(num)} className="calc-btn-num">{num}</button>
+                      ))}
+                      <button onClick={() => handleOperator('-')} className="calc-btn-op">-</button>
 
-                    <button onClick={() => {
-                      if (currentInput.includes('.')) return;
-                      setCurrentInput(prev => prev + '.');
-                    }} className="calc-btn-num">.</button>
+                      {['1', '2', '3'].map(num => (
+                        <button key={num} onClick={() => handleNum(num)} className="calc-btn-num">{num}</button>
+                      ))}
+                      <button onClick={() => handleOperator('+')} className="calc-btn-op">+</button>
 
-                    <button onClick={() => {
-                      if (operation === null || previousInput === '' || currentInput === '') return;
-                      const prev = parseFloat(previousInput);
-                      const current = parseFloat(currentInput);
-                      let computation;
-                      switch (operation) {
-                        case '+': computation = prev + current; break;
-                        case '-': computation = prev - current; break;
-                        case '×': computation = prev * current; break;
-                        case '÷': computation = current === 0 ? 'Error' : prev / current; break;
-                        default: return;
-                      }
-                      setCurrentInput(computation.toString());
-                      setPreviousInput('');
-                      setOperation(null);
-                      setIsResultDisplayed(true);
-                    }} className="calc-btn-eq">=</button>
+                      <button onClick={() => handleNum('0')} className="calc-btn-num" style={{ gridColumn: 'span 2' }}>0</button>
+                      <button onClick={() => !currentVal.includes('.') && setCurrentVal(prev => prev + '.')} className="calc-btn-num">.</button>
+                      <button onClick={handleEquals} className="calc-btn-eq">=</button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
+
+
+
+
+
 
             {activeTab === 'transactions' && (
               <div className="page">
