@@ -1,0 +1,522 @@
+{
+  "entities": {
+    "UserWorkspace": {
+      "title": "UserWorkspace",
+      "description": "User-owned workspace preferences, accounts, categories, and dashboard layout.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the workspace owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "wallets": {
+          "type": "array",
+          "description": "Ordered list of wallet account names (max 50)."
+        },
+        "savingsList": {
+          "type": "array",
+          "description": "Ordered list of savings and investment account names (max 50)."
+        },
+        "expenseCategories": {
+          "type": "array",
+          "description": "Ordered list of expense categories (max 50)."
+        },
+        "incomeCategories": {
+          "type": "array",
+          "description": "Ordered list of income categories (max 50)."
+        },
+        "currency": {
+          "type": "string",
+          "description": "Display currency symbol.",
+          "enum": ["৳", "$", "€", "£", "SAR", "₹"]
+        },
+        "themeMode": {
+          "type": "string",
+          "description": "Selected theme mode.",
+          "enum": ["light", "dark", "system"]
+        },
+        "language": {
+          "type": "string",
+          "description": "Preferred UI language.",
+          "enum": ["en", "bn"]
+        },
+        "gridOrder": {
+          "type": "array",
+          "description": "Ordered home dashboard section keys (max 10)."
+        },
+        "visibleGrids": {
+          "type": "object",
+          "description": "Visibility toggles for home dashboard sections."
+        },
+        "expenseSubCategories": {
+          "type": "object",
+          "description": "Map of expense category names to ordered sub-category arrays."
+        },
+        "categoryStyles": {
+          "type": "object",
+          "description": "Map of category keys to user-customized icon and color objects."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of last update."
+        }
+      },
+      "required": ["ownerId", "wallets", "savingsList", "expenseCategories", "incomeCategories", "updatedAt"]
+    },
+    "Transaction": {
+      "title": "Transaction",
+      "description": "A single personal finance ledger entry owned by a user.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the transaction owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "description": "Transaction description or payee.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "amount": {
+          "type": "number",
+          "description": "Monetary amount."
+        },
+        "type": {
+          "type": "string",
+          "description": "Ledger entry type.",
+          "enum": ["expense", "income", "transfer", "lend", "borrow", "partial_payment", "correction", "adjustment"]
+        },
+        "category": {
+          "type": "string",
+          "description": "Category name.",
+          "maxLength": 100
+        },
+        "subCategory": {
+          "type": "string",
+          "description": "Optional expense sub-category name.",
+          "maxLength": 100
+        },
+        "wallet": {
+          "type": "string",
+          "description": "Primary wallet or savings account name.",
+          "maxLength": 100
+        },
+        "fromWallet": {
+          "type": "string",
+          "description": "Source wallet for transfer.",
+          "maxLength": 100
+        },
+        "toWallet": {
+          "type": "string",
+          "description": "Destination wallet for transfer.",
+          "maxLength": 100
+        },
+        "charge": {
+          "type": "number",
+          "description": "Transfer fee charge."
+        },
+        "remainingBalance": {
+          "type": "number",
+          "description": "Outstanding balance for lend/borrow transactions."
+        },
+        "parentId": {
+          "type": "string",
+          "description": "Parent lend/borrow transaction ID for partial payments.",
+          "maxLength": 128
+        },
+        "parentTitle": {
+          "type": "string",
+          "description": "Parent lend/borrow title for partial payments.",
+          "maxLength": 200
+        },
+        "isLendPay": {
+          "type": "boolean",
+          "description": "True if partial payment is receiving lent money."
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional detailed note or itemized memo summary.",
+          "maxLength": 2000
+        },
+        "date": {
+          "type": "string",
+          "description": "Formatted display date.",
+          "maxLength": 40
+        },
+        "rawDate": {
+          "type": "string",
+          "description": "ISO YYYY-MM-DD local date string.",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "resolved": {
+          "type": "boolean",
+          "description": "Whether a lend/borrow entry is fully settled."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server update timestamp."
+        }
+      },
+      "required": ["ownerId", "title", "amount", "type", "rawDate", "date", "resolved", "createdAt", "updatedAt"]
+    },
+    "BazarMemo": {
+      "title": "BazarMemo",
+      "description": "Itemized grocery/shopping memo.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "date": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "wallet": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "note": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "items": {
+          "type": "array",
+          "description": "List of itemized products and prices (max 200)."
+        },
+        "total": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "date", "category", "wallet", "items", "total", "createdAt", "updatedAt"]
+    },
+    "UserNote": {
+      "title": "UserNote",
+      "description": "Personal financial notepad entry.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "content": {
+          "type": "string",
+          "maxLength": 20000
+        },
+        "date": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "title", "content", "date", "createdAt", "updatedAt"]
+    },
+    "BudgetGoal": {
+      "title": "BudgetGoal",
+      "description": "Monthly spending limit for an expense category.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "monthlyLimit": {
+          "type": "number",
+          "description": "Positive monthly spending limit."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "category", "monthlyLimit", "createdAt", "updatedAt"]
+    },
+    "SavingGoal": {
+      "title": "SavingGoal",
+      "description": "Monthly or fixed-period saving target optionally linked to a savings account.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "account": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "periodType": {
+          "type": "string",
+          "enum": ["monthly", "period"]
+        },
+        "targetAmount": {
+          "type": "number",
+          "description": "Positive target saving amount."
+        },
+        "startDate": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "endDate": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "title", "periodType", "targetAmount", "createdAt", "updatedAt"]
+    },
+    "WorkspaceMember": {
+      "title": "WorkspaceMember",
+      "description": "Authorized partner membership granting viewer or editor access to an owner workspace.",
+      "type": "object",
+      "properties": {
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerEmail": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "ownerName": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "memberUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "memberEmail": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "memberName": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "role": {
+          "type": "string",
+          "enum": ["viewer", "editor"]
+        },
+        "inviteId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerUid",
+        "ownerEmail",
+        "ownerName",
+        "memberUid",
+        "memberEmail",
+        "memberName",
+        "role",
+        "inviteId",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ShareInvite": {
+      "title": "ShareInvite",
+      "description": "Email or share-code invitation allowing another Google user to view or co-edit a workspace.",
+      "type": "object",
+      "properties": {
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerEmail": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "ownerName": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "inviteType": {
+          "type": "string",
+          "enum": ["email", "code"]
+        },
+        "targetEmail": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "code": {
+          "type": "string",
+          "maxLength": 20
+        },
+        "role": {
+          "type": "string",
+          "enum": ["viewer", "editor"]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pending", "accepted", "declined", "revoked"]
+        },
+        "partnerUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "partnerEmail": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "partnerName": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "ownerUid",
+        "ownerEmail",
+        "ownerName",
+        "inviteType",
+        "targetEmail",
+        "code",
+        "role",
+        "status",
+        "partnerUid",
+        "partnerEmail",
+        "partnerName",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserWorkspace" },
+      "description": "Stores workspace preferences, wallets, savings, and categories for a user."
+    },
+    "/users/{userId}/transactions/{txId}": {
+      "schema": { "$ref": "#/entities/Transaction" },
+      "description": "Subcollection of financial transactions owned by the user."
+    },
+    "/users/{userId}/memos/{memoId}": {
+      "schema": { "$ref": "#/entities/BazarMemo" },
+      "description": "Subcollection of itemized bazar memos owned by the user."
+    },
+    "/users/{userId}/notes/{noteId}": {
+      "schema": { "$ref": "#/entities/UserNote" },
+      "description": "Subcollection of personal notes owned by the user."
+    },
+    "/users/{userId}/budgets/{budgetId}": {
+      "schema": { "$ref": "#/entities/BudgetGoal" },
+      "description": "Subcollection of monthly category spending limits owned by the user."
+    },
+    "/users/{userId}/savingGoals/{goalId}": {
+      "schema": { "$ref": "#/entities/SavingGoal" },
+      "description": "Subcollection of monthly or custom-period saving goals owned by the user."
+    },
+    "/users/{userId}/members/{memberUid}": {
+      "schema": { "$ref": "#/entities/WorkspaceMember" },
+      "description": "Authorized partner members allowed to view or co-edit the workspace."
+    },
+    "/shareInvites/{inviteId}": {
+      "schema": { "$ref": "#/entities/ShareInvite" },
+      "description": "Email and share-code invitations for live partner workspace sharing."
+    }
+  }
+}
