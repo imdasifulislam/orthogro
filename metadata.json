@@ -1,0 +1,10 @@
+{
+  "name": "OrthoGro",
+  "description": "Personal finance, multi-wallet ledger, debt tracker, bazar memo, and wealth management app.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
