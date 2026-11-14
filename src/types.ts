@@ -1,0 +1,207 @@
+export type TransactionType =
+  | 'expense'
+  | 'income'
+  | 'transfer'
+  | 'lend'
+  | 'borrow'
+  | 'partial_payment'
+  | 'correction'
+  | 'adjustment';
+
+export type CurrencySymbol = '৳' | '$' | '€' | '£' | 'SAR' | '₹';
+
+export type ThemeMode = 'light' | 'dark' | 'system';
+
+export type AppLanguage = 'en' | 'bn';
+
+export type PeriodFilter = 'all' | 'monthly' | 'previous_month' | 'yearly' | 'custom';
+
+export type GridKey =
+  | 'netWorth'
+  | 'wallets'
+  | 'savings'
+  | 'incExp'
+  | 'lendBorrow'
+  | 'budgetGoals'
+  | 'categoryReport'
+  | 'categoryPieChart'
+  | 'transactions';
+
+export type ActiveTab = 'home' | 'memo' | 'transactions' | 'calculator' | 'settings';
+
+export type SettingsView =
+  | 'menu'
+  | 'accounts_categories'
+  | 'wallets'
+  | 'savings'
+  | 'exp_cat'
+  | 'inc_cat'
+  | 'tax_report'
+  | 'shared_access';
+
+export type CategoryKind = 'exp' | 'inc' | 'sav' | 'wal';
+
+export interface CategoryStyle {
+  icon: string;
+  color: string;
+}
+
+export interface Transaction {
+  id: string;
+  ownerId?: string;
+  title: string;
+  amount: number;
+  type: TransactionType;
+  category?: string;
+  subCategory?: string;
+  wallet?: string;
+  fromWallet?: string;
+  toWallet?: string;
+  charge?: number;
+  remainingBalance?: number;
+  parentId?: string;
+  parentTitle?: string;
+  isLendPay?: boolean;
+  note?: string;
+  date: string;
+  rawDate: string;
+  resolved: boolean;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface TransactionDraft {
+  id: string | null;
+  title: string;
+  amount: string;
+  type: 'expense' | 'income' | 'transfer' | 'lend' | 'borrow';
+  category: string;
+  subCategory: string;
+  wallet: string;
+  fromWallet: string;
+  toWallet: string;
+  useCharge: boolean;
+  charge: string;
+  date: string;
+  note: string;
+}
+
+export interface BazarMemoItem {
+  name: string;
+  price: number;
+}
+
+export interface BazarMemo {
+  id: string;
+  ownerId?: string;
+  date: string;
+  category: string;
+  wallet: string;
+  note?: string;
+  items: BazarMemoItem[];
+  total: number;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface UserNote {
+  id: string;
+  ownerId?: string;
+  title: string;
+  content: string;
+  date: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface BudgetGoal {
+  id: string;
+  ownerId?: string;
+  category: string;
+  monthlyLimit: number;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export type SavingGoalPeriodType = 'monthly' | 'period';
+
+export interface SavingGoal {
+  id: string;
+  ownerId?: string;
+  title: string;
+  account?: string;
+  periodType: SavingGoalPeriodType;
+  targetAmount: number;
+  startDate?: string;
+  endDate?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface WorkspaceSettings {
+  wallets: string[];
+  savingsList: string[];
+  expenseCategories: string[];
+  incomeCategories: string[];
+  expenseSubCategories?: Record<string, string[]>;
+  categoryStyles?: Record<string, CategoryStyle>;
+  currency: CurrencySymbol;
+  themeMode: ThemeMode;
+  language?: AppLanguage;
+  gridOrder: GridKey[];
+  visibleGrids: Record<GridKey, boolean>;
+}
+
+export interface ToastMessage {
+  id: string;
+  type: 'success' | 'error' | 'info';
+  message: string;
+}
+
+export interface ConfirmDialogState {
+  title: string;
+  message: string;
+  confirmLabel?: string;
+  destructive?: boolean;
+  onConfirm: () => void | Promise<void>;
+}
+
+export type FilterCardKey = 'netWorth' | 'lendBorrow' | 'incExp';
+
+export type DrilldownType =
+  | 'netWorth'
+  | 'wallet'
+  | 'savings'
+  | 'income'
+  | 'expense'
+  | 'lend'
+  | 'borrow';
+
+export type ShareRole = 'viewer' | 'editor';
+export type ShareInviteType = 'email' | 'code';
+export type ShareInviteStatus = 'pending' | 'accepted' | 'declined' | 'revoked';
+
+export interface ShareInvite {
+  id: string;
+  ownerUid: string;
+  ownerEmail: string;
+  ownerName: string;
+  inviteType: ShareInviteType;
+  targetEmail: string;
+  code: string;
+  role: ShareRole;
+  status: ShareInviteStatus;
+  partnerUid: string;
+  partnerEmail: string;
+  partnerName: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface ActiveSharedWorkspace {
+  inviteId: string;
+  ownerUid: string;
+  ownerName: string;
+  ownerEmail: string;
+  role: ShareRole;
+}
