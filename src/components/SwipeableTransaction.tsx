@@ -13,6 +13,7 @@ interface SwipeableTransactionProps {
   onEdit: (tx: Transaction) => void;
   onResolveDebt: (tx: Transaction) => void;
   onInspectDebt?: (tx: Transaction) => void;
+  onRowSwipeClaim?: () => void;
 }
 
 export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
@@ -23,32 +24,59 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
   onEdit,
   onResolveDebt,
   onInspectDebt,
+  onRowSwipeClaim,
 }) => {
   const { t } = useTranslation();
   const [offsetX, setOffsetX] = useState(0);
   const [isSwiped, setIsSwiped] = useState(false);
   const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const axisRef = useRef<'x' | 'y' | null>(null);
+  const claimedRef = useRef(false);
   const draggingRef = useRef(false);
 
-  const handleStart = (clientX: number) => {
+  const handleStart = (clientX: number, clientY: number) => {
     startXRef.current = clientX;
+    startYRef.current = clientY;
+    axisRef.current = null;
+    claimedRef.current = false;
     draggingRef.current = true;
   };
 
-  const handleMove = (clientX: number) => {
+  const handleMove = (
+    clientX: number,
+    clientY: number,
+    stopPropagation: () => void
+  ) => {
     if (!draggingRef.current) return;
-    const diff = clientX - startXRef.current;
-    if (diff < -5 && diff > -130) {
-      setOffsetX(diff);
-    } else if (diff > 5 && isSwiped) {
-      setOffsetX(0);
-      setIsSwiped(false);
+    const diffX = clientX - startXRef.current;
+    const diffY = clientY - startYRef.current;
+
+    if (!axisRef.current && (Math.abs(diffX) > 7 || Math.abs(diffY) > 7)) {
+      axisRef.current = Math.abs(diffX) > Math.abs(diffY) ? 'x' : 'y';
+    }
+    if (axisRef.current !== 'x') return;
+
+    if ((!isSwiped && diffX < -5) || (isSwiped && diffX > 5)) {
+      if (!claimedRef.current) {
+        claimedRef.current = true;
+        onRowSwipeClaim?.();
+      }
+      stopPropagation();
+      if (diffX < -5 && diffX > -130) {
+        setOffsetX(diffX);
+      } else if (diffX > 5 && isSwiped) {
+        setOffsetX(0);
+        setIsSwiped(false);
+      }
     }
   };
 
   const handleEnd = () => {
     if (!draggingRef.current) return;
     draggingRef.current = false;
+    axisRef.current = null;
+    claimedRef.current = false;
     if (offsetX < -55) {
       setIsSwiped(true);
       setOffsetX(-112);
@@ -184,12 +212,17 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
 
       {/* Foreground card */}
       <div
-        onTouchStart={(e) => handleStart(e.touches[0].clientX)}
-        onTouchMove={(e) => handleMove(e.touches[0].clientX)}
+        onTouchStart={(e) => handleStart(e.touches[0].clientX, e.touches[0].clientY)}
+        onTouchMove={(e) =>
+          handleMove(e.touches[0].clientX, e.touches[0].clientY, () => e.stopPropagation())
+        }
         onTouchEnd={handleEnd}
-        onMouseDown={(e) => handleStart(e.clientX)}
+        onTouchCancel={handleEnd}
+        onMouseDown={(e) => {
+          if (e.button === 0) handleStart(e.clientX, e.clientY);
+        }}
         onMouseMove={(e) => {
-          if (e.buttons === 1) handleMove(e.clientX);
+          if (e.buttons === 1) handleMove(e.clientX, e.clientY, () => e.stopPropagation());
         }}
         onMouseUp={handleEnd}
         onMouseLeave={handleEnd}

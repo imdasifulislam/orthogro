@@ -162,12 +162,21 @@ export const FilterPeriodModal: React.FC<{
   if (!activeFilterCard) return null;
   const current = filters[activeFilterCard];
 
-  const presets: Array<{ key: PeriodFilter; label: string }> = [
-    { key: 'all', label: t.common.allTime },
-    { key: 'monthly', label: t.common.thisMonth },
-    { key: 'previous_month', label: t.common.previousMonth },
-    { key: 'yearly', label: t.common.currentYear },
-  ];
+  const isCategoryCard =
+    activeFilterCard === 'categoryReport' || activeFilterCard === 'categoryPieChart';
+
+  const presets: Array<{ key: PeriodFilter; label: string }> = isCategoryCard
+    ? [
+        { key: 'monthly', label: t.common.monthlyByMonth },
+        { key: 'yearly', label: t.common.yearlyByYear },
+        { key: 'all', label: t.common.allTime },
+      ]
+    : [
+        { key: 'all', label: t.common.allTime },
+        { key: 'monthly', label: t.common.thisMonth },
+        { key: 'previous_month', label: t.common.previousMonth },
+        { key: 'yearly', label: t.common.currentYear },
+      ];
 
   return (
     <div
@@ -214,18 +223,28 @@ export const FilterPeriodModal: React.FC<{
             {t.modals.customDateRange}
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <input
-              type="date"
-              value={customDateFrom}
-              onChange={(e) => setCustomDateFrom(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-            />
-            <input
-              type="date"
-              value={customDateTo}
-              onChange={(e) => setCustomDateTo(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-            />
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                {t.modals.startDateLabel}
+              </label>
+              <input
+                type="date"
+                value={customDateFrom}
+                onChange={(e) => setCustomDateFrom(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                {t.modals.endDateLabel}
+              </label>
+              <input
+                type="date"
+                value={customDateTo}
+                onChange={(e) => setCustomDateTo(e.target.value)}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              />
+            </div>
           </div>
           <button
             type="button"
