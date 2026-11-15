@@ -100,7 +100,7 @@ export const CalculatorView: React.FC = () => {
   };
 
   return (
-    <div className="mx-auto flex w-full max-w-md flex-col justify-center py-2">
+    <div className="my-auto mx-auto flex w-full max-w-md flex-col justify-center pt-4 pb-2 sm:py-6">
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         {/* Display */}
         <div className="flex min-h-[132px] flex-col justify-end border-b border-slate-200 bg-slate-50 px-5 py-4 text-right dark:border-slate-800 dark:bg-slate-950/60">

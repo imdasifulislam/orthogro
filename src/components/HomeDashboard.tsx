@@ -1,7 +1,9 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeftRight,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   PieChart,
   PiggyBank,
   Search,
@@ -27,13 +29,16 @@ import { CategoryIconBadge, getCategoryStyle } from '../utils/categoryVisuals';
 import {
   computeSavingGoalProgress,
   filterTransactionsByPeriod,
+  formatDisplayDate,
   formatMoney,
+  formatShortRangeLabel,
   getFilterName,
   getPeriodLabel,
+  getShiftedCustomRange,
   parseLocalDate,
 } from '../utils/format';
 import { CategoryPieChart } from './CategoryPieChart';
-import { SlidableMonthBar } from './SlidableMonthBar';
+import { SlidableCustomBar, SlidableMonthBar, SlidableYearBar } from './SlidableMonthBar';
 import { SwipeableTransaction } from './SwipeableTransaction';
 
 const EXPENSE_CHART_COLORS = [
@@ -56,46 +61,130 @@ const INCOME_CHART_COLORS = [
   '#64748B',
 ];
 
-function computeMonthlyCategoryReport(
+function computeCategoryReport(
   transactions: Transaction[],
+  filterMode: PeriodFilter,
   monthOffset: number,
-  lang: AppLanguage
+  yearOffset: number,
+  customOffset: number,
+  customFrom: string,
+  customTo: string,
+  lang: AppLanguage,
+  t: Translations
 ) {
   const now = new Date();
-  const targetDate = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
-  const targetMonth = targetDate.getMonth();
-  const targetYear = targetDate.getFullYear();
-
+  const locale = lang === 'bn' ? 'bn-BD' : 'en-US';
   const expenseByCategory: Record<string, number> = {};
   const incomeByCategory: Record<string, number> = {};
   let totalExpense = 0;
   let totalIncome = 0;
 
-  transactions.forEach((t) => {
-    if (!t.rawDate) return;
-    const d = parseLocalDate(t.rawDate);
-    if (d.getMonth() !== targetMonth || d.getFullYear() !== targetYear) return;
+  let periodTitle = '';
+  let headerBadge = '';
+  let emptyPeriodLabel = '';
 
-    if (t.type === 'expense') {
-      const cat = t.category || 'Others';
-      expenseByCategory[cat] = (expenseByCategory[cat] || 0) + t.amount;
-      totalExpense += t.amount;
-    } else if (t.type === 'income') {
-      const cat = t.category || 'Others';
-      incomeByCategory[cat] = (incomeByCategory[cat] || 0) + t.amount;
-      totalIncome += t.amount;
-    }
-  });
+  if (filterMode === 'monthly') {
+    const targetDate = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
+    const targetMonth = targetDate.getMonth();
+    const targetYear = targetDate.getFullYear();
+
+    transactions.forEach((tx) => {
+      if (!tx.rawDate) return;
+      const d = parseLocalDate(tx.rawDate);
+      if (d.getMonth() !== targetMonth || d.getFullYear() !== targetYear) return;
+
+      if (tx.type === 'expense') {
+        const cat = tx.category || 'Others';
+        expenseByCategory[cat] = (expenseByCategory[cat] || 0) + tx.amount;
+        totalExpense += tx.amount;
+      } else if (tx.type === 'income') {
+        const cat = tx.category || 'Others';
+        incomeByCategory[cat] = (incomeByCategory[cat] || 0) + tx.amount;
+        totalIncome += tx.amount;
+      }
+    });
+
+    periodTitle = targetDate.toLocaleDateString(locale, {
+      month: 'long',
+      year: 'numeric',
+    });
+    headerBadge = getMonthBadgeLabel(monthOffset, periodTitle, t);
+    emptyPeriodLabel = periodTitle;
+  } else if (filterMode === 'yearly') {
+    const targetYear = now.getFullYear() + yearOffset;
+
+    transactions.forEach((tx) => {
+      if (!tx.rawDate) return;
+      const d = parseLocalDate(tx.rawDate);
+      if (d.getFullYear() !== targetYear) return;
+
+      if (tx.type === 'expense') {
+        const cat = tx.category || 'Others';
+        expenseByCategory[cat] = (expenseByCategory[cat] || 0) + tx.amount;
+        totalExpense += tx.amount;
+      } else if (tx.type === 'income') {
+        const cat = tx.category || 'Others';
+        incomeByCategory[cat] = (incomeByCategory[cat] || 0) + tx.amount;
+        totalIncome += tx.amount;
+      }
+    });
+
+    const yearDisplay = new Date(targetYear, 0, 1).toLocaleDateString(locale, {
+      year: 'numeric',
+    });
+    periodTitle =
+      lang === 'bn' ? `জানুয়ারি – ডিসেম্বর ${yearDisplay}` : `Jan – Dec ${yearDisplay}`;
+    headerBadge = yearOffset === 0 ? t.common.thisYear : yearDisplay;
+    emptyPeriodLabel = periodTitle;
+  } else if (filterMode === 'custom' && customFrom && customTo) {
+    const { from, to } = getShiftedCustomRange(customFrom, customTo, customOffset);
+
+    transactions.forEach((tx) => {
+      if (!tx.rawDate) return;
+      if (tx.rawDate < from || tx.rawDate > to) return;
+
+      if (tx.type === 'expense') {
+        const cat = tx.category || 'Others';
+        expenseByCategory[cat] = (expenseByCategory[cat] || 0) + tx.amount;
+        totalExpense += tx.amount;
+      } else if (tx.type === 'income') {
+        const cat = tx.category || 'Others';
+        incomeByCategory[cat] = (incomeByCategory[cat] || 0) + tx.amount;
+        totalIncome += tx.amount;
+      }
+    });
+
+    periodTitle =
+      from === to
+        ? formatDisplayDate(from, lang)
+        : `${formatDisplayDate(from, lang)} – ${formatDisplayDate(to, lang)}`;
+    headerBadge = formatShortRangeLabel(from, to, lang);
+    emptyPeriodLabel = periodTitle;
+  } else {
+    transactions.forEach((tx) => {
+      if (tx.type === 'expense') {
+        const cat = tx.category || 'Others';
+        expenseByCategory[cat] = (expenseByCategory[cat] || 0) + tx.amount;
+        totalExpense += tx.amount;
+      } else if (tx.type === 'income') {
+        const cat = tx.category || 'Others';
+        incomeByCategory[cat] = (incomeByCategory[cat] || 0) + tx.amount;
+        totalIncome += tx.amount;
+      }
+    });
+
+    headerBadge = getFilterName(filterMode, lang);
+    periodTitle = getPeriodLabel(filterMode, customFrom, customTo, lang);
+    emptyPeriodLabel = headerBadge;
+  }
 
   const sortedExpenses = Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1]);
   const sortedIncomes = Object.entries(incomeByCategory).sort((a, b) => b[1] - a[1]);
-  const monthTitle = targetDate.toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US', {
-    month: 'long',
-    year: 'numeric',
-  });
 
   return {
-    monthTitle,
+    periodTitle,
+    headerBadge,
+    emptyPeriodLabel,
     sortedExpenses,
     sortedIncomes,
     totalExpense,
@@ -283,12 +372,19 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [isSwipingGoal, setIsSwipingGoal] = useState(false);
   const [categoryView, setCategoryView] = useState<'expense' | 'income'>('expense');
   const [categoryMonthOffset, setCategoryMonthOffset] = useState(0);
+  const [categoryYearOffset, setCategoryYearOffset] = useState(0);
+  const [categoryCustomOffset, setCategoryCustomOffset] = useState(0);
   const [categorySwipeX, setCategorySwipeX] = useState(0);
   const [isSwipingCategory, setIsSwipingCategory] = useState(false);
   const [pieView, setPieView] = useState<'expense' | 'income'>('expense');
   const [pieMonthOffset, setPieMonthOffset] = useState(0);
+  const [pieYearOffset, setPieYearOffset] = useState(0);
+  const [pieCustomOffset, setPieCustomOffset] = useState(0);
   const [pieSwipeX, setPieSwipeX] = useState(0);
   const [isSwipingPie, setIsSwipingPie] = useState(false);
+  const [txMonthOffset, setTxMonthOffset] = useState(0);
+  const [txSwipeX, setTxSwipeX] = useState(0);
+  const [isSwipingTx, setIsSwipingTx] = useState(false);
   const [activeExpenseChartCategory, setActiveExpenseChartCategory] = useState<string | null>(null);
   const [activeIncomeChartCategory, setActiveIncomeChartCategory] = useState<string | null>(null);
   const goalSwipeRef = useRef<{
@@ -310,23 +406,126 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     dragging: boolean;
     axis: 'x' | 'y' | null;
   }>({ startX: 0, startY: 0, dragging: false, axis: null });
+  const txSwipeRef = useRef<{
+    startX: number;
+    startY: number;
+    dragging: boolean;
+    axis: 'x' | 'y' | null;
+  }>({ startX: 0, startY: 0, dragging: false, axis: null });
   const didPieSwipeRef = useRef(false);
   const pressTimerRef = useRef<number | null>(null);
+  const pressOriginRef = useRef<{ x: number; y: number } | null>(null);
   const isLongPressRef = useRef(false);
-
-  const handlePressStart = (card: FilterCardKey) => {
-    isLongPressRef.current = false;
-    pressTimerRef.current = window.setTimeout(() => {
-      isLongPressRef.current = true;
-      onOpenFilterCard(card);
-    }, 480);
-  };
 
   const handlePressEnd = () => {
     if (pressTimerRef.current !== null) {
       window.clearTimeout(pressTimerRef.current);
       pressTimerRef.current = null;
     }
+    pressOriginRef.current = null;
+  };
+
+  const handlePressStart = (card: FilterCardKey, clientX?: number, clientY?: number) => {
+    handlePressEnd();
+    isLongPressRef.current = false;
+    pressOriginRef.current =
+      clientX !== undefined && clientY !== undefined ? { x: clientX, y: clientY } : null;
+    pressTimerRef.current = window.setTimeout(() => {
+      pressTimerRef.current = null;
+      pressOriginRef.current = null;
+      isLongPressRef.current = true;
+      if (categorySwipeRef.current.dragging) {
+        categorySwipeRef.current.dragging = false;
+        categorySwipeRef.current.axis = null;
+        setIsSwipingCategory(false);
+        setCategorySwipeX(0);
+      }
+      if (pieSwipeRef.current.dragging) {
+        pieSwipeRef.current.dragging = false;
+        pieSwipeRef.current.axis = null;
+        setIsSwipingPie(false);
+        setPieSwipeX(0);
+      }
+      if (txSwipeRef.current.dragging) {
+        txSwipeRef.current.dragging = false;
+        txSwipeRef.current.axis = null;
+        setIsSwipingTx(false);
+        setTxSwipeX(0);
+      }
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(12);
+      }
+      onOpenFilterCard(card);
+    }, 480);
+  };
+
+  const handlePressMove = (clientX: number, clientY: number) => {
+    if (pressTimerRef.current === null || !pressOriginRef.current) return;
+    const dx = clientX - pressOriginRef.current.x;
+    const dy = clientY - pressOriginRef.current.y;
+    if (Math.hypot(dx, dy) > 8) {
+      handlePressEnd();
+    }
+  };
+
+  useEffect(() => {
+    setCategoryCustomOffset(0);
+    setPieCustomOffset(0);
+  }, [customDateFrom, customDateTo]);
+
+  useEffect(() => {
+    setActiveExpenseChartCategory(null);
+    setActiveIncomeChartCategory(null);
+  }, [filters.categoryPieChart, pieYearOffset, pieCustomOffset, customDateFrom, customDateTo]);
+
+  const cancelTxSwipe = () => {
+    if (txSwipeRef.current.dragging) {
+      txSwipeRef.current.dragging = false;
+      txSwipeRef.current.axis = null;
+      setIsSwipingTx(false);
+      setTxSwipeX(0);
+    }
+  };
+
+  const handleTxSwipeStart = (clientX: number, clientY: number) => {
+    txSwipeRef.current = {
+      startX: clientX,
+      startY: clientY,
+      dragging: true,
+      axis: null,
+    };
+    setIsSwipingTx(true);
+  };
+
+  const handleTxSwipeMove = (clientX: number, clientY: number) => {
+    const state = txSwipeRef.current;
+    if (!state.dragging) return;
+    const dx = clientX - state.startX;
+    const dy = clientY - state.startY;
+
+    if (!state.axis && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+      state.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    }
+    if (state.axis !== 'x') return;
+
+    setTxSwipeX(Math.max(-96, Math.min(96, dx * 0.45)));
+  };
+
+  const handleTxSwipeEnd = () => {
+    const state = txSwipeRef.current;
+    if (!state.dragging) return;
+    state.dragging = false;
+    setIsSwipingTx(false);
+
+    if (state.axis === 'x') {
+      if (txSwipeX > 36) {
+        setTxMonthOffset((prev) => prev - 1);
+      } else if (txSwipeX < -36) {
+        setTxMonthOffset((prev) => prev + 1);
+      }
+    }
+    state.axis = null;
+    setTxSwipeX(0);
   };
 
   const handleCategorySwipeStart = (clientX: number, clientY: number) => {
@@ -587,20 +786,93 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     return { items, totalTarget, totalSaved, totalPct };
   }, [savingGoals, transactions, savingsList, lang]);
 
+  const minYearOffset = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    let earliestYear = currentYear;
+    transactions.forEach((tx) => {
+      if (!tx.rawDate) return;
+      const y = parseLocalDate(tx.rawDate).getFullYear();
+      if (Number.isFinite(y) && y < earliestYear) earliestYear = y;
+    });
+    return Math.min(-6, earliestYear - currentYear - 1);
+  }, [transactions]);
+
   const categoryReportData = useMemo(
-    () => computeMonthlyCategoryReport(transactions, categoryMonthOffset, lang),
-    [transactions, categoryMonthOffset, lang]
+    () =>
+      computeCategoryReport(
+        transactions,
+        filters.categoryReport,
+        categoryMonthOffset,
+        categoryYearOffset,
+        categoryCustomOffset,
+        customDateFrom,
+        customDateTo,
+        lang,
+        t
+      ),
+    [
+      transactions,
+      filters.categoryReport,
+      categoryMonthOffset,
+      categoryYearOffset,
+      categoryCustomOffset,
+      customDateFrom,
+      customDateTo,
+      lang,
+      t,
+    ]
   );
 
   const pieReportData = useMemo(
-    () => computeMonthlyCategoryReport(transactions, pieMonthOffset, lang),
-    [transactions, pieMonthOffset, lang]
+    () =>
+      computeCategoryReport(
+        transactions,
+        filters.categoryPieChart,
+        pieMonthOffset,
+        pieYearOffset,
+        pieCustomOffset,
+        customDateFrom,
+        customDateTo,
+        lang,
+        t
+      ),
+    [
+      transactions,
+      filters.categoryPieChart,
+      pieMonthOffset,
+      pieYearOffset,
+      pieCustomOffset,
+      customDateFrom,
+      customDateTo,
+      lang,
+      t,
+    ]
   );
+
+  const txMonthData = useMemo(() => {
+    const now = new Date();
+    const locale = lang === 'bn' ? 'bn-BD' : 'en-US';
+    const targetDate = new Date(now.getFullYear(), now.getMonth() + txMonthOffset, 1);
+    const targetMonth = targetDate.getMonth();
+    const targetYear = targetDate.getFullYear();
+
+    const items = transactions.filter((tx) => {
+      if (!tx.rawDate) return false;
+      const d = parseLocalDate(tx.rawDate);
+      return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
+    });
+    const monthTitle = targetDate.toLocaleDateString(locale, {
+      month: 'long',
+      year: 'numeric',
+    });
+
+    return { items, monthTitle };
+  }, [transactions, txMonthOffset, lang]);
 
   const filteredTransactions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return transactions;
-    return transactions.filter(
+    if (!q) return txMonthData.items;
+    return txMonthData.items.filter(
       (tx) =>
         tx.title.toLowerCase().includes(q) ||
         (tx.category || '').toLowerCase().includes(q) ||
@@ -608,7 +880,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         (tx.wallet || '').toLowerCase().includes(q) ||
         (tx.note || '').toLowerCase().includes(q)
     );
-  }, [transactions, searchQuery]);
+  }, [txMonthData.items, searchQuery]);
 
   const renderSection = (key: GridKey) => {
     if (!visibleGrids[key]) return null;
@@ -623,13 +895,23 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 onOpenDrilldown('netWorth', null, filters.netWorth);
               }
             }}
-            onTouchStart={() => handlePressStart('netWorth')}
+            onTouchStart={(e) =>
+              handlePressStart('netWorth', e.touches[0].clientX, e.touches[0].clientY)
+            }
+            onTouchMove={(e) => handlePressMove(e.touches[0].clientX, e.touches[0].clientY)}
             onTouchEnd={handlePressEnd}
-            onMouseDown={() => handlePressStart('netWorth')}
+            onTouchCancel={handlePressEnd}
+            onMouseDown={(e) => {
+              if (e.button === 0) handlePressStart('netWorth', e.clientX, e.clientY);
+            }}
+            onMouseMove={(e) => {
+              if (e.buttons === 1) handlePressMove(e.clientX, e.clientY);
+            }}
             onMouseUp={handlePressEnd}
             onMouseLeave={handlePressEnd}
             onContextMenu={(e) => {
               e.preventDefault();
+              handlePressEnd();
               onOpenFilterCard('netWorth');
             }}
             className="cursor-pointer rounded-3xl bg-[#102A43] p-6 text-white shadow-sm transition-transform active:scale-[0.99] dark:border dark:border-slate-800 dark:bg-slate-900"
@@ -743,13 +1025,23 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   onOpenDrilldown('expense', null, filters.incExp);
                 }
               }}
-              onTouchStart={() => handlePressStart('incExp')}
+              onTouchStart={(e) =>
+                handlePressStart('incExp', e.touches[0].clientX, e.touches[0].clientY)
+              }
+              onTouchMove={(e) => handlePressMove(e.touches[0].clientX, e.touches[0].clientY)}
               onTouchEnd={handlePressEnd}
-              onMouseDown={() => handlePressStart('incExp')}
+              onTouchCancel={handlePressEnd}
+              onMouseDown={(e) => {
+                if (e.button === 0) handlePressStart('incExp', e.clientX, e.clientY);
+              }}
+              onMouseMove={(e) => {
+                if (e.buttons === 1) handlePressMove(e.clientX, e.clientY);
+              }}
               onMouseUp={handlePressEnd}
               onMouseLeave={handlePressEnd}
               onContextMenu={(e) => {
                 e.preventDefault();
+                handlePressEnd();
                 onOpenFilterCard('incExp');
               }}
               className="flex h-full min-h-[82px] cursor-pointer flex-col justify-between rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 shadow-sm transition-transform active:scale-[0.99] dark:border-slate-800 dark:bg-slate-900"
@@ -785,13 +1077,23 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   onOpenDrilldown('income', null, filters.incExp);
                 }
               }}
-              onTouchStart={() => handlePressStart('incExp')}
+              onTouchStart={(e) =>
+                handlePressStart('incExp', e.touches[0].clientX, e.touches[0].clientY)
+              }
+              onTouchMove={(e) => handlePressMove(e.touches[0].clientX, e.touches[0].clientY)}
               onTouchEnd={handlePressEnd}
-              onMouseDown={() => handlePressStart('incExp')}
+              onTouchCancel={handlePressEnd}
+              onMouseDown={(e) => {
+                if (e.button === 0) handlePressStart('incExp', e.clientX, e.clientY);
+              }}
+              onMouseMove={(e) => {
+                if (e.buttons === 1) handlePressMove(e.clientX, e.clientY);
+              }}
               onMouseUp={handlePressEnd}
               onMouseLeave={handlePressEnd}
               onContextMenu={(e) => {
                 e.preventDefault();
+                handlePressEnd();
                 onOpenFilterCard('incExp');
               }}
               className="flex h-full min-h-[82px] cursor-pointer flex-col justify-between rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 shadow-sm transition-transform active:scale-[0.99] dark:border-slate-800 dark:bg-slate-900"
@@ -1321,22 +1623,35 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         );
 
       case 'categoryReport': {
-        const activeMonthBadge = getMonthBadgeLabel(
-          categoryMonthOffset,
-          categoryReportData.monthTitle,
-          t
-        );
-
         return (
           <div
             key="categoryReport"
-            className={`rounded-2xl border p-5 shadow-sm transition-colors duration-200 ${
+            onTouchStart={(e) =>
+              handlePressStart('categoryReport', e.touches[0].clientX, e.touches[0].clientY)
+            }
+            onTouchMove={(e) => handlePressMove(e.touches[0].clientX, e.touches[0].clientY)}
+            onTouchEnd={handlePressEnd}
+            onTouchCancel={handlePressEnd}
+            onMouseDown={(e) => {
+              if (e.button === 0) handlePressStart('categoryReport', e.clientX, e.clientY);
+            }}
+            onMouseMove={(e) => {
+              if (e.buttons === 1) handlePressMove(e.clientX, e.clientY);
+            }}
+            onMouseUp={handlePressEnd}
+            onMouseLeave={handlePressEnd}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              handlePressEnd();
+              onOpenFilterCard('categoryReport');
+            }}
+            className={`select-none rounded-2xl border p-5 shadow-sm transition-colors duration-200 ${
               categoryView === 'expense'
                 ? 'border-rose-200/75 bg-rose-50/45 dark:border-rose-900/40 dark:bg-rose-950/20'
                 : 'border-emerald-200/75 bg-emerald-50/45 dark:border-emerald-900/40 dark:bg-emerald-950/20'
             }`}
           >
-            {/* Card Header with active view title + compact right-aligned icon switch */}
+            {/* Card Header with active view title + filter selector + icon switch */}
             <div className="flex items-center justify-between gap-2">
               <h3 className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-[#102A43] dark:text-slate-100">
                 {categoryView === 'expense' ? (
@@ -1348,40 +1663,74 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   {categoryView === 'expense'
                     ? t.dashboard.expenseByCategory
                     : t.dashboard.incomeByCategory}
-                  <span aria-hidden="true"> · </span>
-                  <span className="font-semibold text-slate-500 dark:text-slate-400">
-                    {activeMonthBadge}
-                  </span>
                 </span>
               </h3>
 
-              <button
-                type="button"
-                onClick={() =>
-                  setCategoryView((prev) => (prev === 'expense' ? 'income' : 'expense'))
-                }
-                aria-label={
-                  categoryView === 'expense'
-                    ? t.dashboard.switchToIncome
-                    : t.dashboard.switchToExpense
-                }
-                title={
-                  categoryView === 'expense'
-                    ? t.dashboard.switchToIncome
-                    : t.dashboard.switchToExpense
-                }
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-900/5 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-slate-200"
-              >
-                <ArrowLeftRight className="h-3 w-3" />
-              </button>
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isLongPressRef.current) return;
+                    onOpenFilterCard('categoryReport');
+                  }}
+                  aria-label={t.modals.selectTimePeriod}
+                  title={t.modals.selectTimePeriod}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-900/5 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
+                >
+                  <span className="max-w-[145px] truncate">{categoryReportData.headerBadge}</span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isLongPressRef.current) return;
+                    setCategoryView((prev) => (prev === 'expense' ? 'income' : 'expense'));
+                  }}
+                  aria-label={
+                    categoryView === 'expense'
+                      ? t.dashboard.switchToIncome
+                      : t.dashboard.switchToExpense
+                  }
+                  title={
+                    categoryView === 'expense'
+                      ? t.dashboard.switchToIncome
+                      : t.dashboard.switchToExpense
+                  }
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-900/5 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-slate-200"
+                >
+                  <ArrowLeftRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
 
-            {/* Slidable Chronological Month Bar */}
-            <SlidableMonthBar
-              monthOffset={categoryMonthOffset}
-              onSelectMonth={setCategoryMonthOffset}
-              tone={categoryView}
-            />
+            {/* Slidable Period Bar (Monthly, Yearly, or Custom Range) */}
+            {filters.categoryReport === 'monthly' && (
+              <SlidableMonthBar
+                monthOffset={categoryMonthOffset}
+                onSelectMonth={setCategoryMonthOffset}
+                tone={categoryView}
+              />
+            )}
+            {filters.categoryReport === 'yearly' && (
+              <SlidableYearBar
+                yearOffset={categoryYearOffset}
+                onSelectYear={setCategoryYearOffset}
+                minYearOffset={minYearOffset}
+                tone={categoryView}
+              />
+            )}
+            {filters.categoryReport === 'custom' && (
+              <SlidableCustomBar
+                customFrom={customDateFrom}
+                customTo={customDateTo}
+                customOffset={categoryCustomOffset}
+                onSelectOffset={setCategoryCustomOffset}
+                onEditRange={() => onOpenFilterCard('categoryReport')}
+                tone={categoryView}
+              />
+            )}
 
             {/* Swipeable Single-Pane Carousel (Expense <-> Income) */}
             <div
@@ -1412,18 +1761,18 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               >
                 {/* Slide 1: Expense Breakdown */}
                 <div className="w-1/2 shrink-0 pr-1">
-                  <div className="mb-3 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-500 dark:text-slate-400">
-                      {categoryReportData.monthTitle} · {t.dashboard.totalExpenseSuffix}
+                  <div className="mb-3 flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate font-semibold text-slate-500 dark:text-slate-400">
+                      {categoryReportData.periodTitle} · {t.dashboard.totalExpenseSuffix}
                     </span>
-                    <span className="font-mono-num font-extrabold text-[#102A43] dark:text-slate-100">
+                    <span className="font-mono-num shrink-0 font-extrabold text-[#102A43] dark:text-slate-100">
                       {formatMoney(categoryReportData.totalExpense, currency)}
                     </span>
                   </div>
 
                   {categoryReportData.sortedExpenses.length === 0 ? (
                     <p className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
-                      {t.dashboard.noExpensesRecorded} {categoryReportData.monthTitle}
+                      {t.dashboard.noExpensesRecorded} {categoryReportData.emptyPeriodLabel}
                     </p>
                   ) : (
                     <div className="space-y-3">
@@ -1459,18 +1808,18 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
                 {/* Slide 2: Income Breakdown */}
                 <div className="w-1/2 shrink-0 pl-1">
-                  <div className="mb-3 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-500 dark:text-slate-400">
-                      {categoryReportData.monthTitle} · {t.dashboard.totalIncomeSuffix}
+                  <div className="mb-3 flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate font-semibold text-slate-500 dark:text-slate-400">
+                      {categoryReportData.periodTitle} · {t.dashboard.totalIncomeSuffix}
                     </span>
-                    <span className="font-mono-num font-extrabold text-[#102A43] dark:text-slate-100">
+                    <span className="font-mono-num shrink-0 font-extrabold text-[#102A43] dark:text-slate-100">
                       {formatMoney(categoryReportData.totalIncome, currency)}
                     </span>
                   </div>
 
                   {categoryReportData.sortedIncomes.length === 0 ? (
                     <p className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
-                      {t.dashboard.noIncomeRecorded} {categoryReportData.monthTitle}
+                      {t.dashboard.noIncomeRecorded} {categoryReportData.emptyPeriodLabel}
                     </p>
                   ) : (
                     <div className="space-y-3">
@@ -1549,8 +1898,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       }
 
       case 'categoryPieChart': {
-        const activeMonthBadge = getMonthBadgeLabel(pieMonthOffset, pieReportData.monthTitle, t);
-
         const selectPieView = (nextView: 'expense' | 'income') => {
           setPieView(nextView);
           setActiveExpenseChartCategory(null);
@@ -1566,13 +1913,32 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         return (
           <div
             key="categoryPieChart"
-            className={`rounded-2xl border p-5 shadow-sm transition-colors duration-200 ${
+            onTouchStart={(e) =>
+              handlePressStart('categoryPieChart', e.touches[0].clientX, e.touches[0].clientY)
+            }
+            onTouchMove={(e) => handlePressMove(e.touches[0].clientX, e.touches[0].clientY)}
+            onTouchEnd={handlePressEnd}
+            onTouchCancel={handlePressEnd}
+            onMouseDown={(e) => {
+              if (e.button === 0) handlePressStart('categoryPieChart', e.clientX, e.clientY);
+            }}
+            onMouseMove={(e) => {
+              if (e.buttons === 1) handlePressMove(e.clientX, e.clientY);
+            }}
+            onMouseUp={handlePressEnd}
+            onMouseLeave={handlePressEnd}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              handlePressEnd();
+              onOpenFilterCard('categoryPieChart');
+            }}
+            className={`select-none rounded-2xl border p-5 shadow-sm transition-colors duration-200 ${
               pieView === 'expense'
                 ? 'border-rose-200/75 bg-rose-50/45 dark:border-rose-900/40 dark:bg-rose-950/20'
                 : 'border-emerald-200/75 bg-emerald-50/45 dark:border-emerald-900/40 dark:bg-emerald-950/20'
             }`}
           >
-            {/* Card Header with active view title + compact right-aligned icon switch */}
+            {/* Card Header with active view title + filter selector + icon switch */}
             <div className="flex items-center justify-between gap-2">
               <h3 className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-[#102A43] dark:text-slate-100">
                 <PieChart className="h-4 w-4 shrink-0 text-slate-600 dark:text-slate-300" />
@@ -1580,38 +1946,74 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   {pieView === 'expense'
                     ? t.dashboard.expensePieChart
                     : t.dashboard.incomePieChart}
-                  <span aria-hidden="true"> · </span>
-                  <span className="font-semibold text-slate-500 dark:text-slate-400">
-                    {activeMonthBadge}
-                  </span>
                 </span>
               </h3>
 
-              <button
-                type="button"
-                onClick={() => selectPieView(pieView === 'expense' ? 'income' : 'expense')}
-                aria-label={
-                  pieView === 'expense'
-                    ? t.dashboard.switchToIncome
-                    : t.dashboard.switchToExpense
-                }
-                title={
-                  pieView === 'expense'
-                    ? t.dashboard.switchToIncome
-                    : t.dashboard.switchToExpense
-                }
-                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-900/5 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-slate-200"
-              >
-                <ArrowLeftRight className="h-3 w-3" />
-              </button>
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isLongPressRef.current) return;
+                    onOpenFilterCard('categoryPieChart');
+                  }}
+                  aria-label={t.modals.selectTimePeriod}
+                  title={t.modals.selectTimePeriod}
+                  className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-900/5 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
+                >
+                  <span className="max-w-[145px] truncate">{pieReportData.headerBadge}</span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isLongPressRef.current) return;
+                    selectPieView(pieView === 'expense' ? 'income' : 'expense');
+                  }}
+                  aria-label={
+                    pieView === 'expense'
+                      ? t.dashboard.switchToIncome
+                      : t.dashboard.switchToExpense
+                  }
+                  title={
+                    pieView === 'expense'
+                      ? t.dashboard.switchToIncome
+                      : t.dashboard.switchToExpense
+                  }
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-900/5 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-slate-200"
+                >
+                  <ArrowLeftRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
             </div>
 
-            {/* Slidable Chronological Month Bar */}
-            <SlidableMonthBar
-              monthOffset={pieMonthOffset}
-              onSelectMonth={selectPieMonth}
-              tone={pieView}
-            />
+            {/* Slidable Period Bar (Monthly, Yearly, or Custom Range) */}
+            {filters.categoryPieChart === 'monthly' && (
+              <SlidableMonthBar
+                monthOffset={pieMonthOffset}
+                onSelectMonth={selectPieMonth}
+                tone={pieView}
+              />
+            )}
+            {filters.categoryPieChart === 'yearly' && (
+              <SlidableYearBar
+                yearOffset={pieYearOffset}
+                onSelectYear={setPieYearOffset}
+                minYearOffset={minYearOffset}
+                tone={pieView}
+              />
+            )}
+            {filters.categoryPieChart === 'custom' && (
+              <SlidableCustomBar
+                customFrom={customDateFrom}
+                customTo={customDateTo}
+                customOffset={pieCustomOffset}
+                onSelectOffset={setPieCustomOffset}
+                onEditRange={() => onOpenFilterCard('categoryPieChart')}
+                tone={pieView}
+              />
+            )}
 
             {/* Swipeable Single-Pane Pie Chart Carousel (Expense <-> Income) */}
             <div
@@ -1638,19 +2040,21 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               >
                 {/* Slide 1: Expense Pie Chart */}
                 <div className="w-1/2 shrink-0 pr-1">
-                  <div className="mb-3 flex items-center justify-between text-xs">
-                    <span className="inline-flex items-center gap-1.5 font-semibold text-slate-500 dark:text-slate-400">
-                      <TrendingDown className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
-                      {pieReportData.monthTitle} · {t.dashboard.totalExpenseSuffix}
+                  <div className="mb-3 flex items-center justify-between gap-2 text-xs">
+                    <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold text-slate-500 dark:text-slate-400">
+                      <TrendingDown className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
+                      <span className="truncate">
+                        {pieReportData.periodTitle} · {t.dashboard.totalExpenseSuffix}
+                      </span>
                     </span>
-                    <span className="font-mono-num font-extrabold text-[#102A43] dark:text-slate-100">
+                    <span className="font-mono-num shrink-0 font-extrabold text-[#102A43] dark:text-slate-100">
                       {formatMoney(pieReportData.totalExpense, currency)}
                     </span>
                   </div>
 
                   {pieReportData.sortedExpenses.length === 0 ? (
                     <p className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
-                      {t.dashboard.noExpensesRecorded} {pieReportData.monthTitle}
+                      {t.dashboard.noExpensesRecorded} {pieReportData.emptyPeriodLabel}
                     </p>
                   ) : (
                     <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
@@ -1667,7 +2071,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                         currency={currency}
                         totalLabel={t.dashboard.totalExpenseLabel}
                         activeCategory={activeExpenseChartCategory}
-                        onSelectCategory={setActiveExpenseChartCategory}
+                        onSelectCategory={(cat) => {
+                          if (!isLongPressRef.current) setActiveExpenseChartCategory(cat);
+                        }}
                         didSwipeRef={didPieSwipeRef}
                       />
 
@@ -1686,7 +2092,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                               onMouseEnter={() => setActiveExpenseChartCategory(cat)}
                               onMouseLeave={() => setActiveExpenseChartCategory(null)}
                               onClick={() => {
-                                if (didPieSwipeRef.current) return;
+                                if (didPieSwipeRef.current || isLongPressRef.current) return;
                                 setActiveExpenseChartCategory((prev) => (prev === cat ? null : cat));
                               }}
                               className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors ${
@@ -1714,19 +2120,21 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
                 {/* Slide 2: Income Pie Chart */}
                 <div className="w-1/2 shrink-0 pl-1">
-                  <div className="mb-3 flex items-center justify-between text-xs">
-                    <span className="inline-flex items-center gap-1.5 font-semibold text-slate-500 dark:text-slate-400">
-                      <TrendingUp className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
-                      {pieReportData.monthTitle} · {t.dashboard.totalIncomeSuffix}
+                  <div className="mb-3 flex items-center justify-between gap-2 text-xs">
+                    <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold text-slate-500 dark:text-slate-400">
+                      <TrendingUp className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
+                      <span className="truncate">
+                        {pieReportData.periodTitle} · {t.dashboard.totalIncomeSuffix}
+                      </span>
                     </span>
-                    <span className="font-mono-num font-extrabold text-[#102A43] dark:text-slate-100">
+                    <span className="font-mono-num shrink-0 font-extrabold text-[#102A43] dark:text-slate-100">
                       {formatMoney(pieReportData.totalIncome, currency)}
                     </span>
                   </div>
 
                   {pieReportData.sortedIncomes.length === 0 ? (
                     <p className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
-                      {t.dashboard.noIncomeRecorded} {pieReportData.monthTitle}
+                      {t.dashboard.noIncomeRecorded} {pieReportData.emptyPeriodLabel}
                     </p>
                   ) : (
                     <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
@@ -1743,7 +2151,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                         currency={currency}
                         totalLabel={t.dashboard.totalIncomeLabel}
                         activeCategory={activeIncomeChartCategory}
-                        onSelectCategory={setActiveIncomeChartCategory}
+                        onSelectCategory={(cat) => {
+                          if (!isLongPressRef.current) setActiveIncomeChartCategory(cat);
+                        }}
                         didSwipeRef={didPieSwipeRef}
                       />
 
@@ -1762,7 +2172,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                               onMouseEnter={() => setActiveIncomeChartCategory(cat)}
                               onMouseLeave={() => setActiveIncomeChartCategory(null)}
                               onClick={() => {
-                                if (didPieSwipeRef.current) return;
+                                if (didPieSwipeRef.current || isLongPressRef.current) return;
                                 setActiveIncomeChartCategory((prev) => (prev === cat ? null : cat));
                               }}
                               className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors ${
@@ -1837,13 +2247,34 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           <div
             key="transactions"
             id="recent-transactions-section"
-            className="space-y-3 scroll-mt-20"
+            onTouchStart={(e) => handleTxSwipeStart(e.touches[0].clientX, e.touches[0].clientY)}
+            onTouchMove={(e) => handleTxSwipeMove(e.touches[0].clientX, e.touches[0].clientY)}
+            onTouchEnd={handleTxSwipeEnd}
+            onTouchCancel={handleTxSwipeEnd}
+            onMouseDown={(e) => {
+              if (e.button === 0) handleTxSwipeStart(e.clientX, e.clientY);
+            }}
+            onMouseMove={(e) => {
+              if (e.buttons === 1) handleTxSwipeMove(e.clientX, e.clientY);
+            }}
+            onMouseUp={handleTxSwipeEnd}
+            onMouseLeave={handleTxSwipeEnd}
+            className="scroll-mt-20 space-y-3"
           >
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-              <h3 className="text-sm font-bold text-[#102A43] dark:text-slate-100">
-                {t.dashboard.recentTransactions} ({filteredTransactions.length})
-              </h3>
-              <div className="relative w-full sm:w-64">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+              <div className="min-w-0">
+                <h3 className="text-sm font-bold text-[#102A43] dark:text-slate-100">
+                  {t.dashboard.recentTransactions} ({filteredTransactions.length})
+                </h3>
+                <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  {txMonthData.monthTitle}
+                </div>
+              </div>
+              <div
+                className="relative w-full sm:w-64"
+                onTouchStart={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
                 <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <input
                   type="search"
@@ -1855,39 +2286,73 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </div>
             </div>
 
-            {filteredTransactions.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-8 text-center dark:border-slate-800 dark:bg-slate-900/60">
-                <p className="text-sm text-slate-500 dark:text-slate-400">
-                  {transactions.length === 0
-                    ? t.dashboard.noTransactionsYet
-                    : t.dashboard.noTransactionsMatch}
-                </p>
-                {transactions.length === 0 && (
-                  <button
-                    type="button"
-                    onClick={onStartAddingTx}
-                    className="mt-3 rounded-xl bg-[#16845B] px-4 py-2 text-xs font-bold text-white hover:bg-[#126B4A]"
-                  >
-                    {t.dashboard.addFirstTransaction}
-                  </button>
+            <div className="overflow-hidden">
+              <div
+                style={{
+                  transform: `translateX(${txSwipeX}px)`,
+                }}
+                className={!isSwipingTx ? 'transition-transform duration-200 ease-out' : ''}
+              >
+                {filteredTransactions.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-slate-300 bg-white/70 p-8 text-center select-none dark:border-slate-800 dark:bg-slate-900/60">
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      {transactions.length === 0
+                        ? t.dashboard.noTransactionsYet
+                        : searchQuery.trim()
+                        ? t.dashboard.noTransactionsMatch
+                        : `${t.dashboard.noTxInPeriod} ${txMonthData.monthTitle}`}
+                    </p>
+                    {transactions.length === 0 && (
+                      <button
+                        type="button"
+                        onClick={onStartAddingTx}
+                        className="mt-3 rounded-xl bg-[#16845B] px-4 py-2 text-xs font-bold text-white hover:bg-[#126B4A]"
+                      >
+                        {t.dashboard.addFirstTransaction}
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2.5">
+                    {filteredTransactions.map((tx) => (
+                      <SwipeableTransaction
+                        key={tx.id}
+                        tx={tx}
+                        currency={currency}
+                        categoryStyles={categoryStyles}
+                        onDelete={onDeleteTx}
+                        onEdit={onEditTx}
+                        onResolveDebt={onResolveDebt}
+                        onInspectDebt={onInspectDebt}
+                        onRowSwipeClaim={cancelTxSwipe}
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
-            ) : (
-              <div className="space-y-2.5">
-                {filteredTransactions.map((tx) => (
-                  <SwipeableTransaction
-                    key={tx.id}
-                    tx={tx}
-                    currency={currency}
-                    categoryStyles={categoryStyles}
-                    onDelete={onDeleteTx}
-                    onEdit={onEditTx}
-                    onResolveDebt={onResolveDebt}
-                    onInspectDebt={onInspectDebt}
-                  />
-                ))}
+            </div>
+
+            <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500 dark:text-slate-400">
+              <span>{t.dashboard.swipePrevNextMonth}</span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  aria-label={t.common.previousMonth}
+                  onClick={() => setTxMonthOffset((prev) => prev - 1)}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200/70 hover:text-[#102A43] dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  aria-label={t.common.nextMonth}
+                  onClick={() => setTxMonthOffset((prev) => prev + 1)}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200/70 hover:text-[#102A43] dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
               </div>
-            )}
+            </div>
           </div>
         );
     }

@@ -116,6 +116,76 @@ export function filterTransactionsByPeriod(
   });
 }
 
+export function addDaysISO(isoDate: string, deltaDays: number): string {
+  const d = parseLocalDate(isoDate);
+  d.setDate(d.getDate() + deltaDays);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function getShiftedCustomRange(
+  baseFrom: string,
+  baseTo: string,
+  offset: number
+): { from: string; to: string; spanDays: number } {
+  const [normFrom, normTo] = baseFrom <= baseTo ? [baseFrom, baseTo] : [baseTo, baseFrom];
+  const dStart = parseLocalDate(normFrom);
+  const dEnd = parseLocalDate(normTo);
+  const spanDays = Math.max(1, Math.round((dEnd.getTime() - dStart.getTime()) / 86400000) + 1);
+  if (offset === 0) {
+    return { from: normFrom, to: normTo, spanDays };
+  }
+  const shift = offset * spanDays;
+  return {
+    from: addDaysISO(normFrom, shift),
+    to: addDaysISO(normTo, shift),
+    spanDays,
+  };
+}
+
+export function formatShortRangeLabel(
+  from: string,
+  to: string,
+  lang: AppLanguage = 'en'
+): string {
+  const d1 = parseLocalDate(from);
+  const d2 = parseLocalDate(to);
+  const locale = lang === 'bn' ? 'bn-BD' : 'en-US';
+  const nowYear = new Date().getFullYear();
+
+  if (from === to) {
+    return d1.toLocaleDateString(locale, {
+      day: 'numeric',
+      month: 'short',
+      ...(d1.getFullYear() !== nowYear ? { year: '2-digit' } : {}),
+    });
+  }
+
+  if (d1.getFullYear() === d2.getFullYear()) {
+    const startPart = d1.toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+    const endPart = d2.toLocaleDateString(locale, {
+      day: 'numeric',
+      month: 'short',
+      ...(d1.getFullYear() !== nowYear ? { year: '2-digit' } : {}),
+    });
+    return `${startPart} – ${endPart}`;
+  }
+
+  const startPart = d1.toLocaleDateString(locale, {
+    day: 'numeric',
+    month: 'short',
+    year: '2-digit',
+  });
+  const endPart = d2.toLocaleDateString(locale, {
+    day: 'numeric',
+    month: 'short',
+    year: '2-digit',
+  });
+  return `${startPart} – ${endPart}`;
+}
+
 export function generateSafeId(prefix: string): string {
   const rand = Math.random().toString(36).slice(2, 8);
   return `${prefix}_${Date.now()}_${rand}`.replace(/[^a-zA-Z0-9_-]/g, '_');

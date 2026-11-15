@@ -437,6 +437,8 @@ function OrthoGroApp() {
     netWorth: 'all',
     lendBorrow: 'all',
     incExp: 'monthly',
+    categoryReport: 'monthly',
+    categoryPieChart: 'monthly',
   });
   const [activeFilterCard, setActiveFilterCard] = useState<FilterCardKey | null>(null);
   const [customDateFrom, setCustomDateFrom] = useState('');
@@ -856,7 +858,7 @@ function OrthoGroApp() {
               guestMemos.slice(0, 100).forEach((m) => {
                 if (!m.items || m.items.length === 0) return;
                 const id = generateSafeId('memo');
-                batch.set(doc(db, 'users', user.uid, 'memos', id), {
+                const memoPayload: Record<string, unknown> = {
                   ownerId: user.uid,
                   date: m.date || getTodayISO(),
                   category: m.category || 'Others',
@@ -866,7 +868,11 @@ function OrthoGroApp() {
                   total: Number(m.total) || 0,
                   createdAt: serverTimestamp(),
                   updatedAt: serverTimestamp(),
-                });
+                };
+                if (typeof m.subCategory === 'string' && m.subCategory.trim()) {
+                  memoPayload.subCategory = m.subCategory.trim().slice(0, 100);
+                }
+                batch.set(doc(db, 'users', user.uid, 'memos', id), memoPayload);
                 count++;
               });
 
@@ -1888,16 +1894,21 @@ function OrthoGroApp() {
     }
 
     const buildTxPayload = (entry: TransactionDraft, id: string): Transaction => {
+      const trimmedNote = entry.note.trim();
       const defaultTitle =
         entry.type === 'transfer'
           ? t.common.transfer
           : entry.type === 'lend'
-          ? t.common.lend
+          ? trimmedNote
+            ? trimmedNote.slice(0, 200)
+            : t.common.lend
           : entry.type === 'borrow'
-          ? t.common.borrow
+          ? trimmedNote
+            ? trimmedNote.slice(0, 200)
+            : t.common.borrow
           : entry.type === 'income'
           ? entry.category || t.common.income
-          : entry.category || t.common.expense;
+          : entry.subCategory.trim() || entry.category || t.common.expense;
       const amt = parseFloat(entry.amount);
       const rawDate = entry.date || getTodayISO();
 
@@ -1930,8 +1941,15 @@ function OrthoGroApp() {
         }
       }
 
-      if (entry.note.trim()) {
-        tx.note = entry.note.trim().slice(0, 2000);
+      const shouldStoreNote =
+        trimmedNote &&
+        !(
+          (entry.type === 'lend' || entry.type === 'borrow') &&
+          !entry.title.trim() &&
+          trimmedNote.length <= 200
+        );
+      if (shouldStoreNote) {
+        tx.note = trimmedNote.slice(0, 2000);
       }
       return tx;
     };
@@ -2097,10 +2115,17 @@ function OrthoGroApp() {
       return;
     }
 
+    const isDebtEdit = tx.type === 'lend' || tx.type === 'borrow';
+    const hasCustomDebtTitleOnly =
+      isDebtEdit &&
+      !tx.note &&
+      tx.title !== t.common.lend &&
+      tx.title !== t.common.borrow;
+
     setEntries([
       {
         id: tx.id,
-        title: tx.title,
+        title: hasCustomDebtTitleOnly ? '' : tx.title,
         amount: String(tx.amount),
         type: tx.type,
         category: tx.category || workspace.expenseCategories[0] || 'Personal',
@@ -2111,7 +2136,7 @@ function OrthoGroApp() {
         useCharge: Boolean(tx.charge),
         charge: tx.charge ? String(tx.charge) : '',
         date: tx.rawDate || getTodayISO(),
-        note: tx.note || '',
+        note: hasCustomDebtTitleOnly ? tx.title : tx.note || '',
       },
     ]);
     setActiveTab('transactions');
@@ -2569,6 +2594,14 @@ function OrthoGroApp() {
             });
           }
         });
+        memos.forEach((m) => {
+          if (m.category === parentCategory && m.subCategory === oldName) {
+            batch.update(doc(db, 'users', uid, 'memos', m.id), {
+              subCategory: newName,
+              updatedAt: serverTimestamp(),
+            });
+          }
+        });
         try {
           await batch.commit();
         } catch (err) {
@@ -2583,6 +2616,13 @@ function OrthoGroApp() {
             tx.subCategory === oldName
               ? { ...tx, subCategory: newName }
               : tx
+          )
+        );
+        setMemos((prev) =>
+          prev.map((m) =>
+            m.category === parentCategory && m.subCategory === oldName
+              ? { ...m, subCategory: newName }
+              : m
           )
         );
       }
@@ -2987,6 +3027,7 @@ function OrthoGroApp() {
       return;
     }
     const id = editId || generateSafeId('memo');
+    const cleanSubCategory = memoData.subCategory?.trim().slice(0, 100) || '';
     if (currentUser && activeOwnerId) {
       const uid = activeOwnerId;
       const ref = doc(db, 'users', uid, 'memos', id);
@@ -2995,6 +3036,7 @@ function OrthoGroApp() {
           await updateDoc(ref, {
             date: memoData.date,
             category: memoData.category,
+            subCategory: cleanSubCategory ? cleanSubCategory : deleteField(),
             wallet: memoData.wallet,
             items: memoData.items.slice(0, 200),
             total: memoData.total,
@@ -3012,6 +3054,7 @@ function OrthoGroApp() {
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           };
+          if (cleanSubCategory) payload.subCategory = cleanSubCategory;
           if (memoData.note) payload.note = memoData.note.slice(0, 500);
           await setDoc(ref, payload);
         }
@@ -3019,10 +3062,16 @@ function OrthoGroApp() {
         handleFirestoreError(err, OperationType.WRITE, `users/${uid}/memos/${id}`);
       }
     } else {
+      const normalizedMemoData = {
+        ...memoData,
+        subCategory: cleanSubCategory || undefined,
+      };
       if (editId) {
-        setMemos((prev) => prev.map((m) => (m.id === editId ? { ...m, ...memoData } : m)));
+        setMemos((prev) =>
+          prev.map((m) => (m.id === editId ? { ...m, ...normalizedMemoData } : m))
+        );
       } else {
-        setMemos((prev) => [{ id, ...memoData }, ...prev]);
+        setMemos((prev) => [{ id, ...normalizedMemoData }, ...prev]);
       }
     }
     notify('success', editId ? t.toasts.memoUpdated : t.toasts.memoSaved);
@@ -3058,6 +3107,7 @@ function OrthoGroApp() {
     title: string;
     amount: number;
     category: string;
+    subCategory?: string;
     wallet: string;
     rawDate: string;
     note: string;
@@ -3068,11 +3118,12 @@ function OrthoGroApp() {
     }
     const id = generateSafeId('tx');
     const date = formatDisplayDate(payload.rawDate, currentLanguage);
+    const cleanSubCategory = payload.subCategory?.trim().slice(0, 100) || '';
 
     if (currentUser && activeOwnerId) {
       const uid = activeOwnerId;
       try {
-        await setDoc(doc(db, 'users', uid, 'transactions', id), {
+        const txPayload: Record<string, unknown> = {
           ownerId: uid,
           title: payload.title.slice(0, 200),
           amount: payload.amount,
@@ -3085,7 +3136,9 @@ function OrthoGroApp() {
           resolved: true,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
-        });
+        };
+        if (cleanSubCategory) txPayload.subCategory = cleanSubCategory;
+        await setDoc(doc(db, 'users', uid, 'transactions', id), txPayload);
       } catch (err) {
         handleFirestoreError(err, OperationType.CREATE, `users/${uid}/transactions/${id}`);
       }
@@ -3097,6 +3150,7 @@ function OrthoGroApp() {
           amount: payload.amount,
           type: 'expense',
           category: payload.category,
+          ...(cleanSubCategory ? { subCategory: cleanSubCategory } : {}),
           wallet: payload.wallet,
           note: payload.note,
           date,
@@ -3681,7 +3735,11 @@ function OrthoGroApp() {
           </header>
 
         {/* Scrollable Workspace */}
-        <main className="w-full min-w-0 flex-1 px-4 pt-5 pb-24 lg:px-8 lg:pb-10">
+        <main
+          className={`w-full min-w-0 flex-1 px-4 pt-5 pb-24 lg:px-8 lg:pb-10 ${
+            activeTab === 'calculator' ? 'flex flex-col' : ''
+          }`}
+        >
           {activeSharedWorkspace && (
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-sky-200 bg-sky-50/90 px-4 py-2.5 text-xs dark:border-sky-900/60 dark:bg-sky-950/35">
               <div className="flex min-w-0 items-center gap-2">
@@ -3776,6 +3834,7 @@ function OrthoGroApp() {
               memos={memos}
               notes={notes}
               expenseCategories={workspace.expenseCategories}
+              expenseSubCategories={normalizeExpenseSubCategories(workspace.expenseSubCategories)}
               allAccountOptions={allAccountOptions}
               currency={workspace.currency}
               onSaveMemo={handleSaveMemo}
@@ -3961,6 +4020,10 @@ function OrthoGroApp() {
         onApplyCustom={(card) => {
           if (!customDateFrom || !customDateTo) {
             notify('error', t.toasts.selectStartEndDates);
+            return;
+          }
+          if (customDateFrom > customDateTo) {
+            notify('error', t.toasts.invalidSavingDateRange);
             return;
           }
           setFilters((prev) => ({ ...prev, [card]: 'custom' }));

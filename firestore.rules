@@ -113,11 +113,12 @@ service cloud.firestore {
 
     function isValidMemo(data, userId) {
       return data.keys().hasAll(['ownerId', 'date', 'category', 'wallet', 'items', 'total', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['ownerId', 'date', 'category', 'wallet', 'note', 'items', 'total', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['ownerId', 'date', 'category', 'subCategory', 'wallet', 'note', 'items', 'total', 'createdAt', 'updatedAt'])
         && data.ownerId is string
         && data.ownerId == userId
         && data.date is string && data.date.size() == 10 && data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
         && data.category is string && data.category.size() >= 1 && data.category.size() <= 100
+        && (!('subCategory' in data) || (data.subCategory is string && data.subCategory.size() <= 100))
         && data.wallet is string && data.wallet.size() >= 1 && data.wallet.size() <= 100
         && (!('note' in data) || (data.note is string && data.note.size() <= 500))
         && data.items is list && data.items.size() >= 1 && data.items.size() <= 200
@@ -330,7 +331,7 @@ service cloud.firestore {
           && isValidMemo(incoming(), userId)
           && incoming().ownerId == existing().ownerId
           && incoming().createdAt == existing().createdAt
-          && incoming().diff(existing()).affectedKeys().hasOnly(['date', 'category', 'wallet', 'note', 'items', 'total', 'updatedAt']);
+          && incoming().diff(existing()).affectedKeys().hasOnly(['date', 'category', 'subCategory', 'wallet', 'note', 'items', 'total', 'updatedAt']);
         allow delete: if isValidId(userId) && isValidId(memoId) && isVerifiedUser() && isWorkspaceEditor(userId);
       }
 

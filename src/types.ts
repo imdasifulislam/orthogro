@@ -96,6 +96,7 @@ export interface BazarMemo {
   ownerId?: string;
   date: string;
   category: string;
+  subCategory?: string;
   wallet: string;
   note?: string;
   items: BazarMemoItem[];
@@ -166,7 +167,12 @@ export interface ConfirmDialogState {
   onConfirm: () => void | Promise<void>;
 }
 
-export type FilterCardKey = 'netWorth' | 'lendBorrow' | 'incExp';
+export type FilterCardKey =
+  | 'netWorth'
+  | 'lendBorrow'
+  | 'incExp'
+  | 'categoryReport'
+  | 'categoryPieChart';
 
 export type DrilldownType =
   | 'netWorth'
