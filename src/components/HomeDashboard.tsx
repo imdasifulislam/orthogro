@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowLeftRight,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -18,6 +17,7 @@ import type {
   BudgetGoal,
   CategoryStyle,
   CurrencySymbol,
+  DrilldownPeriodContext,
   DrilldownType,
   FilterCardKey,
   GridKey,
@@ -330,7 +330,12 @@ interface HomeDashboardProps {
   customDateFrom: string;
   customDateTo: string;
   onOpenFilterCard: (card: FilterCardKey) => void;
-  onOpenDrilldown: (type: DrilldownType, key: string | null, defaultFilter: PeriodFilter) => void;
+  onOpenDrilldown: (
+    type: DrilldownType,
+    key: string | null,
+    defaultFilter: PeriodFilter,
+    periodContext?: DrilldownPeriodContext
+  ) => void;
   onOpenBudgetGoalsModal: (goal?: BudgetGoal) => void;
   onOpenSavingGoalsModal: (goal?: SavingGoal) => void;
   onDeleteTx: (id: string) => void;
@@ -367,7 +372,18 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 }) => {
   const { lang, t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
-  const [goalView, setGoalView] = useState<'budget' | 'saving'>('budget');
+  const [goalView, setGoalView] = useState<'budget' | 'saving'>(() =>
+    budgetGoals.length === 0 && savingGoals.length > 0 ? 'saving' : 'budget'
+  );
+  const hasUserSelectedGoalViewRef = useRef(false);
+  const selectGoalView = (view: 'budget' | 'saving') => {
+    hasUserSelectedGoalViewRef.current = true;
+    setGoalView(view);
+  };
+  useEffect(() => {
+    if (hasUserSelectedGoalViewRef.current) return;
+    setGoalView(budgetGoals.length === 0 && savingGoals.length > 0 ? 'saving' : 'budget');
+  }, [budgetGoals.length, savingGoals.length]);
   const [goalSwipeX, setGoalSwipeX] = useState(0);
   const [isSwipingGoal, setIsSwipingGoal] = useState(false);
   const [categoryView, setCategoryView] = useState<'expense' | 'income'>('expense');
@@ -385,6 +401,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [txMonthOffset, setTxMonthOffset] = useState(0);
   const [txSwipeX, setTxSwipeX] = useState(0);
   const [isSwipingTx, setIsSwipingTx] = useState(false);
+  const [incExpMonthOffset, setIncExpMonthOffset] = useState(0);
+  const [incExpYearOffset, setIncExpYearOffset] = useState(0);
+  const [incExpCustomOffset, setIncExpCustomOffset] = useState(0);
+  const [incExpSwipeX, setIncExpSwipeX] = useState(0);
+  const [isSwipingIncExp, setIsSwipingIncExp] = useState(false);
   const [activeExpenseChartCategory, setActiveExpenseChartCategory] = useState<string | null>(null);
   const [activeIncomeChartCategory, setActiveIncomeChartCategory] = useState<string | null>(null);
   const goalSwipeRef = useRef<{
@@ -412,7 +433,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     dragging: boolean;
     axis: 'x' | 'y' | null;
   }>({ startX: 0, startY: 0, dragging: false, axis: null });
+  const incExpSwipeRef = useRef<{
+    startX: number;
+    startY: number;
+    dragging: boolean;
+    axis: 'x' | 'y' | null;
+  }>({ startX: 0, startY: 0, dragging: false, axis: null });
   const didPieSwipeRef = useRef(false);
+  const didCategorySwipeRef = useRef(false);
+  const didIncExpSwipeRef = useRef(false);
   const pressTimerRef = useRef<number | null>(null);
   const pressOriginRef = useRef<{ x: number; y: number } | null>(null);
   const isLongPressRef = useRef(false);
@@ -434,6 +463,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       pressTimerRef.current = null;
       pressOriginRef.current = null;
       isLongPressRef.current = true;
+      if (incExpSwipeRef.current.dragging) {
+        incExpSwipeRef.current.dragging = false;
+        incExpSwipeRef.current.axis = null;
+        setIsSwipingIncExp(false);
+        setIncExpSwipeX(0);
+      }
       if (categorySwipeRef.current.dragging) {
         categorySwipeRef.current.dragging = false;
         categorySwipeRef.current.axis = null;
@@ -471,12 +506,38 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   useEffect(() => {
     setCategoryCustomOffset(0);
     setPieCustomOffset(0);
+    setIncExpCustomOffset(0);
   }, [customDateFrom, customDateTo]);
+
+  useEffect(() => {
+    setIncExpMonthOffset(0);
+    setIncExpYearOffset(0);
+    setIncExpCustomOffset(0);
+  }, [filters.incExp]);
+
+  useEffect(() => {
+    setCategoryMonthOffset(0);
+    setCategoryYearOffset(0);
+    setCategoryCustomOffset(0);
+  }, [filters.categoryReport]);
+
+  useEffect(() => {
+    setPieMonthOffset(0);
+    setPieYearOffset(0);
+    setPieCustomOffset(0);
+  }, [filters.categoryPieChart]);
 
   useEffect(() => {
     setActiveExpenseChartCategory(null);
     setActiveIncomeChartCategory(null);
-  }, [filters.categoryPieChart, pieYearOffset, pieCustomOffset, customDateFrom, customDateTo]);
+  }, [
+    filters.categoryPieChart,
+    pieMonthOffset,
+    pieYearOffset,
+    pieCustomOffset,
+    customDateFrom,
+    customDateTo,
+  ]);
 
   const cancelTxSwipe = () => {
     if (txSwipeRef.current.dragging) {
@@ -528,7 +589,70 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     setTxSwipeX(0);
   };
 
+  const canSwipeIncExp =
+    filters.incExp === 'monthly' ||
+    filters.incExp === 'yearly' ||
+    (filters.incExp === 'custom' && Boolean(customDateFrom && customDateTo));
+
+  const handleIncExpSwipeStart = (clientX: number, clientY: number) => {
+    didIncExpSwipeRef.current = false;
+    if (!canSwipeIncExp) return;
+    incExpSwipeRef.current = {
+      startX: clientX,
+      startY: clientY,
+      dragging: true,
+      axis: null,
+    };
+    setIsSwipingIncExp(true);
+  };
+
+  const handleIncExpSwipeMove = (clientX: number, clientY: number) => {
+    const state = incExpSwipeRef.current;
+    if (!state.dragging) return;
+    const dx = clientX - state.startX;
+    const dy = clientY - state.startY;
+
+    if (!state.axis && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+      state.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    }
+    if (state.axis !== 'x') return;
+
+    if (Math.abs(dx) > 10) {
+      didIncExpSwipeRef.current = true;
+      handlePressEnd();
+    }
+    setIncExpSwipeX(Math.max(-96, Math.min(96, dx * 0.45)));
+  };
+
+  const handleIncExpSwipeEnd = () => {
+    const state = incExpSwipeRef.current;
+    if (!state.dragging) return;
+    state.dragging = false;
+    setIsSwipingIncExp(false);
+
+    if (state.axis === 'x') {
+      const step = incExpSwipeX > 36 ? -1 : incExpSwipeX < -36 ? 1 : 0;
+      if (step !== 0) {
+        if (filters.incExp === 'monthly') {
+          setIncExpMonthOffset((prev) => prev + step);
+        } else if (filters.incExp === 'yearly') {
+          setIncExpYearOffset((prev) => prev + step);
+        } else if (filters.incExp === 'custom') {
+          setIncExpCustomOffset((prev) => prev + step);
+        }
+      }
+    }
+    state.axis = null;
+    setIncExpSwipeX(0);
+    if (didIncExpSwipeRef.current) {
+      window.setTimeout(() => {
+        didIncExpSwipeRef.current = false;
+      }, 0);
+    }
+  };
+
   const handleCategorySwipeStart = (clientX: number, clientY: number) => {
+    didCategorySwipeRef.current = false;
     categorySwipeRef.current = {
       startX: clientX,
       startY: clientY,
@@ -549,11 +673,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     }
     if (state.axis !== 'x') return;
 
+    if (Math.abs(dx) > 10) {
+      didCategorySwipeRef.current = true;
+      handlePressEnd();
+    }
+
     if (categoryView === 'expense') {
-      // Swipe left reveals Income; gentle rubber-band if pulling right past left edge
       setCategorySwipeX(dx > 0 ? Math.min(24, dx * 0.25) : Math.max(-160, dx));
     } else {
-      // Swipe right returns to Expense; gentle rubber-band if pulling left past right edge
       setCategorySwipeX(dx < 0 ? Math.max(-24, dx * 0.25) : Math.min(160, dx));
     }
   };
@@ -573,6 +700,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     }
     state.axis = null;
     setCategorySwipeX(0);
+    if (didCategorySwipeRef.current) {
+      window.setTimeout(() => {
+        didCategorySwipeRef.current = false;
+      }, 0);
+    }
   };
 
   const handlePieSwipeStart = (clientX: number, clientY: number) => {
@@ -599,6 +731,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
     if (Math.abs(dx) > 10) {
       didPieSwipeRef.current = true;
+      handlePressEnd();
     }
 
     if (pieView === 'expense') {
@@ -618,8 +751,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       if (pieView === 'expense' && pieSwipeX < -42) {
         setPieView('income');
         setActiveExpenseChartCategory(null);
+        setActiveIncomeChartCategory(null);
       } else if (pieView === 'income' && pieSwipeX > 42) {
         setPieView('expense');
+        setActiveExpenseChartCategory(null);
         setActiveIncomeChartCategory(null);
       }
     }
@@ -673,9 +808,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
     if (state.axis === 'x') {
       if (goalView === 'budget' && goalSwipeX < -42) {
-        setGoalView('saving');
+        selectGoalView('saving');
       } else if (goalView === 'saving' && goalSwipeX > 42) {
-        setGoalView('budget');
+        selectGoalView('budget');
       }
     }
     state.axis = null;
@@ -683,7 +818,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     if (didGoalSwipeRef.current) {
       window.setTimeout(() => {
         didGoalSwipeRef.current = false;
-      }, 0);
+      }, 120);
     }
   };
 
@@ -708,27 +843,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
     const absoluteNetWorth = availableCashBalance + totalSavings + totalLendAll - totalBorrowAll;
 
-    const incExpTxs = filterTransactionsByPeriod(
-      transactions,
-      filters.incExp,
-      customDateFrom,
-      customDateTo
-    );
-
-    let totalIncome = 0;
-    let totalExpense = 0;
-
-    incExpTxs.forEach((t) => {
-      if (t.type === 'income') {
-        totalIncome += t.amount;
-      } else if (t.type === 'expense') {
-        totalExpense += t.amount;
-      } else if (t.type === 'adjustment') {
-        if (t.amount > 0) totalIncome += t.amount;
-        else totalExpense += Math.abs(t.amount);
-      }
-    });
-
     const lbTxs = filterTransactionsByPeriod(
       transactions,
       filters.lendBorrow,
@@ -746,12 +860,129 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     return {
       absoluteNetWorth,
       availableCashBalance,
-      totalIncome,
-      totalExpense,
       dispLend,
       dispBorrow,
     };
-  }, [transactions, wallets, savingsList, walletBalances, filters, customDateFrom, customDateTo]);
+  }, [transactions, wallets, savingsList, walletBalances, filters.lendBorrow, customDateFrom, customDateTo]);
+
+  const incExpSummary = useMemo(() => {
+    const now = new Date();
+    const locale = lang === 'bn' ? 'bn-BD' : 'en-US';
+    let filteredTxs: Transaction[] = [];
+    let periodTitle = '';
+    let headerBadge = '';
+
+    if (filters.incExp === 'monthly') {
+      const targetDate = new Date(now.getFullYear(), now.getMonth() + incExpMonthOffset, 1);
+      const targetMonth = targetDate.getMonth();
+      const targetYear = targetDate.getFullYear();
+
+      filteredTxs = transactions.filter((tx) => {
+        if (!tx.rawDate) return false;
+        const d = parseLocalDate(tx.rawDate);
+        return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
+      });
+
+      periodTitle = targetDate.toLocaleDateString(locale, {
+        month: 'long',
+        year: 'numeric',
+      });
+      headerBadge = getMonthBadgeLabel(incExpMonthOffset, periodTitle, t);
+    } else if (filters.incExp === 'yearly') {
+      const targetYear = now.getFullYear() + incExpYearOffset;
+      filteredTxs = transactions.filter((tx) => {
+        if (!tx.rawDate) return false;
+        return parseLocalDate(tx.rawDate).getFullYear() === targetYear;
+      });
+
+      const yearDisplay = new Date(targetYear, 0, 1).toLocaleDateString(locale, {
+        year: 'numeric',
+      });
+      periodTitle =
+        lang === 'bn' ? `জানুয়ারি – ডিসেম্বর ${yearDisplay}` : `Jan – Dec ${yearDisplay}`;
+      headerBadge = incExpYearOffset === 0 ? t.common.thisYear : yearDisplay;
+    } else if (filters.incExp === 'custom' && customDateFrom && customDateTo) {
+      const { from, to } = getShiftedCustomRange(customDateFrom, customDateTo, incExpCustomOffset);
+      filteredTxs = transactions.filter(
+        (tx) => !tx.rawDate || (tx.rawDate >= from && tx.rawDate <= to)
+      );
+      periodTitle =
+        from === to
+          ? formatDisplayDate(from, lang)
+          : `${formatDisplayDate(from, lang)} – ${formatDisplayDate(to, lang)}`;
+      headerBadge = formatShortRangeLabel(from, to, lang);
+    } else {
+      filteredTxs = filterTransactionsByPeriod(
+        transactions,
+        filters.incExp,
+        customDateFrom,
+        customDateTo
+      );
+      headerBadge = getFilterName(filters.incExp, lang);
+      periodTitle = getPeriodLabel(filters.incExp, customDateFrom, customDateTo, lang);
+      if (filters.incExp === 'previous_month') {
+        periodTitle = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString(
+          locale,
+          {
+            month: 'long',
+            year: 'numeric',
+          }
+        );
+      }
+    }
+
+    let totalIncome = 0;
+    let totalExpense = 0;
+
+    filteredTxs.forEach((tx) => {
+      if (tx.type === 'income') {
+        totalIncome += tx.amount;
+      } else if (tx.type === 'expense') {
+        totalExpense += tx.amount;
+      } else if (tx.type === 'adjustment') {
+        if (tx.amount > 0) totalIncome += tx.amount;
+        else totalExpense += Math.abs(tx.amount);
+      }
+    });
+
+    let filterButtonLabel = headerBadge;
+    if (filters.incExp === 'monthly' || filters.incExp === 'previous_month') {
+      filterButtonLabel = periodTitle;
+    } else if (filters.incExp === 'yearly') {
+      const targetYear = now.getFullYear() + incExpYearOffset;
+      filterButtonLabel = new Date(targetYear, 0, 1).toLocaleDateString(locale, {
+        year: 'numeric',
+      });
+    }
+
+    const netSavings = totalIncome - totalExpense;
+    const expenseRatioPct =
+      totalIncome > 0
+        ? Math.min(100, Math.max(0, (totalExpense / totalIncome) * 100))
+        : totalExpense > 0
+        ? 100
+        : 0;
+
+    return {
+      totalIncome,
+      totalExpense,
+      netSavings,
+      expenseRatioPct,
+      periodTitle,
+      headerBadge,
+      filterButtonLabel,
+    };
+  }, [
+    transactions,
+    filters.incExp,
+    incExpMonthOffset,
+    incExpYearOffset,
+    incExpCustomOffset,
+    customDateFrom,
+    customDateTo,
+    lang,
+    t,
+  ]);
 
   const budgetSummary = useMemo(() => {
     const sortedGoals = [...budgetGoals]
@@ -785,17 +1016,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
     return { items, totalTarget, totalSaved, totalPct };
   }, [savingGoals, transactions, savingsList, lang]);
-
-  const minYearOffset = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    let earliestYear = currentYear;
-    transactions.forEach((tx) => {
-      if (!tx.rawDate) return;
-      const y = parseLocalDate(tx.rawDate).getFullYear();
-      if (Number.isFinite(y) && y < earliestYear) earliestYear = y;
-    });
-    return Math.min(-6, earliestYear - currentYear - 1);
-  }, [transactions]);
 
   const categoryReportData = useMemo(
     () =>
@@ -848,6 +1068,33 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       t,
     ]
   );
+
+  const openCategoryDrilldown = (
+    source: 'report' | 'pie',
+    kind: 'expense' | 'income',
+    categoryName: string
+  ) => {
+    const filterMode = source === 'report' ? filters.categoryReport : filters.categoryPieChart;
+    const periodTitle =
+      source === 'report' ? categoryReportData.periodTitle : pieReportData.periodTitle;
+    const monthOffset = source === 'report' ? categoryMonthOffset : pieMonthOffset;
+    const yearOffset = source === 'report' ? categoryYearOffset : pieYearOffset;
+    const customOffset = source === 'report' ? categoryCustomOffset : pieCustomOffset;
+
+    const periodContext: DrilldownPeriodContext = {
+      periodLabel: periodTitle,
+      ...(filterMode === 'monthly' ? { monthOffset } : {}),
+      ...(filterMode === 'yearly' ? { yearOffset } : {}),
+      ...(filterMode === 'custom' ? { customOffset } : {}),
+    };
+
+    onOpenDrilldown(
+      kind === 'expense' ? 'expense_category' : 'income_category',
+      categoryName,
+      filterMode,
+      periodContext
+    );
+  };
 
   const txMonthData = useMemo(() => {
     const now = new Date();
@@ -939,10 +1186,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 {formatMoney(metrics.availableCashBalance, currency)}
               </span>
             </div>
-            <div className="mt-4 flex items-center justify-between border-t border-white/10 pt-3 text-xs text-slate-300">
-              <span>{getPeriodLabel(filters.netWorth, customDateFrom, customDateTo, lang)}</span>
-              <span>{t.dashboard.tapInspectLedger}</span>
-            </div>
           </div>
         );
 
@@ -1016,114 +1259,174 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           </SwipeableAccountStrip>
         );
 
-      case 'incExp':
-        return (
-          <div key="incExp" className="grid grid-cols-2 gap-3">
-            <div
-              onClick={() => {
-                if (!isLongPressRef.current) {
-                  onOpenDrilldown('expense', null, filters.incExp);
-                }
-              }}
-              onTouchStart={(e) =>
-                handlePressStart('incExp', e.touches[0].clientX, e.touches[0].clientY)
-              }
-              onTouchMove={(e) => handlePressMove(e.touches[0].clientX, e.touches[0].clientY)}
-              onTouchEnd={handlePressEnd}
-              onTouchCancel={handlePressEnd}
-              onMouseDown={(e) => {
-                if (e.button === 0) handlePressStart('incExp', e.clientX, e.clientY);
-              }}
-              onMouseMove={(e) => {
-                if (e.buttons === 1) handlePressMove(e.clientX, e.clientY);
-              }}
-              onMouseUp={handlePressEnd}
-              onMouseLeave={handlePressEnd}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                handlePressEnd();
-                onOpenFilterCard('incExp');
-              }}
-              className="flex h-full min-h-[82px] cursor-pointer flex-col justify-between rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 shadow-sm transition-transform active:scale-[0.99] dark:border-slate-800 dark:bg-slate-900"
-            >
-              <div className="flex items-center justify-between gap-1">
-                <span className="inline-flex min-w-0 items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400">
-                  <TrendingDown className="h-3.5 w-3.5 shrink-0 text-[#D94848]" />
-                  <span className="truncate">{t.common.expense}</span>
-                </span>
-                <button
-                  type="button"
-                  aria-label={t.common.expense}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenFilterCard('incExp');
-                  }}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div className="font-mono-num mt-1 truncate text-base font-extrabold leading-tight text-[#D94848] sm:text-lg dark:text-rose-400">
-                {formatMoney(metrics.totalExpense, currency)}
-              </div>
-              <div className="mt-0.5 truncate text-[11px] leading-tight text-slate-400 dark:text-slate-500">
-                {getFilterName(filters.incExp, lang)}
-              </div>
-            </div>
+      case 'incExp': {
+        const incExpPeriodContext: DrilldownPeriodContext = {
+          periodLabel: incExpSummary.periodTitle,
+          ...(filters.incExp === 'monthly' ? { monthOffset: incExpMonthOffset } : {}),
+          ...(filters.incExp === 'yearly' ? { yearOffset: incExpYearOffset } : {}),
+          ...(filters.incExp === 'custom' ? { customOffset: incExpCustomOffset } : {}),
+        };
+        const isDeficit = incExpSummary.netSavings < 0;
+        const isPositive = incExpSummary.netSavings > 0;
 
-            <div
-              onClick={() => {
-                if (!isLongPressRef.current) {
-                  onOpenDrilldown('income', null, filters.incExp);
-                }
-              }}
-              onTouchStart={(e) =>
-                handlePressStart('incExp', e.touches[0].clientX, e.touches[0].clientY)
+        return (
+          <div
+            key="incExp"
+            onTouchStart={(e) => {
+              handlePressStart('incExp', e.touches[0].clientX, e.touches[0].clientY);
+              handleIncExpSwipeStart(e.touches[0].clientX, e.touches[0].clientY);
+            }}
+            onTouchMove={(e) => {
+              handlePressMove(e.touches[0].clientX, e.touches[0].clientY);
+              handleIncExpSwipeMove(e.touches[0].clientX, e.touches[0].clientY);
+            }}
+            onTouchEnd={() => {
+              handlePressEnd();
+              handleIncExpSwipeEnd();
+            }}
+            onTouchCancel={() => {
+              handlePressEnd();
+              handleIncExpSwipeEnd();
+            }}
+            onMouseDown={(e) => {
+              if (e.button === 0) {
+                handlePressStart('incExp', e.clientX, e.clientY);
+                handleIncExpSwipeStart(e.clientX, e.clientY);
               }
-              onTouchMove={(e) => handlePressMove(e.touches[0].clientX, e.touches[0].clientY)}
-              onTouchEnd={handlePressEnd}
-              onTouchCancel={handlePressEnd}
-              onMouseDown={(e) => {
-                if (e.button === 0) handlePressStart('incExp', e.clientX, e.clientY);
+            }}
+            onMouseMove={(e) => {
+              if (e.buttons === 1) {
+                handlePressMove(e.clientX, e.clientY);
+                handleIncExpSwipeMove(e.clientX, e.clientY);
+              }
+            }}
+            onMouseUp={() => {
+              handlePressEnd();
+              handleIncExpSwipeEnd();
+            }}
+            onMouseLeave={() => {
+              handlePressEnd();
+              handleIncExpSwipeEnd();
+            }}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              handlePressEnd();
+              onOpenFilterCard('incExp');
+            }}
+            className="select-none overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+          >
+            <div
+              style={{
+                transform: `translateX(${incExpSwipeX}px)`,
               }}
-              onMouseMove={(e) => {
-                if (e.buttons === 1) handlePressMove(e.clientX, e.clientY);
-              }}
-              onMouseUp={handlePressEnd}
-              onMouseLeave={handlePressEnd}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                handlePressEnd();
-                onOpenFilterCard('incExp');
-              }}
-              className="flex h-full min-h-[82px] cursor-pointer flex-col justify-between rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 shadow-sm transition-transform active:scale-[0.99] dark:border-slate-800 dark:bg-slate-900"
+              className={!isSwipingIncExp ? 'transition-transform duration-200 ease-out' : ''}
             >
-              <div className="flex items-center justify-between gap-1">
-                <span className="inline-flex min-w-0 items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400">
-                  <TrendingUp className="h-3.5 w-3.5 shrink-0 text-[#16845B]" />
-                  <span className="truncate">{t.common.income}</span>
-                </span>
+              {/* Slim Single Period Filter Bar */}
+              <button
+                type="button"
+                onTouchStart={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (isLongPressRef.current || didIncExpSwipeRef.current) return;
+                  onOpenFilterCard('incExp');
+                }}
+                aria-label={t.modals.selectTimePeriod}
+                title={t.modals.selectTimePeriod}
+                className="flex w-full cursor-pointer items-center justify-between gap-2 px-4 py-2.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-50 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#16845B] sm:px-5 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200"
+              >
+                <span className="truncate">{incExpSummary.filterButtonLabel}</span>
+                <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+              </button>
+
+              {/* Income & Expense Interactive Split */}
+              <div className="grid grid-cols-2 divide-x divide-slate-100 border-t border-slate-100 dark:divide-slate-800 dark:border-slate-800">
                 <button
                   type="button"
-                  aria-label={t.common.income}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenFilterCard('incExp');
+                  onClick={() => {
+                    if (!isLongPressRef.current && !didIncExpSwipeRef.current) {
+                      onOpenDrilldown('income', null, filters.incExp, incExpPeriodContext);
+                    }
                   }}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  className="flex min-h-[72px] cursor-pointer flex-col justify-between px-4 py-3 text-left transition-colors hover:bg-emerald-50/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#16845B] sm:px-5 dark:hover:bg-emerald-950/20"
                 >
-                  <ChevronDown className="h-3.5 w-3.5" />
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400">
+                    <TrendingUp className="h-3.5 w-3.5 shrink-0 text-[#16845B] dark:text-emerald-400" />
+                    <span className="truncate">{t.common.income}</span>
+                  </span>
+                  <span className="font-mono-num mt-1 truncate text-base font-extrabold leading-tight text-[#16845B] sm:text-lg dark:text-emerald-400">
+                    {formatMoney(incExpSummary.totalIncome, currency)}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!isLongPressRef.current && !didIncExpSwipeRef.current) {
+                      onOpenDrilldown('expense', null, filters.incExp, incExpPeriodContext);
+                    }
+                  }}
+                  className="flex min-h-[72px] cursor-pointer flex-col justify-between px-4 py-3 text-left transition-colors hover:bg-rose-50/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#16845B] sm:px-5 dark:hover:bg-rose-950/20"
+                >
+                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400">
+                    <TrendingDown className="h-3.5 w-3.5 shrink-0 text-[#D94848] dark:text-rose-400" />
+                    <span className="truncate">{t.common.expense}</span>
+                  </span>
+                  <span className="font-mono-num mt-1 truncate text-base font-extrabold leading-tight text-[#D94848] sm:text-lg dark:text-rose-400">
+                    {formatMoney(incExpSummary.totalExpense, currency)}
+                  </span>
                 </button>
               </div>
-              <div className="font-mono-num mt-1 truncate text-base font-extrabold leading-tight text-[#16845B] sm:text-lg dark:text-emerald-400">
-                {formatMoney(metrics.totalIncome, currency)}
-              </div>
-              <div className="mt-0.5 truncate text-[11px] leading-tight text-slate-400 dark:text-slate-500">
-                {getFilterName(filters.incExp, lang)}
+
+              {/* Net Savings / Overspent Footer */}
+              <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3 sm:px-5 dark:border-slate-800 dark:bg-slate-950/40">
+                <div className="flex items-baseline justify-between gap-3">
+                  <span
+                    className={`truncate text-xs font-bold ${
+                      isDeficit
+                        ? 'text-[#D94848] dark:text-rose-400'
+                        : 'text-[#102A43] dark:text-slate-200'
+                    }`}
+                  >
+                    {isDeficit ? t.dashboard.overspentLabel : t.dashboard.netSavings}
+                  </span>
+                  <span
+                    className={`font-mono-num shrink-0 text-sm font-extrabold sm:text-base ${
+                      isDeficit
+                        ? 'text-[#D94848] dark:text-rose-400'
+                        : isPositive
+                        ? 'text-[#16845B] dark:text-emerald-400'
+                        : 'text-[#102A43] dark:text-slate-200'
+                    }`}
+                  >
+                    {isDeficit ? '−' : isPositive ? '+' : ''}
+                    {formatMoney(Math.abs(incExpSummary.netSavings), currency)}
+                  </span>
+                </div>
+
+                <div className="mt-2 flex h-1.5 w-full overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800">
+                  {incExpSummary.totalIncome > 0 ? (
+                    <>
+                      <div
+                        className="h-full bg-[#D94848]/85 transition-all duration-300"
+                        style={{ width: `${incExpSummary.expenseRatioPct}%` }}
+                      />
+                      {incExpSummary.netSavings > 0 && (
+                        <div
+                          className="h-full bg-[#16845B] transition-all duration-300"
+                          style={{ width: `${Math.max(0, 100 - incExpSummary.expenseRatioPct)}%` }}
+                        />
+                      )}
+                    </>
+                  ) : incExpSummary.totalExpense > 0 ? (
+                    <div className="h-full w-full bg-[#D94848]/85 transition-all duration-300" />
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>
         );
+      }
 
       case 'lendBorrow':
         return (
@@ -1216,49 +1519,30 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         return (
           <div
             key="budgetGoals"
-            className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            onClick={() => {
+              if (didGoalSwipeRef.current) return;
+              if (goalView === 'budget') {
+                onOpenBudgetGoalsModal();
+              } else {
+                onOpenSavingGoalsModal();
+              }
+            }}
+            className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-colors hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
           >
-            {/* Card Header with active view title + Budget/Saving segmented switch */}
+            {/* Card Header */}
             <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <h3 className="flex items-center gap-1.5 text-[13px] font-bold leading-snug text-[#102A43] sm:text-sm dark:text-slate-100">
-                  {goalView === 'budget' ? (
-                    <Target className="h-4 w-4 shrink-0 text-[#16845B] dark:text-emerald-400" />
-                  ) : (
-                    <PiggyBank className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
-                  )}
-                  <span>
-                    {goalView === 'budget'
-                      ? t.dashboard.monthlyBudgetGoals
-                      : t.dashboard.savingGoalsTitle}
-                  </span>
-                </h3>
-              </div>
-
-              <div className="flex shrink-0 items-center gap-0.5 rounded-xl bg-slate-100 p-1 sm:gap-1 dark:bg-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setGoalView('budget')}
-                  className={`min-h-[32px] rounded-lg px-2 py-1 text-[11px] font-bold transition-colors whitespace-nowrap shrink-0 sm:px-2.5 sm:text-xs ${
-                    goalView === 'budget'
-                      ? 'bg-white text-[#16845B] shadow-sm dark:bg-slate-900 dark:text-emerald-400'
-                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
-                >
-                  {t.dashboard.budgetTabShort}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setGoalView('saving')}
-                  className={`min-h-[32px] rounded-lg px-2 py-1 text-[11px] font-bold transition-colors whitespace-nowrap shrink-0 sm:px-2.5 sm:text-xs ${
-                    goalView === 'saving'
-                      ? 'bg-white text-sky-600 shadow-sm dark:bg-slate-900 dark:text-sky-400'
-                      : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'
-                  }`}
-                >
-                  {t.dashboard.savingTabShort}
-                </button>
-              </div>
+              <h3 className="flex min-w-0 items-center gap-1.5 text-[13px] font-bold leading-snug text-[#102A43] sm:text-sm dark:text-slate-100">
+                {goalView === 'budget' ? (
+                  <Target className="h-4 w-4 shrink-0 text-[#16845B] dark:text-emerald-400" />
+                ) : (
+                  <PiggyBank className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
+                )}
+                <span className="truncate">
+                  {goalView === 'budget'
+                    ? t.dashboard.monthlyBudgetGoals
+                    : t.dashboard.savingGoalsTitle}
+                </span>
+              </h3>
             </div>
 
             {/* Swipeable Single-Pane Carousel (Budget Goals <-> Saving Goals) */}
@@ -1297,7 +1581,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       </p>
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           if (!didGoalSwipeRef.current) onOpenBudgetGoalsModal();
                         }}
                         className="mt-3 rounded-xl bg-[#16845B] px-4 py-2 text-xs font-bold text-white hover:bg-[#126B4A]"
@@ -1307,21 +1592,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {/* Overall Monthly Budget Progress + Manage Action */}
+                      {/* Overall Monthly Budget Progress */}
                       <div className="rounded-xl border border-slate-100 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-950/60">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold text-[#102A43] dark:text-slate-200">
-                            {t.dashboard.totalBudgetedSpend}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!didGoalSwipeRef.current) onOpenBudgetGoalsModal();
-                            }}
-                            className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-[#102A43] transition-colors hover:border-[#16845B]/50 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800 whitespace-nowrap"
-                          >
-                            {t.dashboard.manageGoals}
-                          </button>
+                        <div className="mb-2 text-xs font-bold text-[#102A43] dark:text-slate-200">
+                          {t.dashboard.totalBudgetedSpend}
                         </div>
                         <div className="font-mono-num mb-1.5 text-xs font-bold text-[#102A43] dark:text-slate-100">
                           {formatMoney(budgetSummary.totalSpent, currency)} /{' '}
@@ -1372,10 +1646,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                             <button
                               key={goal.id}
                               type="button"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 if (!didGoalSwipeRef.current) onOpenBudgetGoalsModal(goal);
                               }}
-                              className="block w-full rounded-xl p-2 -mx-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                              className="block w-full cursor-pointer rounded-xl p-2 -mx-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
                             >
                               <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs">
                                 <div className="flex min-w-0 items-center gap-1.5">
@@ -1429,7 +1704,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       </p>
                       <button
                         type="button"
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           if (!didGoalSwipeRef.current) onOpenSavingGoalsModal();
                         }}
                         className="mt-3 rounded-xl bg-sky-600 px-4 py-2 text-xs font-bold text-white hover:bg-sky-700"
@@ -1439,21 +1715,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     </div>
                   ) : (
                     <div className="space-y-4">
-                      {/* Overall Saving Goals Progress + Manage Action */}
+                      {/* Overall Saving Goals Progress */}
                       <div className="rounded-xl border border-slate-100 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-950/60">
-                        <div className="mb-2 flex items-center justify-between gap-2">
-                          <span className="text-xs font-bold text-[#102A43] dark:text-slate-200">
-                            {t.dashboard.totalSavedTowardGoals}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!didGoalSwipeRef.current) onOpenSavingGoalsModal();
-                            }}
-                            className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-[11px] font-bold text-[#102A43] transition-colors hover:border-sky-500/50 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800 whitespace-nowrap"
-                          >
-                            {t.dashboard.manageGoals}
-                          </button>
+                        <div className="mb-2 text-xs font-bold text-[#102A43] dark:text-slate-200">
+                          {t.dashboard.totalSavedTowardGoals}
                         </div>
                         <div className="font-mono-num mb-1.5 text-xs font-bold text-[#102A43] dark:text-slate-100">
                           {formatMoney(savingSummary.totalSaved, currency)} /{' '}
@@ -1518,10 +1783,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                             <button
                               key={goal.id}
                               type="button"
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 if (!didGoalSwipeRef.current) onOpenSavingGoalsModal(goal);
                               }}
-                              className="block w-full rounded-xl p-2 -mx-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                              className="block w-full cursor-pointer rounded-xl p-2 -mx-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
                             >
                               <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs">
                                 <div className="flex min-w-0 items-center gap-1.5">
@@ -1588,12 +1854,19 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   ? t.dashboard.swipeLeftSaving
                   : t.dashboard.swipeRightBudget}
               </span>
-              <div className="flex items-center gap-0.5">
+              <div
+                onTouchStart={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                className="flex items-center gap-0.5"
+              >
                 <button
                   type="button"
                   aria-label={t.dashboard.monthlyBudgetGoals}
-                  onClick={() => setGoalView('budget')}
-                  className="flex h-8 items-center px-1"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    selectGoalView('budget');
+                  }}
+                  className="flex h-8 cursor-pointer items-center px-1"
                 >
                   <span
                     className={`block h-1.5 rounded-full transition-all ${
@@ -1606,8 +1879,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 <button
                   type="button"
                   aria-label={t.dashboard.savingGoalsTitle}
-                  onClick={() => setGoalView('saving')}
-                  className="flex h-8 items-center px-1"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    selectGoalView('saving');
+                  }}
+                  className="flex h-8 cursor-pointer items-center px-1"
                 >
                   <span
                     className={`block h-1.5 rounded-full transition-all ${
@@ -1623,274 +1899,239 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         );
 
       case 'categoryReport': {
+        const isExpenseView = categoryView === 'expense';
+        const activeItems = isExpenseView
+          ? categoryReportData.sortedExpenses
+          : categoryReportData.sortedIncomes;
+        const activeTotal = isExpenseView
+          ? categoryReportData.totalExpense
+          : categoryReportData.totalIncome;
+        const styleKind = isExpenseView ? 'exp' : 'inc';
+
         return (
           <div
             key="categoryReport"
-            onTouchStart={(e) =>
-              handlePressStart('categoryReport', e.touches[0].clientX, e.touches[0].clientY)
-            }
-            onTouchMove={(e) => handlePressMove(e.touches[0].clientX, e.touches[0].clientY)}
-            onTouchEnd={handlePressEnd}
-            onTouchCancel={handlePressEnd}
+            onTouchStart={(e) => {
+              handlePressStart('categoryReport', e.touches[0].clientX, e.touches[0].clientY);
+              handleCategorySwipeStart(e.touches[0].clientX, e.touches[0].clientY);
+            }}
+            onTouchMove={(e) => {
+              handlePressMove(e.touches[0].clientX, e.touches[0].clientY);
+              handleCategorySwipeMove(e.touches[0].clientX, e.touches[0].clientY);
+            }}
+            onTouchEnd={() => {
+              handlePressEnd();
+              handleCategorySwipeEnd();
+            }}
+            onTouchCancel={() => {
+              handlePressEnd();
+              handleCategorySwipeEnd();
+            }}
             onMouseDown={(e) => {
-              if (e.button === 0) handlePressStart('categoryReport', e.clientX, e.clientY);
+              if (e.button === 0) {
+                handlePressStart('categoryReport', e.clientX, e.clientY);
+                handleCategorySwipeStart(e.clientX, e.clientY);
+              }
             }}
             onMouseMove={(e) => {
-              if (e.buttons === 1) handlePressMove(e.clientX, e.clientY);
+              if (e.buttons === 1) {
+                handlePressMove(e.clientX, e.clientY);
+                handleCategorySwipeMove(e.clientX, e.clientY);
+              }
             }}
-            onMouseUp={handlePressEnd}
-            onMouseLeave={handlePressEnd}
+            onMouseUp={() => {
+              handlePressEnd();
+              handleCategorySwipeEnd();
+            }}
+            onMouseLeave={() => {
+              handlePressEnd();
+              handleCategorySwipeEnd();
+            }}
             onContextMenu={(e) => {
               e.preventDefault();
               handlePressEnd();
               onOpenFilterCard('categoryReport');
             }}
-            className={`select-none rounded-2xl border p-5 shadow-sm transition-colors duration-200 ${
-              categoryView === 'expense'
+            className={`select-none overflow-hidden rounded-2xl border p-5 shadow-sm transition-colors duration-200 ${
+              isExpenseView
                 ? 'border-rose-200/75 bg-rose-50/45 dark:border-rose-900/40 dark:bg-rose-950/20'
                 : 'border-emerald-200/75 bg-emerald-50/45 dark:border-emerald-900/40 dark:bg-emerald-950/20'
             }`}
           >
-            {/* Card Header with active view title + filter selector + icon switch */}
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-[#102A43] dark:text-slate-100">
-                {categoryView === 'expense' ? (
-                  <TrendingDown className="h-4 w-4 shrink-0 text-slate-600 dark:text-slate-300" />
-                ) : (
-                  <TrendingUp className="h-4 w-4 shrink-0 text-slate-600 dark:text-slate-300" />
-                )}
-                <span className="truncate">
-                  {categoryView === 'expense'
-                    ? t.dashboard.expenseByCategory
-                    : t.dashboard.incomeByCategory}
-                </span>
-              </h3>
+            <div
+              style={{
+                transform: `translateX(${categorySwipeX}px)`,
+              }}
+              className={!isSwipingCategory ? 'transition-transform duration-200 ease-out' : ''}
+            >
+              {/* Card Header with active view title + filter selector + icon switch */}
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-[#102A43] dark:text-slate-100">
+                  {isExpenseView ? (
+                    <TrendingDown className="h-4 w-4 shrink-0 text-slate-600 dark:text-slate-300" />
+                  ) : (
+                    <TrendingUp className="h-4 w-4 shrink-0 text-slate-600 dark:text-slate-300" />
+                  )}
+                  <span className="truncate">
+                    {isExpenseView
+                      ? t.dashboard.expenseByCategory
+                      : t.dashboard.incomeByCategory}
+                  </span>
+                </h3>
 
-              <div className="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (isLongPressRef.current) return;
+                    if (isLongPressRef.current || didCategorySwipeRef.current) return;
                     onOpenFilterCard('categoryReport');
                   }}
                   aria-label={t.modals.selectTimePeriod}
                   title={t.modals.selectTimePeriod}
-                  className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-900/5 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
+                  className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-900/5 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
                 >
                   <span className="max-w-[145px] truncate">{categoryReportData.headerBadge}</span>
                   <ChevronDown className="h-3.5 w-3.5 shrink-0" />
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isLongPressRef.current) return;
-                    setCategoryView((prev) => (prev === 'expense' ? 'income' : 'expense'));
-                  }}
-                  aria-label={
-                    categoryView === 'expense'
-                      ? t.dashboard.switchToIncome
-                      : t.dashboard.switchToExpense
-                  }
-                  title={
-                    categoryView === 'expense'
-                      ? t.dashboard.switchToIncome
-                      : t.dashboard.switchToExpense
-                  }
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-900/5 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-slate-200"
-                >
-                  <ArrowLeftRight className="h-3.5 w-3.5" />
-                </button>
               </div>
-            </div>
 
-            {/* Slidable Period Bar (Monthly, Yearly, or Custom Range) */}
-            {filters.categoryReport === 'monthly' && (
-              <SlidableMonthBar
-                monthOffset={categoryMonthOffset}
-                onSelectMonth={setCategoryMonthOffset}
-                tone={categoryView}
-              />
-            )}
-            {filters.categoryReport === 'yearly' && (
-              <SlidableYearBar
-                yearOffset={categoryYearOffset}
-                onSelectYear={setCategoryYearOffset}
-                minYearOffset={minYearOffset}
-                tone={categoryView}
-              />
-            )}
-            {filters.categoryReport === 'custom' && (
-              <SlidableCustomBar
-                customFrom={customDateFrom}
-                customTo={customDateTo}
-                customOffset={categoryCustomOffset}
-                onSelectOffset={setCategoryCustomOffset}
-                onEditRange={() => onOpenFilterCard('categoryReport')}
-                tone={categoryView}
-              />
-            )}
-
-            {/* Swipeable Single-Pane Carousel (Expense <-> Income) */}
-            <div
-              onTouchStart={(e) =>
-                handleCategorySwipeStart(e.touches[0].clientX, e.touches[0].clientY)
-              }
-              onTouchMove={(e) =>
-                handleCategorySwipeMove(e.touches[0].clientX, e.touches[0].clientY)
-              }
-              onTouchEnd={handleCategorySwipeEnd}
-              onMouseDown={(e) => handleCategorySwipeStart(e.clientX, e.clientY)}
-              onMouseMove={(e) => {
-                if (e.buttons === 1) handleCategorySwipeMove(e.clientX, e.clientY);
-              }}
-              onMouseUp={handleCategorySwipeEnd}
-              onMouseLeave={handleCategorySwipeEnd}
-              className="mt-3.5 overflow-hidden select-none cursor-grab active:cursor-grabbing"
-            >
-              <div
-                style={{
-                  transform: `translateX(calc(${
-                    categoryView === 'expense' ? '0%' : '-50%'
-                  } + ${categorySwipeX}px))`,
-                }}
-                className={`flex w-[200%] items-start ${
-                  !isSwipingCategory ? 'transition-transform duration-300 ease-out' : ''
-                }`}
-              >
-                {/* Slide 1: Expense Breakdown */}
-                <div className="w-1/2 shrink-0 pr-1">
-                  <div className="mb-3 flex items-center justify-between gap-2 text-xs">
-                    <span className="truncate font-semibold text-slate-500 dark:text-slate-400">
-                      {categoryReportData.periodTitle} · {t.dashboard.totalExpenseSuffix}
-                    </span>
-                    <span className="font-mono-num shrink-0 font-extrabold text-[#102A43] dark:text-slate-100">
-                      {formatMoney(categoryReportData.totalExpense, currency)}
-                    </span>
-                  </div>
-
-                  {categoryReportData.sortedExpenses.length === 0 ? (
-                    <p className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
-                      {t.dashboard.noExpensesRecorded} {categoryReportData.emptyPeriodLabel}
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {categoryReportData.sortedExpenses.map(([cat, amount]) => {
-                        const pct =
-                          categoryReportData.totalExpense > 0
-                            ? ((amount / categoryReportData.totalExpense) * 100).toFixed(1)
-                            : '0';
-                        const catStyle = getCategoryStyle(categoryStyles, 'exp', cat);
-                        return (
-                          <div key={cat}>
-                            <div className="mb-1 flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
-                              <span className="flex min-w-0 items-center gap-1.5 pr-2">
-                                <CategoryIconBadge style={catStyle} size="xs" />
-                                <span className="truncate">{cat}</span>
-                              </span>
-                              <span className="font-mono-num shrink-0">
-                                {formatMoney(amount, currency)} ({pct}%)
-                              </span>
-                            </div>
-                            <div className="h-2 overflow-hidden rounded-full bg-white/80 dark:bg-slate-800">
-                              <div
-                                className="h-full rounded-full"
-                                style={{ width: `${pct}%`, backgroundColor: catStyle.color }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+              {/* Slidable Period Bar */}
+              {(filters.categoryReport === 'monthly' ||
+                filters.categoryReport === 'yearly' ||
+                (filters.categoryReport === 'custom' && Boolean(customDateFrom && customDateTo))) && (
+                <div
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  {filters.categoryReport === 'monthly' && (
+                    <SlidableMonthBar
+                      monthOffset={categoryMonthOffset}
+                      onSelectMonth={setCategoryMonthOffset}
+                      tone={isExpenseView ? 'expense' : 'income'}
+                    />
+                  )}
+                  {filters.categoryReport === 'yearly' && (
+                    <SlidableYearBar
+                      yearOffset={categoryYearOffset}
+                      onSelectYear={setCategoryYearOffset}
+                      tone={isExpenseView ? 'expense' : 'income'}
+                    />
+                  )}
+                  {filters.categoryReport === 'custom' && customDateFrom && customDateTo && (
+                    <SlidableCustomBar
+                      customFrom={customDateFrom}
+                      customTo={customDateTo}
+                      customOffset={categoryCustomOffset}
+                      onSelectOffset={setCategoryCustomOffset}
+                      onEditRange={() => onOpenFilterCard('categoryReport')}
+                      tone={isExpenseView ? 'expense' : 'income'}
+                    />
                   )}
                 </div>
+              )}
 
-                {/* Slide 2: Income Breakdown */}
-                <div className="w-1/2 shrink-0 pl-1">
-                  <div className="mb-3 flex items-center justify-between gap-2 text-xs">
-                    <span className="truncate font-semibold text-slate-500 dark:text-slate-400">
-                      {categoryReportData.periodTitle} · {t.dashboard.totalIncomeSuffix}
-                    </span>
-                    <span className="font-mono-num shrink-0 font-extrabold text-[#102A43] dark:text-slate-100">
-                      {formatMoney(categoryReportData.totalIncome, currency)}
-                    </span>
-                  </div>
-
-                  {categoryReportData.sortedIncomes.length === 0 ? (
-                    <p className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
-                      {t.dashboard.noIncomeRecorded} {categoryReportData.emptyPeriodLabel}
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {categoryReportData.sortedIncomes.map(([cat, amount]) => {
-                        const pct =
-                          categoryReportData.totalIncome > 0
-                            ? ((amount / categoryReportData.totalIncome) * 100).toFixed(1)
-                            : '0';
-                        const catStyle = getCategoryStyle(categoryStyles, 'inc', cat);
-                        return (
-                          <div key={cat}>
-                            <div className="mb-1 flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
-                              <span className="flex min-w-0 items-center gap-1.5 pr-2">
-                                <CategoryIconBadge style={catStyle} size="xs" />
-                                <span className="truncate">{cat}</span>
-                              </span>
-                              <span className="font-mono-num shrink-0">
-                                {formatMoney(amount, currency)} ({pct}%)
-                              </span>
-                            </div>
-                            <div className="h-2 overflow-hidden rounded-full bg-white/80 dark:bg-slate-800">
-                              <div
-                                className="h-full rounded-full"
-                                style={{ width: `${pct}%`, backgroundColor: catStyle.color }}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+              {/* Active Breakdown Summary & Category Rows */}
+              <div className="mt-3.5">
+                <div className="mb-3 flex items-center justify-between gap-2 text-xs">
+                  <span className="truncate font-semibold text-slate-500 dark:text-slate-400">
+                    {categoryReportData.periodTitle} ·{' '}
+                    {isExpenseView
+                      ? t.dashboard.totalExpenseSuffix
+                      : t.dashboard.totalIncomeSuffix}
+                  </span>
+                  <span className="font-mono-num shrink-0 font-extrabold text-[#102A43] dark:text-slate-100">
+                    {formatMoney(activeTotal, currency)}
+                  </span>
                 </div>
-              </div>
-            </div>
 
-            {/* Bottom slide indicator + hint */}
-            <div className="mt-4 flex items-center justify-between border-t border-slate-200/70 pt-3 text-[11px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
-              <span>
-                {categoryView === 'expense'
-                  ? t.dashboard.swipeLeftIncome
-                  : t.dashboard.swipeRightExpense}
-              </span>
-              <div className="flex items-center gap-0.5">
-                <button
-                  type="button"
-                  aria-label={t.dashboard.expenseByCategory}
-                  onClick={() => setCategoryView('expense')}
-                  className="flex h-8 items-center px-1"
+                {activeItems.length === 0 ? (
+                  <p className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
+                    {isExpenseView
+                      ? t.dashboard.noExpensesRecorded
+                      : t.dashboard.noIncomeRecorded}{' '}
+                    {categoryReportData.emptyPeriodLabel}
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {activeItems.map(([cat, amount]) => {
+                      const pct =
+                        activeTotal > 0 ? ((amount / activeTotal) * 100).toFixed(1) : '0';
+                      const catStyle = getCategoryStyle(categoryStyles, styleKind, cat);
+                      return (
+                        <button
+                          key={cat}
+                          type="button"
+                          onClick={() => {
+                            if (isLongPressRef.current || didCategorySwipeRef.current) return;
+                            openCategoryDrilldown('report', categoryView, cat);
+                          }}
+                          className="group w-full min-h-[44px] cursor-pointer rounded-xl px-2 py-2 text-left transition-colors hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] active:scale-[0.995] dark:hover:bg-slate-800/60"
+                        >
+                          <div className="mb-1.5 flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
+                            <span className="flex min-w-0 items-center gap-1.5 pr-2">
+                              <CategoryIconBadge style={catStyle} size="xs" />
+                              <span className="truncate group-hover:text-[#102A43] dark:group-hover:text-slate-100">
+                                {cat}
+                              </span>
+                            </span>
+                            <span className="font-mono-num shrink-0">
+                              {formatMoney(amount, currency)} ({pct}%)
+                            </span>
+                          </div>
+                          <div className="h-2 overflow-hidden rounded-full bg-white/80 dark:bg-slate-800">
+                            <div
+                              className="h-full rounded-full"
+                              style={{ width: `${pct}%`, backgroundColor: catStyle.color }}
+                            />
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom slide indicator + hint */}
+              <div className="mt-4 flex items-center justify-between border-t border-slate-200/70 pt-3 text-[11px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                <span className="truncate">
+                  {isExpenseView ? t.dashboard.swipeLeftIncome : t.dashboard.swipeRightExpense}
+                </span>
+                <div
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="flex shrink-0 items-center gap-1"
                 >
-                  <span
-                    className={`block h-1.5 rounded-full transition-all ${
-                      categoryView === 'expense'
-                        ? 'w-5 bg-[#102A43] dark:bg-slate-200'
-                        : 'w-2 bg-slate-300 dark:bg-slate-700'
-                    }`}
-                  />
-                </button>
-                <button
-                  type="button"
-                  aria-label={t.dashboard.incomeByCategory}
-                  onClick={() => setCategoryView('income')}
-                  className="flex h-8 items-center px-1"
-                >
-                  <span
-                    className={`block h-1.5 rounded-full transition-all ${
-                      categoryView === 'income'
-                        ? 'w-5 bg-[#102A43] dark:bg-slate-200'
-                        : 'w-2 bg-slate-300 dark:bg-slate-700'
-                    }`}
-                  />
-                </button>
+                  <button
+                    type="button"
+                    aria-label={t.dashboard.expenseByCategory}
+                    onClick={() => setCategoryView('expense')}
+                    className="flex h-7 cursor-pointer items-center px-1"
+                  >
+                    <span
+                      className={`block h-1.5 rounded-full transition-all ${
+                        isExpenseView
+                          ? 'w-5 bg-[#102A43] dark:bg-slate-100'
+                          : 'w-1.5 bg-slate-300 dark:bg-slate-700'
+                      }`}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={t.dashboard.incomeByCategory}
+                    onClick={() => setCategoryView('income')}
+                    className="flex h-7 cursor-pointer items-center px-1"
+                  >
+                    <span
+                      className={`block h-1.5 rounded-full transition-all ${
+                        !isExpenseView
+                          ? 'w-5 bg-[#102A43] dark:bg-slate-100'
+                          : 'w-1.5 bg-slate-300 dark:bg-slate-700'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -1904,338 +2145,273 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           setActiveIncomeChartCategory(null);
         };
 
-        const selectPieMonth = (nextOffset: number) => {
-          setPieMonthOffset(nextOffset);
-          setActiveExpenseChartCategory(null);
-          setActiveIncomeChartCategory(null);
-        };
+        const isExpensePie = pieView === 'expense';
+        const activeItems = isExpensePie
+          ? pieReportData.sortedExpenses
+          : pieReportData.sortedIncomes;
+        const activeTotal = isExpensePie ? pieReportData.totalExpense : pieReportData.totalIncome;
+        const styleKind = isExpensePie ? 'exp' : 'inc';
+        const activeChartCategory = isExpensePie
+          ? activeExpenseChartCategory
+          : activeIncomeChartCategory;
+        const setActiveChartCategory = isExpensePie
+          ? setActiveExpenseChartCategory
+          : setActiveIncomeChartCategory;
 
         return (
           <div
             key="categoryPieChart"
-            onTouchStart={(e) =>
-              handlePressStart('categoryPieChart', e.touches[0].clientX, e.touches[0].clientY)
-            }
-            onTouchMove={(e) => handlePressMove(e.touches[0].clientX, e.touches[0].clientY)}
-            onTouchEnd={handlePressEnd}
-            onTouchCancel={handlePressEnd}
+            onTouchStart={(e) => {
+              handlePressStart('categoryPieChart', e.touches[0].clientX, e.touches[0].clientY);
+              handlePieSwipeStart(e.touches[0].clientX, e.touches[0].clientY);
+            }}
+            onTouchMove={(e) => {
+              handlePressMove(e.touches[0].clientX, e.touches[0].clientY);
+              handlePieSwipeMove(e.touches[0].clientX, e.touches[0].clientY);
+            }}
+            onTouchEnd={() => {
+              handlePressEnd();
+              handlePieSwipeEnd();
+            }}
+            onTouchCancel={() => {
+              handlePressEnd();
+              handlePieSwipeEnd();
+            }}
             onMouseDown={(e) => {
-              if (e.button === 0) handlePressStart('categoryPieChart', e.clientX, e.clientY);
+              if (e.button === 0) {
+                handlePressStart('categoryPieChart', e.clientX, e.clientY);
+                handlePieSwipeStart(e.clientX, e.clientY);
+              }
             }}
             onMouseMove={(e) => {
-              if (e.buttons === 1) handlePressMove(e.clientX, e.clientY);
+              if (e.buttons === 1) {
+                handlePressMove(e.clientX, e.clientY);
+                handlePieSwipeMove(e.clientX, e.clientY);
+              }
             }}
-            onMouseUp={handlePressEnd}
-            onMouseLeave={handlePressEnd}
+            onMouseUp={() => {
+              handlePressEnd();
+              handlePieSwipeEnd();
+            }}
+            onMouseLeave={() => {
+              handlePressEnd();
+              handlePieSwipeEnd();
+            }}
             onContextMenu={(e) => {
               e.preventDefault();
               handlePressEnd();
               onOpenFilterCard('categoryPieChart');
             }}
-            className={`select-none rounded-2xl border p-5 shadow-sm transition-colors duration-200 ${
-              pieView === 'expense'
+            className={`select-none overflow-hidden rounded-2xl border p-5 shadow-sm transition-colors duration-200 ${
+              isExpensePie
                 ? 'border-rose-200/75 bg-rose-50/45 dark:border-rose-900/40 dark:bg-rose-950/20'
                 : 'border-emerald-200/75 bg-emerald-50/45 dark:border-emerald-900/40 dark:bg-emerald-950/20'
             }`}
           >
-            {/* Card Header with active view title + filter selector + icon switch */}
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-[#102A43] dark:text-slate-100">
-                <PieChart className="h-4 w-4 shrink-0 text-slate-600 dark:text-slate-300" />
-                <span className="truncate">
-                  {pieView === 'expense'
-                    ? t.dashboard.expensePieChart
-                    : t.dashboard.incomePieChart}
-                </span>
-              </h3>
+            <div
+              style={{
+                transform: `translateX(${pieSwipeX}px)`,
+              }}
+              className={!isSwipingPie ? 'transition-transform duration-200 ease-out' : ''}
+            >
+              {/* Card Header with active view title + filter selector + icon switch */}
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-[#102A43] dark:text-slate-100">
+                  <PieChart className="h-4 w-4 shrink-0 text-slate-600 dark:text-slate-300" />
+                  <span className="truncate">
+                    {isExpensePie ? t.dashboard.expensePieChart : t.dashboard.incomePieChart}
+                  </span>
+                </h3>
 
-              <div className="flex shrink-0 items-center gap-1">
                 <button
                   type="button"
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
-                    if (isLongPressRef.current) return;
+                    if (isLongPressRef.current || didPieSwipeRef.current) return;
                     onOpenFilterCard('categoryPieChart');
                   }}
                   aria-label={t.modals.selectTimePeriod}
                   title={t.modals.selectTimePeriod}
-                  className="inline-flex h-7 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-900/5 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
+                  className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-900/5 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
                 >
                   <span className="max-w-[145px] truncate">{pieReportData.headerBadge}</span>
                   <ChevronDown className="h-3.5 w-3.5 shrink-0" />
                 </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isLongPressRef.current) return;
-                    selectPieView(pieView === 'expense' ? 'income' : 'expense');
-                  }}
-                  aria-label={
-                    pieView === 'expense'
-                      ? t.dashboard.switchToIncome
-                      : t.dashboard.switchToExpense
-                  }
-                  title={
-                    pieView === 'expense'
-                      ? t.dashboard.switchToIncome
-                      : t.dashboard.switchToExpense
-                  }
-                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-slate-400 transition-colors hover:bg-slate-900/5 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-500 dark:hover:bg-white/10 dark:hover:text-slate-200"
-                >
-                  <ArrowLeftRight className="h-3.5 w-3.5" />
-                </button>
               </div>
-            </div>
 
-            {/* Slidable Period Bar (Monthly, Yearly, or Custom Range) */}
-            {filters.categoryPieChart === 'monthly' && (
-              <SlidableMonthBar
-                monthOffset={pieMonthOffset}
-                onSelectMonth={selectPieMonth}
-                tone={pieView}
-              />
-            )}
-            {filters.categoryPieChart === 'yearly' && (
-              <SlidableYearBar
-                yearOffset={pieYearOffset}
-                onSelectYear={setPieYearOffset}
-                minYearOffset={minYearOffset}
-                tone={pieView}
-              />
-            )}
-            {filters.categoryPieChart === 'custom' && (
-              <SlidableCustomBar
-                customFrom={customDateFrom}
-                customTo={customDateTo}
-                customOffset={pieCustomOffset}
-                onSelectOffset={setPieCustomOffset}
-                onEditRange={() => onOpenFilterCard('categoryPieChart')}
-                tone={pieView}
-              />
-            )}
+              {/* Slidable Period Bar */}
+              {(filters.categoryPieChart === 'monthly' ||
+                filters.categoryPieChart === 'yearly' ||
+                (filters.categoryPieChart === 'custom' &&
+                  Boolean(customDateFrom && customDateTo))) && (
+                <div
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                >
+                  {filters.categoryPieChart === 'monthly' && (
+                    <SlidableMonthBar
+                      monthOffset={pieMonthOffset}
+                      onSelectMonth={setPieMonthOffset}
+                      tone={isExpensePie ? 'expense' : 'income'}
+                    />
+                  )}
+                  {filters.categoryPieChart === 'yearly' && (
+                    <SlidableYearBar
+                      yearOffset={pieYearOffset}
+                      onSelectYear={setPieYearOffset}
+                      tone={isExpensePie ? 'expense' : 'income'}
+                    />
+                  )}
+                  {filters.categoryPieChart === 'custom' && customDateFrom && customDateTo && (
+                    <SlidableCustomBar
+                      customFrom={customDateFrom}
+                      customTo={customDateTo}
+                      customOffset={pieCustomOffset}
+                      onSelectOffset={setPieCustomOffset}
+                      onEditRange={() => onOpenFilterCard('categoryPieChart')}
+                      tone={isExpensePie ? 'expense' : 'income'}
+                    />
+                  )}
+                </div>
+              )}
 
-            {/* Swipeable Single-Pane Pie Chart Carousel (Expense <-> Income) */}
-            <div
-              onTouchStart={(e) => handlePieSwipeStart(e.touches[0].clientX, e.touches[0].clientY)}
-              onTouchMove={(e) => handlePieSwipeMove(e.touches[0].clientX, e.touches[0].clientY)}
-              onTouchEnd={handlePieSwipeEnd}
-              onMouseDown={(e) => handlePieSwipeStart(e.clientX, e.clientY)}
-              onMouseMove={(e) => {
-                if (e.buttons === 1) handlePieSwipeMove(e.clientX, e.clientY);
-              }}
-              onMouseUp={handlePieSwipeEnd}
-              onMouseLeave={handlePieSwipeEnd}
-              className="mt-3.5 overflow-hidden select-none cursor-grab active:cursor-grabbing"
-            >
-              <div
-                style={{
-                  transform: `translateX(calc(${
-                    pieView === 'expense' ? '0%' : '-50%'
-                  } + ${pieSwipeX}px))`,
-                }}
-                className={`flex w-[200%] items-start ${
-                  !isSwipingPie ? 'transition-transform duration-300 ease-out' : ''
-                }`}
-              >
-                {/* Slide 1: Expense Pie Chart */}
-                <div className="w-1/2 shrink-0 pr-1">
-                  <div className="mb-3 flex items-center justify-between gap-2 text-xs">
-                    <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold text-slate-500 dark:text-slate-400">
+              {/* Active Pie Chart + Dual-Click Legend */}
+              <div className="mt-3.5">
+                <div className="mb-3 flex items-center justify-between gap-2 text-xs">
+                  <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold text-slate-500 dark:text-slate-400">
+                    {isExpensePie ? (
                       <TrendingDown className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
-                      <span className="truncate">
-                        {pieReportData.periodTitle} · {t.dashboard.totalExpenseSuffix}
-                      </span>
-                    </span>
-                    <span className="font-mono-num shrink-0 font-extrabold text-[#102A43] dark:text-slate-100">
-                      {formatMoney(pieReportData.totalExpense, currency)}
-                    </span>
-                  </div>
-
-                  {pieReportData.sortedExpenses.length === 0 ? (
-                    <p className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
-                      {t.dashboard.noExpensesRecorded} {pieReportData.emptyPeriodLabel}
-                    </p>
-                  ) : (
-                    <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
-                      <CategoryPieChart
-                        items={pieReportData.sortedExpenses}
-                        total={pieReportData.totalExpense}
-                        palette={EXPENSE_CHART_COLORS}
-                        colorMap={Object.fromEntries(
-                          pieReportData.sortedExpenses.map(([cat]) => [
-                            cat,
-                            getCategoryStyle(categoryStyles, 'exp', cat).color,
-                          ])
-                        )}
-                        currency={currency}
-                        totalLabel={t.dashboard.totalExpenseLabel}
-                        activeCategory={activeExpenseChartCategory}
-                        onSelectCategory={(cat) => {
-                          if (!isLongPressRef.current) setActiveExpenseChartCategory(cat);
-                        }}
-                        didSwipeRef={didPieSwipeRef}
-                      />
-
-                      <div className="w-full min-w-0 flex-1 space-y-1.5">
-                        {pieReportData.sortedExpenses.map(([cat, amount]) => {
-                          const catStyle = getCategoryStyle(categoryStyles, 'exp', cat);
-                          const pct =
-                            pieReportData.totalExpense > 0
-                              ? ((amount / pieReportData.totalExpense) * 100).toFixed(1)
-                              : '0';
-                          const isHighlighted = activeExpenseChartCategory === cat;
-                          return (
-                            <button
-                              key={cat}
-                              type="button"
-                              onMouseEnter={() => setActiveExpenseChartCategory(cat)}
-                              onMouseLeave={() => setActiveExpenseChartCategory(null)}
-                              onClick={() => {
-                                if (didPieSwipeRef.current || isLongPressRef.current) return;
-                                setActiveExpenseChartCategory((prev) => (prev === cat ? null : cat));
-                              }}
-                              className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors ${
-                                isHighlighted
-                                  ? 'bg-white/85 dark:bg-slate-800'
-                                  : 'hover:bg-white/60 dark:hover:bg-slate-800/50'
-                              }`}
-                            >
-                              <span className="flex min-w-0 items-center gap-2">
-                                <CategoryIconBadge style={catStyle} size="xs" />
-                                <span className="truncate font-semibold text-slate-700 dark:text-slate-200">
-                                  {cat}
-                                </span>
-                              </span>
-                              <span className="font-mono-num shrink-0 font-semibold text-slate-600 dark:text-slate-300">
-                                {pct}% · {formatMoney(amount, currency)}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* Slide 2: Income Pie Chart */}
-                <div className="w-1/2 shrink-0 pl-1">
-                  <div className="mb-3 flex items-center justify-between gap-2 text-xs">
-                    <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold text-slate-500 dark:text-slate-400">
+                    ) : (
                       <TrendingUp className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
-                      <span className="truncate">
-                        {pieReportData.periodTitle} · {t.dashboard.totalIncomeSuffix}
-                      </span>
+                    )}
+                    <span className="truncate">
+                      {pieReportData.periodTitle} ·{' '}
+                      {isExpensePie
+                        ? t.dashboard.totalExpenseSuffix
+                        : t.dashboard.totalIncomeSuffix}
                     </span>
-                    <span className="font-mono-num shrink-0 font-extrabold text-[#102A43] dark:text-slate-100">
-                      {formatMoney(pieReportData.totalIncome, currency)}
-                    </span>
-                  </div>
-
-                  {pieReportData.sortedIncomes.length === 0 ? (
-                    <p className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
-                      {t.dashboard.noIncomeRecorded} {pieReportData.emptyPeriodLabel}
-                    </p>
-                  ) : (
-                    <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
-                      <CategoryPieChart
-                        items={pieReportData.sortedIncomes}
-                        total={pieReportData.totalIncome}
-                        palette={INCOME_CHART_COLORS}
-                        colorMap={Object.fromEntries(
-                          pieReportData.sortedIncomes.map(([cat]) => [
-                            cat,
-                            getCategoryStyle(categoryStyles, 'inc', cat).color,
-                          ])
-                        )}
-                        currency={currency}
-                        totalLabel={t.dashboard.totalIncomeLabel}
-                        activeCategory={activeIncomeChartCategory}
-                        onSelectCategory={(cat) => {
-                          if (!isLongPressRef.current) setActiveIncomeChartCategory(cat);
-                        }}
-                        didSwipeRef={didPieSwipeRef}
-                      />
-
-                      <div className="w-full min-w-0 flex-1 space-y-1.5">
-                        {pieReportData.sortedIncomes.map(([cat, amount]) => {
-                          const catStyle = getCategoryStyle(categoryStyles, 'inc', cat);
-                          const pct =
-                            pieReportData.totalIncome > 0
-                              ? ((amount / pieReportData.totalIncome) * 100).toFixed(1)
-                              : '0';
-                          const isHighlighted = activeIncomeChartCategory === cat;
-                          return (
-                            <button
-                              key={cat}
-                              type="button"
-                              onMouseEnter={() => setActiveIncomeChartCategory(cat)}
-                              onMouseLeave={() => setActiveIncomeChartCategory(null)}
-                              onClick={() => {
-                                if (didPieSwipeRef.current || isLongPressRef.current) return;
-                                setActiveIncomeChartCategory((prev) => (prev === cat ? null : cat));
-                              }}
-                              className={`flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors ${
-                                isHighlighted
-                                  ? 'bg-white/85 dark:bg-slate-800'
-                                  : 'hover:bg-white/60 dark:hover:bg-slate-800/50'
-                              }`}
-                            >
-                              <span className="flex min-w-0 items-center gap-2">
-                                <CategoryIconBadge style={catStyle} size="xs" />
-                                <span className="truncate font-semibold text-slate-700 dark:text-slate-200">
-                                  {cat}
-                                </span>
-                              </span>
-                              <span className="font-mono-num shrink-0 font-semibold text-slate-600 dark:text-slate-300">
-                                {pct}% · {formatMoney(amount, currency)}
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
+                  </span>
+                  <span className="font-mono-num shrink-0 font-extrabold text-[#102A43] dark:text-slate-100">
+                    {formatMoney(activeTotal, currency)}
+                  </span>
                 </div>
-              </div>
-            </div>
 
-            {/* Bottom slide indicator + hint */}
-            <div className="mt-4 flex items-center justify-between border-t border-slate-200/70 pt-3 text-[11px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
-              <span>
-                {pieView === 'expense'
-                  ? t.dashboard.swipeLeftIncomePie
-                  : t.dashboard.swipeRightExpensePie}
-              </span>
-              <div className="flex items-center gap-0.5">
-                <button
-                  type="button"
-                  aria-label={t.dashboard.expensePieChart}
-                  onClick={() => selectPieView('expense')}
-                  className="flex h-8 items-center px-1"
+                {activeItems.length === 0 ? (
+                  <p className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
+                    {isExpensePie
+                      ? t.dashboard.noExpensesRecorded
+                      : t.dashboard.noIncomeRecorded}{' '}
+                    {pieReportData.emptyPeriodLabel}
+                  </p>
+                ) : (
+                  <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
+                    <CategoryPieChart
+                      items={activeItems}
+                      total={activeTotal}
+                      palette={isExpensePie ? EXPENSE_CHART_COLORS : INCOME_CHART_COLORS}
+                      colorMap={Object.fromEntries(
+                        activeItems.map(([cat]) => [
+                          cat,
+                          getCategoryStyle(categoryStyles, styleKind, cat).color,
+                        ])
+                      )}
+                      currency={currency}
+                      totalLabel={
+                        isExpensePie
+                          ? t.dashboard.totalExpenseLabel
+                          : t.dashboard.totalIncomeLabel
+                      }
+                      activeCategory={activeChartCategory}
+                      onSelectCategory={(cat) => {
+                        if (!isLongPressRef.current) setActiveChartCategory(cat);
+                      }}
+                      onCategoryClick={(cat) => {
+                        if (didPieSwipeRef.current || isLongPressRef.current) return;
+                        openCategoryDrilldown('pie', pieView, cat);
+                      }}
+                      didSwipeRef={didPieSwipeRef}
+                    />
+
+                    <div className="w-full min-w-0 flex-1 space-y-1.5">
+                      {activeItems.map(([cat, amount]) => {
+                        const catStyle = getCategoryStyle(categoryStyles, styleKind, cat);
+                        const pct =
+                          activeTotal > 0 ? ((amount / activeTotal) * 100).toFixed(1) : '0';
+                        const isHighlighted = activeChartCategory === cat;
+                        return (
+                          <button
+                            key={cat}
+                            type="button"
+                            onMouseEnter={() => setActiveChartCategory(cat)}
+                            onMouseLeave={() => setActiveChartCategory(null)}
+                            onClick={() => {
+                              if (didPieSwipeRef.current || isLongPressRef.current) return;
+                              openCategoryDrilldown('pie', pieView, cat);
+                            }}
+                            className={`group flex min-h-[40px] w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] ${
+                              isHighlighted
+                                ? 'bg-white/85 dark:bg-slate-800'
+                                : 'hover:bg-white/60 dark:hover:bg-slate-800/50'
+                            }`}
+                          >
+                            <span className="flex min-w-0 items-center gap-2">
+                              <CategoryIconBadge style={catStyle} size="xs" />
+                              <span className="truncate font-semibold text-slate-700 dark:text-slate-200">
+                                {cat}
+                              </span>
+                            </span>
+                            <span className="font-mono-num shrink-0 font-semibold text-slate-600 dark:text-slate-300">
+                              {formatMoney(amount, currency)} ({pct}%)
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Bottom slide indicator + hint */}
+              <div className="mt-4 flex items-center justify-between border-t border-slate-200/70 pt-3 text-[11px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+                <span className="truncate">
+                  {isExpensePie ? t.dashboard.swipeLeftIncomePie : t.dashboard.swipeRightExpensePie}
+                </span>
+                <div
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  className="flex shrink-0 items-center gap-1"
                 >
-                  <span
-                    className={`block h-1.5 rounded-full transition-all ${
-                      pieView === 'expense'
-                        ? 'w-5 bg-[#102A43] dark:bg-slate-200'
-                        : 'w-2 bg-slate-300 dark:bg-slate-700'
-                    }`}
-                  />
-                </button>
-                <button
-                  type="button"
-                  aria-label={t.dashboard.incomePieChart}
-                  onClick={() => selectPieView('income')}
-                  className="flex h-8 items-center px-1"
-                >
-                  <span
-                    className={`block h-1.5 rounded-full transition-all ${
-                      pieView === 'income'
-                        ? 'w-5 bg-[#102A43] dark:bg-slate-200'
-                        : 'w-2 bg-slate-300 dark:bg-slate-700'
-                    }`}
-                  />
-                </button>
+                  <button
+                    type="button"
+                    aria-label={t.dashboard.expensePieChart}
+                    onClick={() => selectPieView('expense')}
+                    className="flex h-7 cursor-pointer items-center px-1"
+                  >
+                    <span
+                      className={`block h-1.5 rounded-full transition-all ${
+                        isExpensePie
+                          ? 'w-5 bg-[#102A43] dark:bg-slate-100'
+                          : 'w-1.5 bg-slate-300 dark:bg-slate-700'
+                      }`}
+                    />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={t.dashboard.incomePieChart}
+                    onClick={() => selectPieView('income')}
+                    className="flex h-7 cursor-pointer items-center px-1"
+                  >
+                    <span
+                      className={`block h-1.5 rounded-full transition-all ${
+                        !isExpensePie
+                          ? 'w-5 bg-[#102A43] dark:bg-slate-100'
+                          : 'w-1.5 bg-slate-300 dark:bg-slate-700'
+                      }`}
+                    />
+                  </button>
+                </div>
               </div>
             </div>
           </div>

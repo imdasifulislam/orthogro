@@ -1,8 +1,19 @@
 import React from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { useTranslation } from '../i18n';
-import type { CategoryStyle, CurrencySymbol, TransactionDraft } from '../types';
+import type {
+  CategoryStyle,
+  CurrencySymbol,
+  RecurringBill,
+  TransactionDraft,
+} from '../types';
 import { CategoryIconBadge, getCategoryStyle } from '../utils/categoryVisuals';
+import {
+  RecurringBillsPanel,
+  type RecurringBillSavePayload,
+} from './RecurringBillsPanel';
+
+export type TransactionPageSubTab = 'new' | 'recurring';
 
 interface TransactionFormProps {
   entries: TransactionDraft[];
@@ -14,6 +25,18 @@ interface TransactionFormProps {
   expenseSubCategories?: Record<string, string[]>;
   categoryStyles?: Record<string, CategoryStyle>;
   currency: CurrencySymbol;
+  activeSubTab?: TransactionPageSubTab;
+  onSubTabChange?: (tab: TransactionPageSubTab) => void;
+  recurringBills?: RecurringBill[];
+  dueRecurringCount?: number;
+  isReadOnly?: boolean;
+  onSaveRecurringBill?: (
+    payload: RecurringBillSavePayload,
+    editId?: string
+  ) => Promise<boolean>;
+  onDeleteRecurringBill?: (id: string) => Promise<void>;
+  onOneTapLogRecurringBill?: (bill: RecurringBill) => Promise<void>;
+  onAdjustAndLogRecurringBill?: (bill: RecurringBill) => void;
   onSubmit: (e: React.FormEvent) => void;
   onCancel?: () => void;
 }
@@ -28,11 +51,23 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   expenseSubCategories,
   categoryStyles,
   currency,
+  activeSubTab = 'new',
+  onSubTabChange,
+  recurringBills = [],
+  dueRecurringCount = 0,
+  isReadOnly = false,
+  onSaveRecurringBill,
+  onDeleteRecurringBill,
+  onOneTapLogRecurringBill,
+  onAdjustAndLogRecurringBill,
   onSubmit,
   onCancel,
 }) => {
   const { t } = useTranslation();
   const isEditing = Boolean(entries[0]?.id);
+  const currentSubTab: TransactionPageSubTab = isEditing ? 'new' : activeSubTab;
+  const showRecurringTab =
+    !isEditing && (dueRecurringCount > 0 || currentSubTab === 'recurring');
 
   const handleEntryChange = <K extends keyof TransactionDraft>(
     index: number,
@@ -64,22 +99,100 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
 
   return (
     <div className="mx-auto max-w-2xl">
-      <div className="mb-4 flex items-center justify-between px-1">
-        <h2 className="text-lg font-bold text-[#102A43] dark:text-slate-100">
-          {isEditing ? t.txForm.editTitle : t.txForm.newTitle}
-        </h2>
+      <div className="mb-4 flex items-center justify-between gap-2 px-1">
+        {isEditing ? (
+          <h2 className="text-lg font-bold text-[#102A43] dark:text-slate-100">
+            {t.txForm.editTitle}
+          </h2>
+        ) : !showRecurringTab ? (
+          <h2 className="text-lg font-bold text-[#102A43] dark:text-slate-100">
+            {t.txForm.newTitle}
+          </h2>
+        ) : (
+          <div
+            role="tablist"
+            aria-label={t.txForm.newTitle}
+            className="flex min-w-0 items-baseline gap-4 sm:gap-5"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={currentSubTab === 'new'}
+              onClick={() => onSubTabChange?.('new')}
+              className={`relative whitespace-nowrap pb-1.5 transition-colors ${
+                currentSubTab === 'new'
+                  ? 'text-lg font-bold text-[#102A43] dark:text-slate-100'
+                  : 'text-sm font-semibold text-slate-400 hover:text-slate-600 sm:text-base dark:text-slate-500 dark:hover:text-slate-300'
+              }`}
+            >
+              <span>{t.txForm.newTitle}</span>
+              {currentSubTab === 'new' && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-x-0 bottom-0 h-[2.5px] rounded-full bg-[#16845B] dark:bg-emerald-400"
+                />
+              )}
+            </button>
+
+            <button
+              type="button"
+              role="tab"
+              aria-selected={currentSubTab === 'recurring'}
+              onClick={() => onSubTabChange?.('recurring')}
+              className={`relative inline-flex items-center gap-1.5 whitespace-nowrap pb-1.5 transition-colors ${
+                currentSubTab === 'recurring'
+                  ? 'text-lg font-bold text-[#102A43] dark:text-slate-100'
+                  : 'text-sm font-semibold text-slate-400 hover:text-slate-600 sm:text-base dark:text-slate-500 dark:hover:text-slate-300'
+              }`}
+            >
+              <span>{t.txForm.recurringBtnLabel}</span>
+              {dueRecurringCount > 0 && (
+                <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold leading-none text-white">
+                  {dueRecurringCount}
+                </span>
+              )}
+              {currentSubTab === 'recurring' && (
+                <span
+                  aria-hidden="true"
+                  className="absolute inset-x-0 bottom-0 h-[2.5px] rounded-full bg-[#16845B] dark:bg-emerald-400"
+                />
+              )}
+            </button>
+          </div>
+        )}
+
         {onCancel && (
           <button
             type="button"
             onClick={onCancel}
-            className="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
+            className="min-h-[34px] shrink-0 px-1 text-xs font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
           >
             {t.common.cancel}
           </button>
         )}
       </div>
 
-      <form onSubmit={onSubmit} className="space-y-4">
+      {currentSubTab === 'recurring' &&
+      onSaveRecurringBill &&
+      onDeleteRecurringBill &&
+      onOneTapLogRecurringBill &&
+      onAdjustAndLogRecurringBill ? (
+        <RecurringBillsPanel
+          bills={recurringBills}
+          expenseCategories={expenseCategories}
+          incomeCategories={incomeCategories}
+          expenseSubCategories={expenseSubCategories}
+          allAccountOptions={allAccountOptions}
+          categoryStyles={categoryStyles}
+          currency={currency}
+          isReadOnly={isReadOnly}
+          onSaveBill={onSaveRecurringBill}
+          onDeleteBill={onDeleteRecurringBill}
+          onOneTapLog={onOneTapLogRecurringBill}
+          onAdjustAndLog={onAdjustAndLogRecurringBill}
+        />
+      ) : (
+        <form onSubmit={onSubmit} className="space-y-4">
         {entries.map((entry, index) => {
           const currentCategories =
             entry.type === 'expense' ? expenseCategories : incomeCategories;
@@ -386,6 +499,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
           {isEditing ? t.txForm.saveChanges : t.txForm.saveTransaction}
         </button>
       </form>
+      )}
     </div>
   );
 };

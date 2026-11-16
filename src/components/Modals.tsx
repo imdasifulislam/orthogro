@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   Check,
@@ -9,6 +9,8 @@ import {
   Palette,
   Pencil,
   PiggyBank,
+  Plus,
+  Repeat,
   Target,
   Trash2,
   X,
@@ -20,10 +22,13 @@ import type {
   CategoryStyle,
   ConfirmDialogState,
   CurrencySymbol,
+  DrilldownPeriodContext,
   DrilldownType,
   FilterCardKey,
   GridKey,
   PeriodFilter,
+  RecurringBill,
+  RecurringBillType,
   SavingGoal,
   SavingGoalPeriodType,
   ToastMessage,
@@ -39,8 +44,13 @@ import {
   computeSavingGoalProgress,
   filterTransactionsByPeriod,
   formatMoney,
+  getPeriodLabel,
+  getShiftedCustomRange,
   getTodayISO,
+  parseLocalDate,
 } from '../utils/format';
+import { RecurringBillsPanel, type RecurringBillSavePayload } from './RecurringBillsPanel';
+import { getTransactionHierarchy } from '../utils/transactionDisplay';
 
 /* --- Toast Container --- */
 export const ToastContainer: React.FC<{
@@ -91,7 +101,20 @@ export const ConfirmModal: React.FC<{
   onClose: () => void;
 }> = ({ dialog, onClose }) => {
   const { t } = useTranslation();
+  const [typedConfirmation, setTypedConfirmation] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    setTypedConfirmation('');
+    setIsSubmitting(false);
+  }, [dialog]);
+
   if (!dialog) return null;
+
+  const expectedText = dialog.requireConfirmationText?.trim();
+  const isConfirmationMatched = expectedText
+    ? typedConfirmation.trim().toUpperCase() === expectedText.toUpperCase()
+    : true;
 
   return (
     <div
@@ -108,21 +131,53 @@ export const ConfirmModal: React.FC<{
         <p className="mt-2 text-sm leading-relaxed text-slate-600 dark:text-slate-300">
           {dialog.message}
         </p>
+
+        {expectedText && (
+          <div className="mt-4">
+            {dialog.confirmationHint && (
+              <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
+                {dialog.confirmationHint}
+              </label>
+            )}
+            <input
+              type="text"
+              autoFocus
+              autoComplete="off"
+              autoCapitalize="characters"
+              placeholder={expectedText}
+              value={typedConfirmation}
+              onChange={(e) => setTypedConfirmation(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-bold tracking-wider text-[#102A43] placeholder:font-normal placeholder:tracking-normal placeholder:text-slate-400 focus:border-rose-500 focus:bg-white focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-rose-400"
+            />
+          </div>
+        )}
+
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
+            disabled={isSubmitting}
             onClick={onClose}
-            className="min-h-[40px] rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+            className="min-h-[40px] rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
           >
             {t.common.cancel}
           </button>
           <button
             type="button"
+            disabled={!isConfirmationMatched || isSubmitting}
             onClick={async () => {
-              await dialog.onConfirm();
-              onClose();
+              if (!isConfirmationMatched || isSubmitting) return;
+              setIsSubmitting(true);
+              const shouldKeepOpen = Boolean(dialog.keepOpenOnConfirm);
+              try {
+                await dialog.onConfirm();
+                if (!shouldKeepOpen) {
+                  onClose();
+                }
+              } finally {
+                setIsSubmitting(false);
+              }
             }}
-            className={`min-h-[40px] rounded-xl px-4 py-2 text-xs font-bold text-white ${
+            className={`min-h-[40px] rounded-xl px-4 py-2 text-xs font-bold text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-45 ${
               dialog.destructive
                 ? 'bg-rose-600 hover:bg-rose-700'
                 : 'bg-[#16845B] hover:bg-[#126B4A]'
@@ -162,10 +217,12 @@ export const FilterPeriodModal: React.FC<{
   if (!activeFilterCard) return null;
   const current = filters[activeFilterCard];
 
-  const isCategoryCard =
-    activeFilterCard === 'categoryReport' || activeFilterCard === 'categoryPieChart';
+  const usesPeriodicPresets =
+    activeFilterCard === 'categoryReport' ||
+    activeFilterCard === 'categoryPieChart' ||
+    activeFilterCard === 'incExp';
 
-  const presets: Array<{ key: PeriodFilter; label: string }> = isCategoryCard
+  const presets: Array<{ key: PeriodFilter; label: string }> = usesPeriodicPresets
     ? [
         { key: 'monthly', label: t.common.monthlyByMonth },
         { key: 'yearly', label: t.common.yearlyByYear },
@@ -259,11 +316,267 @@ export const FilterPeriodModal: React.FC<{
   );
 };
 
+/* --- Swipeable Row for Drilldown Modal --- */
+const SwipeableDrilldownRow: React.FC<{
+  tx: Transaction;
+  currency: CurrencySymbol;
+  isReadOnly: boolean;
+  isSwiped: boolean;
+  onSwipeOpen: (id: string) => void;
+  onSwipeClose: () => void;
+  onInspectDebt: (tx: Transaction) => void;
+  onEdit: (tx: Transaction) => void;
+  onDelete: (id: string) => void;
+}> = ({
+  tx,
+  currency,
+  isReadOnly,
+  isSwiped,
+  onSwipeOpen,
+  onSwipeClose,
+  onInspectDebt,
+  onEdit,
+  onDelete,
+}) => {
+  const { t } = useTranslation();
+  const [offsetX, setOffsetX] = useState(0);
+  const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const axisRef = useRef<'x' | 'y' | null>(null);
+  const movedRef = useRef(false);
+  const draggingRef = useRef(false);
+
+  const isDebt = tx.type === 'lend' || tx.type === 'borrow';
+  const isSystemTx =
+    tx.type === 'partial_payment' ||
+    tx.type === 'correction' ||
+    tx.type === 'adjustment';
+  const canEdit = !isReadOnly && !isSystemTx;
+  const maxRevealWidth = canEdit ? 112 : 56;
+  const snapThreshold = canEdit ? -55 : -28;
+  const due = tx.remainingBalance !== undefined ? tx.remainingBalance : tx.amount;
+
+  const hierarchy = getTransactionHierarchy(tx, {
+    expense: t.common.expense,
+    income: t.common.income,
+    transfer: t.common.transfer,
+    lend: t.common.lend,
+    borrow: t.common.borrow,
+    general: t.common.general,
+  });
+
+  const metaParts = (
+    tx.type === 'transfer'
+      ? [`${tx.fromWallet} → ${tx.toWallet}`, tx.date]
+      : isDebt
+      ? [tx.wallet, tx.date, t.modals.tapForHistory]
+      : hierarchy.titleSource === 'custom'
+      ? [
+          hierarchy.subCategoryLabel
+            ? `${hierarchy.categoryLabel} › ${hierarchy.subCategoryLabel}`
+            : hierarchy.categoryLabel,
+          tx.wallet,
+          tx.date,
+        ]
+      : hierarchy.titleSource === 'subCategory'
+      ? [hierarchy.categoryLabel, tx.wallet, tx.date]
+      : [tx.wallet, tx.date]
+  ).filter((part): part is string => Boolean(part && part.trim()));
+
+  const handleStart = (clientX: number, clientY: number) => {
+    if (isReadOnly) return;
+    startXRef.current = clientX;
+    startYRef.current = clientY;
+    axisRef.current = null;
+    movedRef.current = false;
+    draggingRef.current = true;
+  };
+
+  const handleMove = (
+    clientX: number,
+    clientY: number,
+    stopPropagation: () => void
+  ) => {
+    if (isReadOnly || !draggingRef.current) return;
+    const diffX = clientX - startXRef.current;
+    const diffY = clientY - startYRef.current;
+
+    if (!axisRef.current && (Math.abs(diffX) > 7 || Math.abs(diffY) > 7)) {
+      axisRef.current = Math.abs(diffX) > Math.abs(diffY) ? 'x' : 'y';
+    }
+    if (axisRef.current !== 'x') return;
+
+    if ((!isSwiped && diffX < -5) || (isSwiped && diffX > 5)) {
+      movedRef.current = true;
+      stopPropagation();
+      if (diffX < -5 && diffX > -(maxRevealWidth + 18)) {
+        setOffsetX(diffX);
+      } else if (diffX > 5 && isSwiped) {
+        setOffsetX(0);
+        onSwipeClose();
+      }
+    }
+  };
+
+  const handleEnd = () => {
+    if (!draggingRef.current) return;
+    draggingRef.current = false;
+    axisRef.current = null;
+    if (offsetX < snapThreshold) {
+      onSwipeOpen(tx.id);
+    }
+    setOffsetX(0);
+    if (movedRef.current) {
+      window.setTimeout(() => {
+        movedRef.current = false;
+      }, 60);
+    }
+  };
+
+  const activeTranslateX = isReadOnly
+    ? 0
+    : isSwiped
+    ? -maxRevealWidth
+    : offsetX < 0
+    ? offsetX
+    : 0;
+
+  return (
+    <div className="relative overflow-hidden">
+      {!isReadOnly && (
+        <div
+          className={`absolute inset-y-0 right-0 flex ${
+            canEdit ? 'w-28' : 'w-14'
+          } bg-slate-100 dark:bg-slate-800`}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              onSwipeClose();
+              onDelete(tx.id);
+            }}
+            aria-label={t.txItem.deleteAria}
+            className="flex flex-1 items-center justify-center text-rose-600 transition-colors hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/50"
+          >
+            <Trash2 className="h-4 w-4" />
+          </button>
+          {canEdit && (
+            <button
+              type="button"
+              onClick={() => {
+                onSwipeClose();
+                onEdit(tx);
+              }}
+              aria-label={t.txItem.editAria}
+              className="flex flex-1 items-center justify-center text-slate-600 transition-colors hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      )}
+
+      <div
+        onTouchStart={(e) => handleStart(e.touches[0].clientX, e.touches[0].clientY)}
+        onTouchMove={(e) =>
+          handleMove(e.touches[0].clientX, e.touches[0].clientY, () => e.stopPropagation())
+        }
+        onTouchEnd={handleEnd}
+        onTouchCancel={handleEnd}
+        onMouseDown={(e) => {
+          if (e.button === 0) handleStart(e.clientX, e.clientY);
+        }}
+        onMouseMove={(e) => {
+          if (e.buttons === 1) handleMove(e.clientX, e.clientY, () => e.stopPropagation());
+        }}
+        onMouseUp={handleEnd}
+        onMouseLeave={handleEnd}
+        onClick={() => {
+          if (movedRef.current) return;
+          if (isSwiped) {
+            onSwipeClose();
+            return;
+          }
+          if (isDebt) {
+            onInspectDebt(tx);
+          }
+        }}
+        style={{
+          transform: `translateX(${activeTranslateX}px)`,
+        }}
+        className={`relative z-10 flex min-h-[54px] touch-pan-y items-center justify-between gap-3 bg-white px-1.5 py-3 select-none dark:bg-slate-900 ${
+          isSwiped || offsetX === 0 ? 'transition-transform duration-200 ease-out' : ''
+        } ${isDebt && !isSwiped ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40' : ''}`}
+      >
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
+            {hierarchy.mainTitle}
+            {isDebt ? ` (${t.txItem.due}: ${formatMoney(due, currency)})` : ''}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {metaParts.map((part, idx) => (
+              <React.Fragment key={`${idx}-${part}`}>
+                {idx > 0 && <span aria-hidden="true">·</span>}
+                <span>{part}</span>
+              </React.Fragment>
+            ))}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1.5">
+          <div
+            className={`font-mono-num text-sm font-bold ${
+              tx.type === 'expense' || tx.type === 'lend'
+                ? 'text-[#D94848] dark:text-rose-400'
+                : 'text-[#16845B] dark:text-emerald-400'
+            }`}
+          >
+            {tx.type === 'expense' || tx.type === 'lend' ? '-' : '+'}
+            {formatMoney(Math.abs(tx.amount), currency)}
+          </div>
+
+          {!isReadOnly && (
+            <div className="hidden items-center gap-0.5 sm:flex">
+              {canEdit && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSwipeClose();
+                    onEdit(tx);
+                  }}
+                  aria-label={t.txItem.editAria}
+                  className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSwipeClose();
+                  onDelete(tx.id);
+                }}
+                aria-label={t.txItem.deleteAria}
+                className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-950/60 dark:hover:text-rose-400"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /* --- Drilldown Modal --- */
 export const DrilldownModal: React.FC<{
   drilldownType: DrilldownType | null;
   drilldownKey: string | null;
   drilldownFilter: PeriodFilter;
+  drilldownPeriodContext?: DrilldownPeriodContext | null;
   setDrilldownFilter: (f: PeriodFilter) => void;
   transactions: Transaction[];
   currency: CurrencySymbol;
@@ -271,11 +584,15 @@ export const DrilldownModal: React.FC<{
   customDateTo: string;
   onStartBalanceCorrection: (accountName: string) => void;
   onInspectDebt: (tx: Transaction) => void;
+  onEditTransaction: (tx: Transaction) => void;
+  onDeleteTransaction: (id: string) => void;
+  isReadOnly?: boolean;
   onClose: () => void;
 }> = ({
   drilldownType,
   drilldownKey,
   drilldownFilter,
+  drilldownPeriodContext,
   setDrilldownFilter,
   transactions,
   currency,
@@ -283,12 +600,75 @@ export const DrilldownModal: React.FC<{
   customDateTo,
   onStartBalanceCorrection,
   onInspectDebt,
+  onEditTransaction,
+  onDeleteTransaction,
+  isReadOnly = false,
   onClose,
 }) => {
-  const { t } = useTranslation();
+  const { lang, t } = useTranslation();
+  const [selectedSubCategory, setSelectedSubCategory] = useState<string | null>(null);
+  const [swipedTxId, setSwipedTxId] = useState<string | null>(null);
+  const subStripRef = useRef<HTMLDivElement>(null);
+  const subStripDragRef = useRef({
+    active: false,
+    startX: 0,
+    startScrollLeft: 0,
+    moved: false,
+  });
+  const wasSubStripDraggingRef = useRef(false);
+
+  useEffect(() => {
+    setSelectedSubCategory(null);
+    setSwipedTxId(null);
+    if (subStripRef.current) {
+      subStripRef.current.scrollLeft = 0;
+    }
+  }, [drilldownType, drilldownKey, drilldownFilter, drilldownPeriodContext]);
+
   if (!drilldownType) return null;
 
-  let filtered = transactions.filter((tx) => {
+  const handleSubStripMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = subStripRef.current;
+    if (!el || e.button !== 0) return;
+    subStripDragRef.current = {
+      active: true,
+      startX: e.clientX,
+      startScrollLeft: el.scrollLeft,
+      moved: false,
+    };
+    wasSubStripDraggingRef.current = false;
+  };
+
+  const handleSubStripMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = subStripRef.current;
+    if (!el || !subStripDragRef.current.active) return;
+    const dx = e.clientX - subStripDragRef.current.startX;
+    if (Math.abs(dx) > 5) {
+      subStripDragRef.current.moved = true;
+      wasSubStripDraggingRef.current = true;
+    }
+    if (subStripDragRef.current.moved) {
+      el.scrollLeft = subStripDragRef.current.startScrollLeft - dx;
+    }
+  };
+
+  const handleSubStripMouseEnd = () => {
+    if (!subStripDragRef.current.active) return;
+    const moved = subStripDragRef.current.moved;
+    subStripDragRef.current.active = false;
+    subStripDragRef.current.moved = false;
+    if (moved) {
+      window.setTimeout(() => {
+        wasSubStripDraggingRef.current = false;
+      }, 0);
+    }
+  };
+
+  const UNSPECIFIED_SUB_KEY = '__general__';
+  const isCategoryDrilldown =
+    drilldownType === 'expense_category' || drilldownType === 'income_category';
+
+  let periodFiltered = transactions.filter((tx) => {
     if (drilldownType === 'wallet' || drilldownType === 'savings') {
       return (
         tx.wallet === drilldownKey ||
@@ -302,19 +682,114 @@ export const DrilldownModal: React.FC<{
     if (drilldownType === 'expense') {
       return tx.type === 'expense' || (tx.type === 'adjustment' && tx.amount < 0);
     }
+    if (drilldownType === 'expense_category') {
+      return tx.type === 'expense' && (tx.category || 'Others') === drilldownKey;
+    }
+    if (drilldownType === 'income_category') {
+      return tx.type === 'income' && (tx.category || 'Others') === drilldownKey;
+    }
     if (drilldownType === 'lend') return tx.type === 'lend';
     if (drilldownType === 'borrow') return tx.type === 'borrow';
     return true;
   });
 
-  filtered = filterTransactionsByPeriod(filtered, drilldownFilter, customDateFrom, customDateTo);
+  const now = new Date();
+  if (drilldownFilter === 'monthly' && drilldownPeriodContext?.monthOffset !== undefined) {
+    const target = new Date(
+      now.getFullYear(),
+      now.getMonth() + drilldownPeriodContext.monthOffset,
+      1
+    );
+    const targetMonth = target.getMonth();
+    const targetYear = target.getFullYear();
+    periodFiltered = periodFiltered.filter((tx) => {
+      if (!tx.rawDate) return false;
+      const d = parseLocalDate(tx.rawDate);
+      return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
+    });
+  } else if (drilldownFilter === 'yearly' && drilldownPeriodContext?.yearOffset !== undefined) {
+    const targetYear = now.getFullYear() + drilldownPeriodContext.yearOffset;
+    periodFiltered = periodFiltered.filter((tx) => {
+      if (!tx.rawDate) return false;
+      return parseLocalDate(tx.rawDate).getFullYear() === targetYear;
+    });
+  } else if (
+    drilldownFilter === 'custom' &&
+    customDateFrom &&
+    customDateTo &&
+    drilldownPeriodContext?.customOffset !== undefined
+  ) {
+    const { from, to } = getShiftedCustomRange(
+      customDateFrom,
+      customDateTo,
+      drilldownPeriodContext.customOffset
+    );
+    periodFiltered = periodFiltered.filter(
+      (tx) => !tx.rawDate || (tx.rawDate >= from && tx.rawDate <= to)
+    );
+  } else {
+    periodFiltered = filterTransactionsByPeriod(
+      periodFiltered,
+      drilldownFilter,
+      customDateFrom,
+      customDateTo
+    );
+  }
+
+  const subCategoryBuckets = isCategoryDrilldown
+    ? (() => {
+        const map = new Map<string, { key: string; label: string; total: number; isGeneral: boolean }>();
+        for (const tx of periodFiltered) {
+          const rawSub = (tx.subCategory || '').trim();
+          const isGeneral = rawSub.length === 0;
+          const bucketKey = isGeneral ? UNSPECIFIED_SUB_KEY : rawSub;
+          const bucketLabel = isGeneral ? t.common.general : rawSub;
+          const existing = map.get(bucketKey);
+          const amt = Math.abs(tx.amount);
+          if (existing) {
+            existing.total += amt;
+          } else {
+            map.set(bucketKey, {
+              key: bucketKey,
+              label: bucketLabel,
+              total: amt,
+              isGeneral,
+            });
+          }
+        }
+        return Array.from(map.values()).sort((a, b) => {
+          if (a.isGeneral !== b.isGeneral) return a.isGeneral ? 1 : -1;
+          return b.total - a.total;
+        });
+      })()
+    : [];
+
+  const hasSubCategoryStrip =
+    isCategoryDrilldown && subCategoryBuckets.some((bucket) => !bucket.isGeneral);
+
+  const activeSubKey =
+    hasSubCategoryStrip &&
+    selectedSubCategory !== null &&
+    subCategoryBuckets.some((bucket) => bucket.key === selectedSubCategory)
+      ? selectedSubCategory
+      : null;
+
+  const filtered =
+    isCategoryDrilldown && activeSubKey !== null
+      ? periodFiltered.filter((tx) => {
+          const rawSub = (tx.subCategory || '').trim();
+          return activeSubKey === UNSPECIFIED_SUB_KEY
+            ? rawSub.length === 0
+            : rawSub === activeSubKey;
+        })
+      : periodFiltered;
 
   const typeTitle =
     drilldownType === 'netWorth'
       ? t.dashboard.netWorth
-      : drilldownType === 'income'
+      : drilldownType === 'income' || drilldownType === 'income_category'
       ? t.common.income
-      : drilldownType === 'expense'
+      : drilldownType === 'expense' || drilldownType === 'expense_category'
       ? t.common.expense
       : drilldownType === 'lend'
       ? t.common.lend
@@ -322,30 +797,162 @@ export const DrilldownModal: React.FC<{
       ? t.common.borrow
       : drilldownType.toUpperCase();
 
+  const activePeriodLabel =
+    drilldownPeriodContext?.periodLabel ||
+    getPeriodLabel(drilldownFilter, customDateFrom, customDateTo, lang);
+  const categoryTotal = periodFiltered.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  const displayedTotal = filtered.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  const activeSubLabel =
+    activeSubKey === null
+      ? null
+      : activeSubKey === UNSPECIFIED_SUB_KEY
+      ? t.common.general
+      : activeSubKey;
+  const headerTitle =
+    isCategoryDrilldown && drilldownKey
+      ? activeSubLabel
+        ? `${drilldownKey} › ${activeSubLabel}`
+        : drilldownKey
+      : drilldownKey || typeTitle;
+  const isExpenseStyle =
+    drilldownType === 'expense_category' || drilldownType === 'expense';
+
+  const monthlyOptionLabel =
+    drilldownFilter === 'monthly' &&
+    drilldownPeriodContext?.monthOffset !== undefined &&
+    drilldownPeriodContext.monthOffset !== 0 &&
+    drilldownPeriodContext.periodLabel
+      ? drilldownPeriodContext.periodLabel
+      : t.common.thisMonth;
+  const yearlyOptionLabel =
+    drilldownFilter === 'yearly' &&
+    drilldownPeriodContext?.yearOffset !== undefined &&
+    drilldownPeriodContext.yearOffset !== 0 &&
+    drilldownPeriodContext.periodLabel
+      ? String(now.getFullYear() + drilldownPeriodContext.yearOffset)
+      : t.common.thisYear;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="flex max-h-[82vh] w-full max-w-md flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
+        className="flex h-[min(82vh,620px)] w-full max-w-md flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-3 flex items-center justify-between gap-2">
-          <h3 className="truncate text-base font-bold text-[#16845B] dark:text-emerald-400">
-            {drilldownKey || typeTitle}
-          </h3>
+        <div className="mb-3 flex shrink-0 items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3
+              className={`truncate text-base font-bold ${
+                isExpenseStyle
+                  ? 'text-[#D94848] dark:text-rose-400'
+                  : 'text-[#16845B] dark:text-emerald-400'
+              }`}
+            >
+              {headerTitle}
+            </h3>
+            {(isCategoryDrilldown ||
+              drilldownType === 'income' ||
+              drilldownType === 'expense') && (
+              <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                {isCategoryDrilldown ? `${typeTitle} · ` : ''}
+                {activePeriodLabel} ·{' '}
+                <span className="font-mono-num font-semibold text-[#102A43] dark:text-slate-200">
+                  {formatMoney(displayedTotal, currency)}
+                </span>
+              </p>
+            )}
+          </div>
           <select
             value={drilldownFilter}
             onChange={(e) => setDrilldownFilter(e.target.value as PeriodFilter)}
-            className="rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
           >
             <option value="all">{t.common.allTime}</option>
-            <option value="monthly">{t.common.thisMonth}</option>
+            <option value="monthly">{monthlyOptionLabel}</option>
             <option value="previous_month">{t.common.prevMonthShort}</option>
-            <option value="yearly">{t.common.thisYear}</option>
+            <option value="yearly">{yearlyOptionLabel}</option>
+            {(drilldownFilter === 'custom' || (Boolean(customDateFrom) && Boolean(customDateTo))) && (
+              <option value="custom">{t.common.custom}</option>
+            )}
           </select>
         </div>
+
+        {hasSubCategoryStrip && (
+          <div className="relative mb-2 shrink-0 border-b border-slate-100 pb-3 dark:border-slate-800">
+            <div
+              ref={subStripRef}
+              onDragStart={(e) => e.preventDefault()}
+              onMouseDown={handleSubStripMouseDown}
+              onMouseMove={handleSubStripMouseMove}
+              onMouseUp={handleSubStripMouseEnd}
+              onMouseLeave={handleSubStripMouseEnd}
+              className="no-scrollbar flex cursor-grab touch-pan-x select-none items-center gap-1.5 overflow-x-auto overflow-y-hidden overscroll-x-contain px-2 active:cursor-grabbing"
+            >
+              <button
+                type="button"
+                aria-pressed={activeSubKey === null}
+                onClick={() => {
+                  if (!wasSubStripDraggingRef.current) {
+                    setSelectedSubCategory(null);
+                    setSwipedTxId(null);
+                  }
+                }}
+                className={`inline-flex min-h-[36px] shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] ${
+                  activeSubKey === null
+                    ? isExpenseStyle
+                      ? 'bg-[#D94848] text-white shadow-sm dark:bg-rose-600'
+                      : 'bg-[#16845B] text-white shadow-sm dark:bg-emerald-600'
+                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100 dark:bg-slate-800/70 dark:text-slate-300 dark:hover:bg-slate-800'
+                }`}
+              >
+                <span>{t.common.all}</span>
+                <span aria-hidden="true" className="opacity-70">
+                  ·
+                </span>
+                <span className="font-mono-num">{formatMoney(categoryTotal, currency)}</span>
+              </button>
+              {subCategoryBuckets.map((bucket) => {
+                const isSelected = activeSubKey === bucket.key;
+                return (
+                  <button
+                    key={bucket.key}
+                    type="button"
+                    aria-pressed={isSelected}
+                    onClick={() => {
+                      if (!wasSubStripDraggingRef.current) {
+                        setSelectedSubCategory(bucket.key);
+                        setSwipedTxId(null);
+                      }
+                    }}
+                    className={`inline-flex min-h-[36px] shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] ${
+                      isSelected
+                        ? isExpenseStyle
+                          ? 'bg-[#D94848] text-white shadow-sm dark:bg-rose-600'
+                          : 'bg-[#16845B] text-white shadow-sm dark:bg-emerald-600'
+                        : 'bg-slate-50 text-slate-600 hover:bg-slate-100 dark:bg-slate-800/70 dark:text-slate-300 dark:hover:bg-slate-800'
+                    }`}
+                  >
+                    <span className="max-w-[140px] truncate">{bucket.label}</span>
+                    <span aria-hidden="true" className="opacity-70">
+                      ·
+                    </span>
+                    <span className="font-mono-num">{formatMoney(bucket.total, currency)}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 left-0 bottom-3 w-4 bg-gradient-to-r from-white to-transparent dark:from-slate-900"
+            />
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 right-0 bottom-3 w-4 bg-gradient-to-l from-white to-transparent dark:from-slate-900"
+            />
+          </div>
+        )}
 
         {(drilldownType === 'wallet' || drilldownType === 'savings') && drilldownKey && (
           <button
@@ -357,60 +964,36 @@ export const DrilldownModal: React.FC<{
           </button>
         )}
 
-        <div className="flex-1 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
+        <div className="no-scrollbar min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
           {filtered.length === 0 ? (
             <p className="py-10 text-center text-xs text-slate-500 dark:text-slate-400">
               {t.modals.noTxForFilter}
             </p>
           ) : (
-            filtered.map((tx) => {
-              const isDebt = tx.type === 'lend' || tx.type === 'borrow';
-              const due = tx.remainingBalance !== undefined ? tx.remainingBalance : tx.amount;
-              return (
-                <div
-                  key={tx.id}
-                  onClick={() => {
-                    if (isDebt) {
-                      onClose();
-                      onInspectDebt(tx);
-                    }
-                  }}
-                  className={`flex items-center justify-between gap-3 py-3 ${
-                    isDebt
-                      ? 'cursor-pointer rounded-lg px-1.5 hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                      : ''
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
-                      {tx.title}
-                      {isDebt ? ` (${t.txItem.due}: ${formatMoney(due, currency)})` : ''}
-                    </div>
-                    <div className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                      {tx.date} · {tx.wallet || tx.fromWallet}
-                      {isDebt ? ` · ${t.modals.tapForHistory}` : ''}
-                    </div>
-                  </div>
-                  <div
-                    className={`font-mono-num shrink-0 text-sm font-bold ${
-                      tx.type === 'expense' || tx.type === 'lend'
-                        ? 'text-[#D94848] dark:text-rose-400'
-                        : 'text-[#16845B] dark:text-emerald-400'
-                    }`}
-                  >
-                    {tx.type === 'expense' || tx.type === 'lend' ? '-' : '+'}
-                    {formatMoney(Math.abs(tx.amount), currency)}
-                  </div>
-                </div>
-              );
-            })
+            filtered.map((tx) => (
+              <SwipeableDrilldownRow
+                key={tx.id}
+                tx={tx}
+                currency={currency}
+                isReadOnly={isReadOnly}
+                isSwiped={swipedTxId === tx.id}
+                onSwipeOpen={(id) => setSwipedTxId(id)}
+                onSwipeClose={() => setSwipedTxId(null)}
+                onInspectDebt={(item) => {
+                  onClose();
+                  onInspectDebt(item);
+                }}
+                onEdit={onEditTransaction}
+                onDelete={onDeleteTransaction}
+              />
+            ))
           )}
         </div>
 
         <button
           type="button"
           onClick={onClose}
-          className="mt-4 min-h-[42px] w-full rounded-xl bg-[#16845B] py-2 text-xs font-bold text-white hover:bg-[#126B4A]"
+          className="mt-4 min-h-[42px] w-full shrink-0 rounded-xl bg-[#16845B] py-2 text-xs font-bold text-white hover:bg-[#126B4A]"
         >
           {t.common.close}
         </button>
@@ -578,7 +1161,7 @@ export const ResolveDebtModal: React.FC<{
               step="any"
               value={partialAmount}
               onChange={(e) => setPartialAmount(e.target.value)}
-              className="font-mono-num w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              className="font-mono-num no-spinner w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
           </div>
           <div>
@@ -661,7 +1244,7 @@ export const CorrectBalanceModal: React.FC<{
             step="any"
             value={inputVal}
             onChange={(e) => setInputVal(e.target.value)}
-            className="font-mono-num w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            className="font-mono-num no-spinner w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
           />
         </div>
 
@@ -1199,6 +1782,7 @@ export const BudgetGoalsModal: React.FC<{
   const [limitInput, setLimitInput] = useState('');
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -1281,7 +1865,7 @@ export const BudgetGoalsModal: React.FC<{
         className="flex max-h-[88vh] w-full max-w-md flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-1 flex items-center justify-between">
+        <div className="mb-1 flex shrink-0 items-center justify-between">
           <div className="flex items-center gap-2">
             <Target className="h-4 w-4 text-[#16845B] dark:text-emerald-400" />
             <h3 className="text-base font-bold text-[#102A43] dark:text-slate-100">
@@ -1297,14 +1881,15 @@ export const BudgetGoalsModal: React.FC<{
             <X className="h-4 w-4" />
           </button>
         </div>
-        <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
+        <p className="mb-4 shrink-0 text-xs text-slate-500 dark:text-slate-400">
           {t.modals.budgetModalDesc}
         </p>
 
-        <form
-          onSubmit={handleSubmit}
-          className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-950/60"
-        >
+        <div ref={bodyRef} className="no-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto">
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-950/60"
+          >
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
               {t.modals.expenseCategory}
@@ -1339,7 +1924,7 @@ export const BudgetGoalsModal: React.FC<{
               placeholder={t.modals.limitPlaceholder}
               value={limitInput}
               onChange={(e) => setLimitInput(e.target.value)}
-              className="font-mono-num w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-[#102A43] focus:border-[#16845B] focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              className="font-mono-num no-spinner w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-[#102A43] focus:border-[#16845B] focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
             />
           </div>
 
@@ -1354,10 +1939,10 @@ export const BudgetGoalsModal: React.FC<{
               ? t.modals.updateBudgetGoal
               : t.modals.saveBudgetGoal}
           </button>
-        </form>
+          </form>
 
-        <div className="mt-4 flex-1 overflow-y-auto pr-1">
-          <div className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">
+          <div>
+            <div className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">
             {t.modals.activeGoals} ({budgetGoals.length})
           </div>
           {budgetGoals.length === 0 ? (
@@ -1406,6 +1991,7 @@ export const BudgetGoalsModal: React.FC<{
                           setSelectedCategory(goal.category);
                           setLimitInput(String(goal.monthlyLimit));
                           setEditingGoalId(goal.id);
+                          bodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                         }}
                         className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800"
                       >
@@ -1431,12 +2017,13 @@ export const BudgetGoalsModal: React.FC<{
               })}
             </div>
           )}
+          </div>
         </div>
 
         <button
           type="button"
           onClick={onClose}
-          className="mt-4 min-h-[40px] w-full rounded-xl bg-slate-200 py-2 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          className="mt-4 min-h-[40px] w-full shrink-0 rounded-xl bg-slate-200 py-2 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
         >
           {t.common.close}
         </button>
@@ -1486,6 +2073,7 @@ export const SavingGoalsModal: React.FC<{
   const [endDate, setEndDate] = useState('');
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   const getDefaultEndDate = () => {
     const d = new Date();
@@ -1591,7 +2179,7 @@ export const SavingGoalsModal: React.FC<{
         className="flex max-h-[88vh] w-full max-w-md flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-1 flex items-center justify-between">
+        <div className="mb-3 flex shrink-0 items-center justify-between">
           <div className="flex items-center gap-2">
             <PiggyBank className="h-4 w-4 text-sky-600 dark:text-sky-400" />
             <h3 className="text-base font-bold text-[#102A43] dark:text-slate-100">
@@ -1607,14 +2195,12 @@ export const SavingGoalsModal: React.FC<{
             <X className="h-4 w-4" />
           </button>
         </div>
-        <p className="mb-4 text-xs text-slate-500 dark:text-slate-400">
-          {t.modals.savingModalDesc}
-        </p>
 
-        <form
-          onSubmit={handleSubmit}
-          className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-950/60"
-        >
+        <div ref={bodyRef} className="no-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto">
+          <form
+            onSubmit={handleSubmit}
+            className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-950/60"
+          >
           <div>
             <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
               {t.modals.goalTitleLabel}
@@ -1727,7 +2313,7 @@ export const SavingGoalsModal: React.FC<{
               placeholder={t.modals.targetPlaceholder}
               value={targetInput}
               onChange={(e) => setTargetInput(e.target.value)}
-              className="font-mono-num w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-[#102A43] focus:border-sky-600 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              className="font-mono-num no-spinner w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-[#102A43] focus:border-sky-600 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
             />
           </div>
 
@@ -1759,10 +2345,10 @@ export const SavingGoalsModal: React.FC<{
                 : t.modals.saveSavingGoal}
             </button>
           </div>
-        </form>
+          </form>
 
-        <div className="mt-4 flex-1 overflow-y-auto pr-1">
-          <div className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">
+          <div>
+            <div className="mb-2 text-xs font-bold text-slate-500 dark:text-slate-400">
             {t.modals.activeSavingGoals} ({savingGoals.length})
           </div>
           {savingGoals.length === 0 ? (
@@ -1811,6 +2397,7 @@ export const SavingGoalsModal: React.FC<{
                           setStartDate(goal.startDate || getTodayISO());
                           setEndDate(goal.endDate || getDefaultEndDate());
                           setEditingGoalId(goal.id);
+                          bodyRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
                         }}
                         className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-800"
                       >
@@ -1835,12 +2422,13 @@ export const SavingGoalsModal: React.FC<{
               })}
             </div>
           )}
+          </div>
         </div>
 
         <button
           type="button"
           onClick={onClose}
-          className="mt-4 min-h-[40px] w-full rounded-xl bg-slate-200 py-2 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
+          className="mt-4 min-h-[40px] w-full shrink-0 rounded-xl bg-slate-200 py-2 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
         >
           {t.common.close}
         </button>
@@ -1989,6 +2577,95 @@ export const CategoryStyleModal: React.FC<{
           >
             {t.common.save}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* --- Recurring Bills & 1-Tap Log Modal --- */
+export const RecurringBillsModal: React.FC<{
+  open: boolean;
+  bills: RecurringBill[];
+  expenseCategories: string[];
+  incomeCategories: string[];
+  expenseSubCategories?: Record<string, string[]>;
+  allAccountOptions: string[];
+  categoryStyles?: Record<string, CategoryStyle>;
+  currency: CurrencySymbol;
+  isReadOnly?: boolean;
+  onSaveBill: (payload: RecurringBillSavePayload, editId?: string) => Promise<boolean>;
+  onDeleteBill: (id: string) => Promise<void>;
+  onOneTapLog: (bill: RecurringBill) => Promise<void>;
+  onAdjustAndLog: (bill: RecurringBill) => void;
+  onClose: () => void;
+}> = ({
+  open,
+  bills,
+  expenseCategories,
+  incomeCategories,
+  expenseSubCategories,
+  allAccountOptions,
+  categoryStyles,
+  currency,
+  isReadOnly = false,
+  onSaveBill,
+  onDeleteBill,
+  onOneTapLog,
+  onAdjustAndLog,
+  onClose,
+}) => {
+  const { t } = useTranslation();
+  const [resetTick, setResetTick] = useState(0);
+
+  useEffect(() => {
+    if (open) setResetTick((c) => c + 1);
+  }, [open]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="flex max-h-[88vh] w-full max-w-lg flex-col rounded-2xl border border-slate-200 bg-[#F6F8F7] p-4 shadow-xl sm:p-5 dark:border-slate-800 dark:bg-slate-950"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between gap-2 px-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <Repeat className="h-4 w-4 shrink-0 text-[#16845B] dark:text-emerald-400" />
+            <h3 className="truncate text-base font-bold text-[#102A43] dark:text-slate-100">
+              {t.recurring.modalTitle}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t.common.close}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-200/70 dark:hover:bg-slate-800"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        <div className="no-scrollbar flex-1 overflow-y-auto">
+          <RecurringBillsPanel
+            bills={bills}
+            expenseCategories={expenseCategories}
+            incomeCategories={incomeCategories}
+            expenseSubCategories={expenseSubCategories}
+            allAccountOptions={allAccountOptions}
+            categoryStyles={categoryStyles}
+            currency={currency}
+            isReadOnly={isReadOnly}
+            resetTrigger={resetTick}
+            onSaveBill={onSaveBill}
+            onDeleteBill={onDeleteBill}
+            onOneTapLog={onOneTapLog}
+            onAdjustAndLog={onAdjustAndLog}
+          />
         </div>
       </div>
     </div>

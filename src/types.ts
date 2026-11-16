@@ -139,6 +139,24 @@ export interface SavingGoal {
   updatedAt?: unknown;
 }
 
+export type RecurringBillType = 'expense' | 'income';
+
+export interface RecurringBill {
+  id: string;
+  ownerId?: string;
+  title: string;
+  type: RecurringBillType;
+  amount: number;
+  category: string;
+  subCategory?: string;
+  wallet: string;
+  dueDay: number;
+  lastPaidMonth?: string;
+  lastPaidDate?: string;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
 export interface WorkspaceSettings {
   wallets: string[];
   savingsList: string[];
@@ -164,6 +182,9 @@ export interface ConfirmDialogState {
   message: string;
   confirmLabel?: string;
   destructive?: boolean;
+  requireConfirmationText?: string;
+  confirmationHint?: string;
+  keepOpenOnConfirm?: boolean;
   onConfirm: () => void | Promise<void>;
 }
 
@@ -180,8 +201,17 @@ export type DrilldownType =
   | 'savings'
   | 'income'
   | 'expense'
+  | 'expense_category'
+  | 'income_category'
   | 'lend'
   | 'borrow';
+
+export interface DrilldownPeriodContext {
+  monthOffset?: number;
+  yearOffset?: number;
+  customOffset?: number;
+  periodLabel?: string;
+}
 
 export type ShareRole = 'viewer' | 'editor';
 export type ShareInviteType = 'email' | 'code';
@@ -210,4 +240,21 @@ export interface ActiveSharedWorkspace {
   ownerName: string;
   ownerEmail: string;
   role: ShareRole;
+}
+
+export type FeatureTipId =
+  | 'saving_goals'
+  | 'budget_goals'
+  | 'recurring_bills'
+  | 'category_breakdown'
+  | 'floating_assistant'
+  | 'category_pie_chart'
+  | 'tax_report'
+  | 'shared_access';
+
+export interface SavingsMilestoneEvent {
+  id: string;
+  kind: 'amount' | 'goal';
+  threshold?: number;
+  goalTitle?: string;
 }
