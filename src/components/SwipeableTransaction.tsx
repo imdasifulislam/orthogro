@@ -4,6 +4,7 @@ import { useTranslation } from '../i18n';
 import type { CategoryStyle, CurrencySymbol, Transaction } from '../types';
 import { CategoryIconBadge, getCategoryStyle } from '../utils/categoryVisuals';
 import { formatMoney } from '../utils/format';
+import { getTransactionHierarchy } from '../utils/transactionDisplay';
 
 interface SwipeableTransactionProps {
   tx: Transaction;
@@ -109,6 +110,25 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
   const isDebt = tx.type === 'lend' || tx.type === 'borrow';
   const dueAmount = tx.remainingBalance !== undefined ? tx.remainingBalance : tx.amount;
 
+  const hierarchy = getTransactionHierarchy(tx, {
+    expense: t.common.expense,
+    income: t.common.income,
+    transfer: t.common.transfer,
+    lend: t.common.lend,
+    borrow: t.common.borrow,
+    general: t.common.general,
+  });
+
+  const renderMetaParts = (parts: Array<string | undefined>) => {
+    const cleanParts = parts.filter((part): part is string => Boolean(part && part.trim()));
+    return cleanParts.map((part, idx) => (
+      <React.Fragment key={`${idx}-${part}`}>
+        {idx > 0 && <span aria-hidden="true">·</span>}
+        <span>{part}</span>
+      </React.Fragment>
+    ));
+  };
+
   const renderMetaLine = () => {
     if (tx.type === 'transfer') {
       return (
@@ -166,18 +186,18 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
       );
     }
 
-    return (
-      <>
-        <span>
-          {tx.category || t.common.general}
-          {tx.subCategory ? ` › ${tx.subCategory}` : ''}
-        </span>
-        <span aria-hidden="true">·</span>
-        <span>{tx.wallet}</span>
-        <span aria-hidden="true">·</span>
-        <span>{tx.date}</span>
-      </>
-    );
+    if (hierarchy.titleSource === 'custom') {
+      const categorySegment = hierarchy.subCategoryLabel
+        ? `${hierarchy.categoryLabel} › ${hierarchy.subCategoryLabel}`
+        : hierarchy.categoryLabel;
+      return renderMetaParts([categorySegment, tx.wallet, tx.date]);
+    }
+
+    if (hierarchy.titleSource === 'subCategory') {
+      return renderMetaParts([hierarchy.categoryLabel, tx.wallet, tx.date]);
+    }
+
+    return renderMetaParts([tx.wallet, tx.date]);
   };
 
   return (
@@ -275,14 +295,14 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
             }}
           >
             <h4 className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
-              {tx.title}
+              {hierarchy.mainTitle}
             </h4>
             <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-slate-500 dark:text-slate-400">
               {renderMetaLine()}
             </p>
-            {tx.note && (
+            {hierarchy.extraNote && (
               <p className="mt-1 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
-                {tx.note}
+                {hierarchy.extraNote}
               </p>
             )}
           </div>

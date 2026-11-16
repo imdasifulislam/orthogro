@@ -348,6 +348,72 @@
       },
       "required": ["ownerId", "title", "periodType", "targetAmount", "createdAt", "updatedAt"]
     },
+    "RecurringBill": {
+      "title": "RecurringBill",
+      "description": "Saved recurring monthly income or expense bill template with due day and last paid month tracking.",
+      "type": "object",
+      "properties": {
+        "ownerId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "type": {
+          "type": "string",
+          "enum": ["expense", "income"]
+        },
+        "amount": {
+          "type": "number",
+          "description": "Positive default amount."
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "subCategory": {
+          "type": "string",
+          "maxLength": 100
+        },
+        "wallet": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "dueDay": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 31
+        },
+        "lastPaidMonth": {
+          "type": "string",
+          "minLength": 7,
+          "maxLength": 7,
+          "pattern": "^[0-9]{4}-[0-9]{2}$"
+        },
+        "lastPaidDate": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 10,
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["ownerId", "title", "type", "amount", "category", "wallet", "dueDay", "createdAt", "updatedAt"]
+    },
     "WorkspaceMember": {
       "title": "WorkspaceMember",
       "description": "Authorized partner membership granting viewer or editor access to an owner workspace.",
@@ -514,6 +580,10 @@
     "/users/{userId}/savingGoals/{goalId}": {
       "schema": { "$ref": "#/entities/SavingGoal" },
       "description": "Subcollection of monthly or custom-period saving goals owned by the user."
+    },
+    "/users/{userId}/recurringBills/{billId}": {
+      "schema": { "$ref": "#/entities/RecurringBill" },
+      "description": "Subcollection of recurring monthly bill templates owned by the user."
     },
     "/users/{userId}/members/{memberUid}": {
       "schema": { "$ref": "#/entities/WorkspaceMember" },

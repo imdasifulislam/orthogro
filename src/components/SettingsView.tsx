@@ -20,6 +20,7 @@ import {
   Pencil,
   PiggyBank,
   Plus,
+  Repeat,
   RotateCcw,
   ShoppingBag,
   Sun,
@@ -72,6 +73,8 @@ interface SettingsViewProps {
   txCountByIncCategory: Record<string, number>;
   budgetGoalsCount: number;
   savingGoalsCount: number;
+  recurringBillsCount: number;
+  dueRecurringCount: number;
   onGoogleLogin: () => void;
   onGoogleLogout: () => void;
   onAddListItem: (type: 'wallet' | 'savings' | 'exp_cat' | 'inc_cat', name: string) => void;
@@ -84,6 +87,7 @@ interface SettingsViewProps {
   onDeleteSubCategory: (parentCat: string, subName: string) => void;
   onOpenBudgetGoals: () => void;
   onOpenSavingGoals: () => void;
+  onOpenRecurringBills: () => void;
   onExportBackup: () => void;
   onResetAllData: () => void;
   activeSharedWorkspace: ActiveSharedWorkspace | null;
@@ -127,6 +131,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   txCountByIncCategory,
   budgetGoalsCount,
   savingGoalsCount,
+  recurringBillsCount,
+  dueRecurringCount,
   onGoogleLogin,
   onGoogleLogout,
   onAddListItem,
@@ -139,6 +145,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onDeleteSubCategory,
   onOpenBudgetGoals,
   onOpenSavingGoals,
+  onOpenRecurringBills,
   onExportBackup,
   onResetAllData,
   activeSharedWorkspace,
@@ -899,6 +906,37 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       {savingGoalsCount}{' '}
                       {savingGoalsCount === 1 ? t.settings.goalSingular : t.settings.goalsPlural}{' '}
                       {t.settings.tracked}
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+              </button>
+
+              {/* Recurring Bills */}
+              <button
+                type="button"
+                onClick={onOpenRecurringBills}
+                className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400">
+                    <Repeat className="h-[18px] w-[18px]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-[#102A43] dark:text-slate-100">
+                      {t.settings.recurringBills}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      {recurringBillsCount}{' '}
+                      {recurringBillsCount === 1
+                        ? t.settings.billSingular
+                        : t.settings.billsPlural}{' '}
+                      {t.settings.tracked}
+                      {dueRecurringCount > 0 && (
+                        <span className="ml-1.5 font-bold text-amber-600 dark:text-amber-400">
+                          · {dueRecurringCount} {t.settings.recurringDueSuffix}
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>

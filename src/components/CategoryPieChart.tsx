@@ -12,6 +12,7 @@ interface CategoryPieChartProps {
   totalLabel: string;
   activeCategory: string | null;
   onSelectCategory: (category: string | null) => void;
+  onCategoryClick?: (category: string) => void;
   didSwipeRef: React.MutableRefObject<boolean>;
 }
 
@@ -55,6 +56,7 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
   totalLabel,
   activeCategory,
   onSelectCategory,
+  onCategoryClick,
   didSwipeRef,
 }) => {
   const { t } = useTranslation();
@@ -66,6 +68,15 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
     : null;
 
   const activePct = activeEntry ? ((activeEntry[1] / total) * 100).toFixed(1) : null;
+
+  const handleSliceActivate = (cat: string) => {
+    if (didSwipeRef.current) return;
+    if (onCategoryClick) {
+      onCategoryClick(cat);
+    } else {
+      onSelectCategory(activeCategory === cat ? null : cat);
+    }
+  };
 
   let currentAngle = 0;
 
@@ -85,12 +96,19 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
             fill="none"
             stroke={colorMap?.[nonZeroItems[0][0]] || palette[0]}
             strokeWidth={36}
-            onClick={() => {
-              if (didSwipeRef.current) return;
-              const cat = nonZeroItems[0][0];
-              onSelectCategory(activeCategory === cat ? null : cat);
+            role="button"
+            tabIndex={0}
+            aria-label={nonZeroItems[0][0]}
+            onMouseEnter={() => onSelectCategory(nonZeroItems[0][0])}
+            onMouseLeave={() => onSelectCategory(null)}
+            onClick={() => handleSliceActivate(nonZeroItems[0][0])}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleSliceActivate(nonZeroItems[0][0]);
+              }
             }}
-            className="cursor-pointer transition-transform duration-200"
+            className="cursor-pointer transition-transform duration-200 focus:outline-none"
             style={{
               transform: activeCategory === nonZeroItems[0][0] ? 'scale(1.03)' : 'scale(1)',
               transformOrigin: '100px 100px',
@@ -117,11 +135,19 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
                   fill="none"
                   stroke={color}
                   strokeWidth={36}
-                  onClick={() => {
-                    if (didSwipeRef.current) return;
-                    onSelectCategory(isActive ? null : cat);
+                  role="button"
+                  tabIndex={0}
+                  aria-label={cat}
+                  onMouseEnter={() => onSelectCategory(cat)}
+                  onMouseLeave={() => onSelectCategory(null)}
+                  onClick={() => handleSliceActivate(cat)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleSliceActivate(cat);
+                    }
                   }}
-                  className="cursor-pointer"
+                  className="cursor-pointer focus:outline-none"
                 />
               );
             }
@@ -133,11 +159,17 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
                 fill={color}
                 stroke="currentColor"
                 strokeWidth={1.75}
+                role="button"
+                tabIndex={0}
+                aria-label={cat}
                 onMouseEnter={() => onSelectCategory(cat)}
                 onMouseLeave={() => onSelectCategory(null)}
-                onClick={() => {
-                  if (didSwipeRef.current) return;
-                  onSelectCategory(isActive ? null : cat);
+                onClick={() => handleSliceActivate(cat)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    handleSliceActivate(cat);
+                  }
                 }}
                 style={{
                   transform: isActive ? 'scale(1.05)' : 'scale(1)',
@@ -145,7 +177,7 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
                   opacity: isDimmed ? 0.55 : 1,
                   transition: 'transform 180ms ease-out, opacity 180ms ease-out',
                 }}
-                className="cursor-pointer"
+                className="cursor-pointer focus:outline-none"
               />
             );
           })
