@@ -61,6 +61,165 @@ const INCOME_CHART_COLORS = [
   '#64748B',
 ];
 
+const ScrollRevealSection: React.FC<{
+  index: number;
+  children: React.ReactNode;
+}> = ({ index, children }) => {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [reducedMotion] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+  const [visible, setVisible] = useState(
+    () =>
+      reducedMotion ||
+      typeof window === 'undefined' ||
+      !('IntersectionObserver' in window)
+  );
+  const [settled, setSettled] = useState(visible);
+
+  useEffect(() => {
+    if (visible) return;
+    const node = ref.current;
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      setSettled(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          requestAnimationFrame(() => setVisible(true));
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.06, rootMargin: '0px 0px -16px 0px' }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  useEffect(() => {
+    if (!visible || settled) return;
+    const delayMs = Math.min(index, 3) * 55;
+    const timer = window.setTimeout(() => setSettled(true), 460 + delayMs);
+    return () => window.clearTimeout(timer);
+  }, [visible, settled, index]);
+
+  const delayMs = Math.min(index, 3) * 55;
+
+  return (
+    <div
+      ref={ref}
+      style={
+        settled
+          ? undefined
+          : {
+              opacity: visible ? 1 : 0,
+              transform: visible ? 'translateY(0px)' : 'translateY(14px)',
+              transition: `opacity 420ms cubic-bezier(0.16, 1, 0.3, 1) ${delayMs}ms, transform 420ms cubic-bezier(0.16, 1, 0.3, 1) ${delayMs}ms`,
+            }
+      }
+    >
+      {children}
+    </div>
+  );
+};
+
+const AnimatedMoneyValue: React.FC<{
+  value: number;
+  currency: CurrencySymbol;
+  durationMs?: number;
+}> = ({ value, currency, durationMs = 740 }) => {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  const [reducedMotion] = useState(
+    () =>
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+  const [inView, setInView] = useState(
+    () =>
+      reducedMotion ||
+      typeof window === 'undefined' ||
+      !('IntersectionObserver' in window)
+  );
+  const [displayValue, setDisplayValue] = useState(() => (reducedMotion ? value : 0));
+  const currentValRef = useRef(reducedMotion ? value : 0);
+
+  useEffect(() => {
+    if (inView) return;
+    const node = ref.current;
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setInView(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setInView(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.15 }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [inView]);
+
+  useEffect(() => {
+    if (!inView) return;
+    if (reducedMotion || typeof window === 'undefined' || typeof requestAnimationFrame === 'undefined') {
+      currentValRef.current = value;
+      setDisplayValue(value);
+      return;
+    }
+
+    const startValue = currentValRef.current;
+    if (Math.abs(value - startValue) < 0.005) {
+      currentValRef.current = value;
+      setDisplayValue(value);
+      return;
+    }
+
+    const hasDecimals = Math.abs(value - Math.round(value)) > 0.001;
+    let rafId = 0;
+    const startTime = performance.now();
+
+    const tick = (now: number) => {
+      const progress = Math.min(1, (now - startTime) / durationMs);
+      const eased = 1 - Math.pow(1 - progress, 4);
+      const nextRaw = startValue + (value - startValue) * eased;
+      const nextVal =
+        progress >= 1
+          ? value
+          : hasDecimals
+          ? Math.round(nextRaw * 100) / 100
+          : Math.round(nextRaw);
+
+      currentValRef.current = nextVal;
+      setDisplayValue(nextVal);
+
+      if (progress < 1) {
+        rafId = requestAnimationFrame(tick);
+      }
+    };
+
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [value, inView, reducedMotion, durationMs]);
+
+  return (
+    <span ref={ref} className="tabular-nums">
+      {formatMoney(displayValue, currency)}
+    </span>
+  );
+};
+
 function computeCategoryReport(
   transactions: Transaction[],
   filterMode: PeriodFilter,
@@ -1127,13 +1286,21 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 {formatDisplayDate(getTodayISO(), lang)}
               </div>
             </div>
-            <div className="font-mono-num mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">
-              {formatMoney(metrics.absoluteNetWorth, currency)}
+            <div className="font-mono-num mt-2 text-3xl font-extrabold tracking-tight tabular-nums sm:text-4xl">
+              <AnimatedMoneyValue
+                value={metrics.absoluteNetWorth}
+                currency={currency}
+                durationMs={760}
+              />
             </div>
             <div className="mt-2 text-xs font-medium text-slate-300">
               {t.dashboard.availableCash}:{' '}
-              <span className="font-mono-num font-bold text-white">
-                {formatMoney(metrics.availableCashBalance, currency)}
+              <span className="font-mono-num font-bold tabular-nums text-white">
+                <AnimatedMoneyValue
+                  value={metrics.availableCashBalance}
+                  currency={currency}
+                  durationMs={640}
+                />
               </span>
             </div>
           </div>
@@ -2187,10 +2354,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
                     <div className="w-full min-w-0 flex-1 space-y-1.5">
                       {(pieLegendExpanded ? activeItems : activeItems.slice(0, 6)).map(
-                        ([cat, amount]) => {
+                        ([cat, amount], idx) => {
                           const catStyle = getCategoryStyle(categoryStyles, styleKind, cat);
-                          const pct =
-                            activeTotal > 0 ? ((amount / activeTotal) * 100).toFixed(1) : '0';
+                          const pctNum = activeTotal > 0 ? (amount / activeTotal) * 100 : 0;
+                          const pct = pctNum.toFixed(1);
                           const isHighlighted = activeChartCategory === cat;
                           return (
                             <button
@@ -2202,21 +2369,37 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                                 if (didPieSwipeRef.current || isLongPressRef.current) return;
                                 openCategoryDrilldown('pie', pieView, cat);
                               }}
-                              className={`group flex min-h-[40px] w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] ${
+                              className={`group flex min-h-[44px] w-full cursor-pointer flex-col justify-center gap-1 rounded-xl px-2.5 py-1.5 text-left text-xs transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] ${
                                 isHighlighted
-                                  ? 'bg-white/85 dark:bg-slate-800'
-                                  : 'hover:bg-white/60 dark:hover:bg-slate-800/50'
+                                  ? 'bg-white/95 shadow-xs ring-1 ring-slate-200/80 dark:bg-slate-800/95 dark:ring-slate-700'
+                                  : 'hover:bg-white/65 dark:hover:bg-slate-800/50'
                               }`}
                             >
-                              <span className="flex min-w-0 items-center gap-2">
-                                <CategoryIconBadge style={catStyle} size="xs" />
-                                <span className="truncate font-semibold text-slate-700 dark:text-slate-200">
-                                  {cat}
+                              <div className="flex w-full items-center justify-between gap-2">
+                                <span className="flex min-w-0 items-center gap-2">
+                                  <CategoryIconBadge style={catStyle} size="xs" />
+                                  <span className="truncate font-semibold text-slate-700 dark:text-slate-200">
+                                    {cat}
+                                  </span>
                                 </span>
-                              </span>
-                              <span className="font-mono-num shrink-0 font-semibold text-slate-600 dark:text-slate-300">
-                                {formatMoney(amount, currency)} ({pct}%)
-                              </span>
+                                <span className="font-mono-num shrink-0 font-semibold tabular-nums text-slate-600 dark:text-slate-300">
+                                  {formatMoney(amount, currency)}{' '}
+                                  <span className="text-[11px] font-bold text-slate-400 dark:text-slate-400">
+                                    ({pct}%)
+                                  </span>
+                                </span>
+                              </div>
+                              <div className="h-1 w-full overflow-hidden rounded-full bg-slate-200/70 dark:bg-slate-800/80">
+                                <div
+                                  key={`${pieView}-${pieMonthOffset}-${pieYearOffset}-${pieCustomOffset}-${cat}`}
+                                  className="animate-share-bar h-full rounded-full transition-all duration-300"
+                                  style={{
+                                    width: `${Math.max(3, Math.min(100, pctNum))}%`,
+                                    backgroundColor: catStyle.color,
+                                    animationDelay: `${Math.min(idx, 5) * 45}ms`,
+                                  }}
+                                />
+                              </div>
                             </button>
                           );
                         }
@@ -2382,7 +2565,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
   return (
     <div className="mx-auto w-full min-w-0 max-w-5xl space-y-5">
-      {gridOrder.map((key) => renderSection(key))}
+      {gridOrder.map((key, idx) => {
+        const content = renderSection(key);
+        if (!content) return null;
+        return (
+          <ScrollRevealSection key={key} index={idx}>
+            {content}
+          </ScrollRevealSection>
+        );
+      })}
     </div>
   );
 };

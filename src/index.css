@@ -30,3 +30,92 @@ input[type='number'] {
   -moz-appearance: textfield;
   appearance: textfield;
 }
+
+@keyframes pieSweepReveal {
+  from {
+    stroke-dashoffset: 447;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@keyframes pieCenterPop {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shareBarGrow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+.animate-pie-sweep {
+  animation: pieSweepReveal 680ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-pie-center {
+  animation: pieCenterPop 440ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-share-bar {
+  transform-origin: left center;
+  animation: shareBarGrow 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes addBtnLaunchPop {
+  0% {
+    opacity: 0.7;
+    transform: scale(0.76) rotate(-45deg);
+  }
+  62% {
+    opacity: 1;
+    transform: scale(1.1) rotate(6deg);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes addBtnLaunchRipple {
+  0% {
+    opacity: 0.55;
+    transform: scale(0.92);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.68);
+  }
+}
+
+.animate-add-launch {
+  animation: addBtnLaunchPop 580ms cubic-bezier(0.16, 1, 0.3, 1) 160ms both;
+}
+
+.animate-add-ripple {
+  animation: addBtnLaunchRipple 760ms cubic-bezier(0.16, 1, 0.3, 1) 220ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pie-sweep,
+  .animate-pie-center,
+  .animate-share-bar,
+  .animate-add-launch,
+  .animate-add-ripple {
+    animation: none !important;
+    transform: none !important;
+    opacity: 1 !important;
+    stroke-dashoffset: 0 !important;
+  }
+}

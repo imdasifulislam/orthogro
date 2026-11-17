@@ -37,14 +37,13 @@ async function copyTextToClipboard(text: string): Promise<boolean> {
   }
 }
 
+const APP_SHARE_URL = 'https://orthogro.vercel.app/';
+
 export const ShareAppModal: React.FC<ShareAppModalProps> = ({ open, onNotify, onClose }) => {
   const { t } = useTranslation();
   const sa = t.shareApp;
 
-  const appUrl = useMemo(() => {
-    if (typeof window === 'undefined') return '';
-    return window.location.origin;
-  }, []);
+  const appUrl = APP_SHARE_URL;
 
   const defaultMessage = useMemo(
     () => sa.defaultMessage.replace('{url}', appUrl),
@@ -119,7 +118,10 @@ export const ShareAppModal: React.FC<ShareAppModalProps> = ({ open, onNotify, on
     }
   };
 
-  const handleInstagramShare = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+  const handleCopyAndOpenShare = async (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    toastMsg: string
+  ) => {
     if (isEmpty) {
       e.preventDefault();
       onNotify('info', sa.emptyWarning);
@@ -128,7 +130,7 @@ export const ShareAppModal: React.FC<ShareAppModalProps> = ({ open, onNotify, on
     const ok = await copyTextToClipboard(trimmed);
     if (ok) {
       setCopiedJustNow(true);
-      onNotify('info', sa.instagramCopiedToast);
+      onNotify('info', toastMsg);
     }
   };
 
@@ -245,14 +247,32 @@ export const ShareAppModal: React.FC<ShareAppModalProps> = ({ open, onNotify, on
           <p className="mb-2.5 text-xs font-bold text-slate-500 dark:text-slate-400">
             {sa.shareViaLabel}
           </p>
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+          <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+            {/* Messenger (Copy + Open) */}
+            <a
+              href="https://www.messenger.com/"
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => void handleCopyAndOpenShare(e, sa.messengerCopiedToast)}
+              className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-1.5 py-2.5 text-center transition-colors hover:border-[#0084FF]/50 hover:bg-[#0084FF]/[0.06] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-[#0084FF]/50 dark:hover:bg-[#0084FF]/10"
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-tr from-[#0099FF] via-[#A033FF] to-[#FF5280] text-white">
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                  <path d="M12 2C6.48 2 2 6.14 2 11.25c0 2.9 1.44 5.49 3.7 7.19V22l3.36-1.85c.93.26 1.91.4 2.94.4 5.52 0 10-4.14 10-9.3C22 6.14 17.52 2 12 2Zm1.01 12.5-2.55-2.72-4.97 2.72 5.47-5.8 2.61 2.72 4.91-2.72-5.47 5.8Z" />
+                </svg>
+              </span>
+              <span className="w-full truncate text-[11px] font-bold text-[#102A43] dark:text-slate-200">
+                {sa.messenger}
+              </span>
+            </a>
+
             {/* WhatsApp */}
             <a
               href={`https://wa.me/?text=${encodedMessage}`}
               target="_blank"
               rel="noopener noreferrer"
               onClick={handleExternalShareClick}
-              className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2.5 text-center transition-colors hover:border-[#25D366]/50 hover:bg-[#25D366]/[0.06] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-[#25D366]/50 dark:hover:bg-[#25D366]/10"
+              className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-1.5 py-2.5 text-center transition-colors hover:border-[#25D366]/50 hover:bg-[#25D366]/[0.06] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-[#25D366]/50 dark:hover:bg-[#25D366]/10"
             >
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#25D366] text-white">
                 <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 fill-current">
@@ -264,31 +284,13 @@ export const ShareAppModal: React.FC<ShareAppModalProps> = ({ open, onNotify, on
               </span>
             </a>
 
-            {/* Facebook */}
-            <a
-              href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodedMessage}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={handleExternalShareClick}
-              className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2.5 text-center transition-colors hover:border-[#1877F2]/40 hover:bg-[#1877F2]/[0.06] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-[#1877F2]/50 dark:hover:bg-[#1877F2]/10"
-            >
-              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#1877F2] text-white">
-                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 fill-current">
-                  <path d="M13.5 21v-7.5h2.52l.38-2.93H13.5V8.7c0-.85.24-1.43 1.45-1.43h1.55V4.64A20.7 20.7 0 0 0 14.24 4.5c-2.24 0-3.77 1.37-3.77 3.88v2.19H8v2.93h2.47V21h3.03Z" />
-                </svg>
-              </span>
-              <span className="w-full truncate text-[11px] font-bold text-[#102A43] dark:text-slate-200">
-                {sa.facebook}
-              </span>
-            </a>
-
             {/* Instagram (Copy + Open) */}
             <a
               href="https://www.instagram.com"
               target="_blank"
               rel="noopener noreferrer"
-              onClick={(e) => void handleInstagramShare(e)}
-              className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2.5 text-center transition-colors hover:border-pink-400/50 hover:bg-pink-500/[0.06] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-pink-500/40 dark:hover:bg-pink-500/10"
+              onClick={(e) => void handleCopyAndOpenShare(e, sa.instagramCopiedToast)}
+              className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-1.5 py-2.5 text-center transition-colors hover:border-pink-400/50 hover:bg-pink-500/[0.06] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-pink-500/40 dark:hover:bg-pink-500/10"
             >
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-tr from-[#F58529] via-[#DD2A7B] to-[#8134AF] text-white">
                 <svg
@@ -311,13 +313,31 @@ export const ShareAppModal: React.FC<ShareAppModalProps> = ({ open, onNotify, on
               </span>
             </a>
 
+            {/* Facebook */}
+            <a
+              href={`https://www.facebook.com/sharer/sharer.php?u=${encodedUrl}&quote=${encodedMessage}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={handleExternalShareClick}
+              className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-1.5 py-2.5 text-center transition-colors hover:border-[#1877F2]/40 hover:bg-[#1877F2]/[0.06] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-[#1877F2]/50 dark:hover:bg-[#1877F2]/10"
+            >
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#1877F2] text-white">
+                <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 fill-current">
+                  <path d="M13.5 21v-7.5h2.52l.38-2.93H13.5V8.7c0-.85.24-1.43 1.45-1.43h1.55V4.64A20.7 20.7 0 0 0 14.24 4.5c-2.24 0-3.77 1.37-3.77 3.88v2.19H8v2.93h2.47V21h3.03Z" />
+                </svg>
+              </span>
+              <span className="w-full truncate text-[11px] font-bold text-[#102A43] dark:text-slate-200">
+                {sa.facebook}
+              </span>
+            </a>
+
             {/* Telegram */}
             <a
               href={`https://t.me/share/url?url=${encodedUrl}&text=${encodedMessage}`}
               target="_blank"
               rel="noopener noreferrer"
               onClick={handleExternalShareClick}
-              className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2.5 text-center transition-colors hover:border-[#229ED9]/50 hover:bg-[#229ED9]/[0.06] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-[#229ED9]/50 dark:hover:bg-[#229ED9]/10"
+              className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-1.5 py-2.5 text-center transition-colors hover:border-[#229ED9]/50 hover:bg-[#229ED9]/[0.06] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-[#229ED9]/50 dark:hover:bg-[#229ED9]/10"
             >
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#229ED9] text-white">
                 <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 fill-current">
@@ -335,7 +355,7 @@ export const ShareAppModal: React.FC<ShareAppModalProps> = ({ open, onNotify, on
               target="_blank"
               rel="noopener noreferrer"
               onClick={handleExternalShareClick}
-              className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2.5 text-center transition-colors hover:border-slate-400 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-600 dark:hover:bg-slate-800"
+              className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-1.5 py-2.5 text-center transition-colors hover:border-slate-400 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-600 dark:hover:bg-slate-800"
             >
               <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900">
                 <svg aria-hidden="true" viewBox="0 0 24 24" className="h-3.5 w-3.5 fill-current">

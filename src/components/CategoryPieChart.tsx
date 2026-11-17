@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from '../i18n';
 import type { CurrencySymbol } from '../types';
 import { formatMoney } from '../utils/format';
@@ -48,6 +48,19 @@ function describeDonutSlice(
   ].join(' ');
 }
 
+function describeArc(
+  cx: number,
+  cy: number,
+  r: number,
+  startAngle: number,
+  endAngle: number
+): string {
+  const start = polarToCartesian(cx, cy, r, endAngle);
+  const end = polarToCartesian(cx, cy, r, startAngle);
+  const largeArc = endAngle - startAngle <= 180 ? '0' : '1';
+  return `M ${start.x.toFixed(2)} ${start.y.toFixed(2)} A ${r} ${r} 0 ${largeArc} 0 ${end.x.toFixed(2)} ${end.y.toFixed(2)}`;
+}
+
 export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
   items,
   total,
@@ -62,13 +75,63 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
   hideBalances = false,
 }) => {
   const { t } = useTranslation();
-  const nonZeroItems = items.filter(([, amt]) => amt > 0);
+  const rawUid = useId();
+  const uid = rawUid.replace(/[^a-zA-Z0-9_-]/g, '');
+
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const [hasEnteredView, setHasEnteredView] = useState(
+    () => typeof window === 'undefined' || !('IntersectionObserver' in window)
+  );
+  const [animCycle, setAnimCycle] = useState(0);
+
+  const nonZeroItems = useMemo(() => items.filter(([, amt]) => amt > 0), [items]);
+  const dataSignature = useMemo(
+    () =>
+      `${totalLabel}|${total}|${nonZeroItems.map(([cat, amt]) => `${cat}:${amt}`).join(',')}`,
+    [totalLabel, total, nonZeroItems]
+  );
+  const prevSigRef = useRef(dataSignature);
+
+  useEffect(() => {
+    if (hasEnteredView) return;
+    const node = containerRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setHasEnteredView(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setHasEnteredView(true);
+          setAnimCycle((c) => c + 1);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.25 }
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasEnteredView]);
+
+  useEffect(() => {
+    if (prevSigRef.current === dataSignature) return;
+    prevSigRef.current = dataSignature;
+    if (hasEnteredView) {
+      setAnimCycle((c) => c + 1);
+    }
+  }, [dataSignature, hasEnteredView]);
+
   if (nonZeroItems.length === 0 || total <= 0) return null;
 
-  const activeEntry = activeCategory
-    ? nonZeroItems.find(([cat]) => cat === activeCategory) || null
-    : null;
-
+  const activeIndex = activeCategory
+    ? nonZeroItems.findIndex(([cat]) => cat === activeCategory)
+    : -1;
+  const activeEntry = activeIndex >= 0 ? nonZeroItems[activeIndex] : null;
+  const activeColor =
+    activeEntry && activeIndex >= 0
+      ? colorMap?.[activeEntry[0]] || palette[activeIndex % palette.length]
+      : null;
   const activePct = activeEntry ? ((activeEntry[1] / total) * 100).toFixed(1) : null;
 
   const handleSliceActivate = (cat: string) => {
@@ -80,63 +143,167 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
     }
   };
 
+  const sheenId = `pie-sheen-${uid}`;
+  const shadowId = `pie-active-shadow-${uid}`;
+  const maskId = `pie-reveal-mask-${uid}`;
   let currentAngle = 0;
 
   return (
-    <div className="relative mx-auto flex h-44 w-44 shrink-0 items-center justify-center">
+    <div
+      ref={containerRef}
+      className="relative mx-auto flex h-48 w-48 shrink-0 items-center justify-center sm:h-52 sm:w-52"
+    >
       <svg
-        viewBox="0 0 200 200"
+        viewBox="0 0 220 220"
         role="img"
         aria-label={`${totalLabel} ${t.dashboard.pieAriaSuffix}`}
-        className="h-full w-full overflow-visible text-white dark:text-slate-900"
+        className="h-full w-full overflow-visible"
       >
-        {nonZeroItems.length === 1 ? (
-          <circle
-            cx={100}
-            cy={100}
-            r={66}
-            fill="none"
-            stroke={colorMap?.[nonZeroItems[0][0]] || palette[0]}
-            strokeWidth={36}
-            role="button"
-            tabIndex={0}
-            aria-label={nonZeroItems[0][0]}
-            onMouseEnter={() => onSelectCategory(nonZeroItems[0][0])}
-            onMouseLeave={() => onSelectCategory(null)}
-            onClick={() => handleSliceActivate(nonZeroItems[0][0])}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                handleSliceActivate(nonZeroItems[0][0]);
-              }
-            }}
-            className="cursor-pointer transition-transform duration-200 focus:outline-none"
-            style={{
-              transform: activeCategory === nonZeroItems[0][0] ? 'scale(1.03)' : 'scale(1)',
-              transformOrigin: '100px 100px',
-            }}
-          />
-        ) : (
-          nonZeroItems.map(([cat, amount], idx) => {
-            const sliceAngle = (amount / total) * 360;
-            const startAngle = currentAngle;
-            const endAngle = currentAngle + sliceAngle;
-            currentAngle = endAngle;
+        <defs>
+          <radialGradient id={sheenId} cx="35%" cy="28%" r="72%">
+            <stop offset="0%" stopColor="#ffffff" stopOpacity="0.28" />
+            <stop offset="55%" stopColor="#ffffff" stopOpacity="0.04" />
+            <stop offset="100%" stopColor="#0f172a" stopOpacity="0.14" />
+          </radialGradient>
+          <filter id={shadowId} x="-20%" y="-20%" width="140%" height="140%">
+            <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#0f172a" floodOpacity="0.22" />
+          </filter>
+          <mask id={maskId} maskUnits="userSpaceOnUse">
+            <circle
+              key={animCycle}
+              cx={110}
+              cy={110}
+              r={71}
+              fill="none"
+              stroke="white"
+              strokeWidth={56}
+              transform="rotate(-90 110 110)"
+              strokeDasharray={447}
+              strokeDashoffset={hasEnteredView ? undefined : 447}
+              className={hasEnteredView ? 'animate-pie-sweep' : undefined}
+            />
+          </mask>
+        </defs>
 
-            const color = colorMap?.[cat] || palette[idx % palette.length];
-            const isActive = activeCategory === cat;
-            const isDimmed = activeCategory !== null && !isActive;
+        {/* Subtle ambient track ring */}
+        <circle
+          cx={110}
+          cy={110}
+          r={71}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={34}
+          className="text-slate-200/55 dark:text-slate-800/70"
+        />
 
-            if (sliceAngle >= 359.99) {
+        <g mask={`url(#${maskId})`}>
+          {nonZeroItems.length === 1 ? (
+            (() => {
+              const singleCat = nonZeroItems[0][0];
+              const singleColor = colorMap?.[singleCat] || palette[0];
+              const isActive = activeCategory === singleCat;
               return (
-                <circle
+                <g
+                  role="button"
+                  tabIndex={0}
+                  aria-label={singleCat}
+                  onMouseEnter={() => onSelectCategory(singleCat)}
+                  onMouseLeave={() => onSelectCategory(null)}
+                  onClick={() => handleSliceActivate(singleCat)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleSliceActivate(singleCat);
+                    }
+                  }}
+                  style={{
+                    transform: isActive ? 'scale(1.03)' : 'scale(1)',
+                    transformOrigin: '110px 110px',
+                    transition: 'transform 200ms cubic-bezier(0.16, 1, 0.3, 1)',
+                  }}
+                  className="cursor-pointer focus:outline-none"
+                >
+                  {isActive && (
+                    <circle
+                      cx={110}
+                      cy={110}
+                      r={94}
+                      fill="none"
+                      stroke={singleColor}
+                      strokeWidth={3}
+                      strokeOpacity={0.4}
+                    />
+                  )}
+                  <circle
+                    cx={110}
+                    cy={110}
+                    r={71}
+                    fill="none"
+                    stroke={singleColor}
+                    strokeWidth={34}
+                    filter={isActive ? `url(#${shadowId})` : undefined}
+                  />
+                  <circle
+                    cx={110}
+                    cy={110}
+                    r={71}
+                    fill="none"
+                    stroke={`url(#${sheenId})`}
+                    strokeWidth={34}
+                    className="pointer-events-none"
+                  />
+                </g>
+              );
+            })()
+          ) : (
+            nonZeroItems.map(([cat, amount], idx) => {
+              const rawAngle = (amount / total) * 360;
+              const halfGap = Math.min(1.35, rawAngle * 0.22);
+              const startAngle = currentAngle + halfGap;
+              const endAngle = currentAngle + rawAngle - halfGap;
+              currentAngle += rawAngle;
+
+              const color = colorMap?.[cat] || palette[idx % palette.length];
+              const isActive = activeCategory === cat;
+              const isDimmed = activeCategory !== null && !isActive;
+
+              if (rawAngle >= 359.99) {
+                return (
+                  <g
+                    key={cat}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={cat}
+                    onMouseEnter={() => onSelectCategory(cat)}
+                    onMouseLeave={() => onSelectCategory(null)}
+                    onClick={() => handleSliceActivate(cat)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        handleSliceActivate(cat);
+                      }
+                    }}
+                    className="cursor-pointer focus:outline-none"
+                  >
+                    <circle cx={110} cy={110} r={71} fill="none" stroke={color} strokeWidth={34} />
+                    <circle
+                      cx={110}
+                      cy={110}
+                      r={71}
+                      fill="none"
+                      stroke={`url(#${sheenId})`}
+                      strokeWidth={34}
+                      className="pointer-events-none"
+                    />
+                  </g>
+                );
+              }
+
+              const slicePath = describeDonutSlice(110, 110, 88, 54, startAngle, endAngle);
+
+              return (
+                <g
                   key={cat}
-                  cx={100}
-                  cy={100}
-                  r={66}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={36}
                   role="button"
                   tabIndex={0}
                   aria-label={cat}
@@ -149,66 +316,78 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
                       handleSliceActivate(cat);
                     }
                   }}
+                  style={{
+                    transform: isActive ? 'scale(1.055)' : isDimmed ? 'scale(0.985)' : 'scale(1)',
+                    transformOrigin: '110px 110px',
+                    opacity: isDimmed ? 0.42 : 1,
+                    transition:
+                      'transform 200ms cubic-bezier(0.16, 1, 0.3, 1), opacity 180ms ease-out',
+                  }}
                   className="cursor-pointer focus:outline-none"
-                />
+                >
+                  {isActive && (
+                    <path
+                      d={describeArc(110, 110, 93.5, startAngle, endAngle)}
+                      fill="none"
+                      stroke={color}
+                      strokeWidth={3}
+                      strokeLinecap="round"
+                      strokeOpacity={0.45}
+                    />
+                  )}
+                  <path
+                    d={slicePath}
+                    fill={color}
+                    filter={isActive ? `url(#${shadowId})` : undefined}
+                  />
+                  <path d={slicePath} fill={`url(#${sheenId})`} className="pointer-events-none" />
+                </g>
               );
-            }
-
-            return (
-              <path
-                key={cat}
-                d={describeDonutSlice(100, 100, 84, 48, startAngle, endAngle)}
-                fill={color}
-                stroke="currentColor"
-                strokeWidth={1.75}
-                role="button"
-                tabIndex={0}
-                aria-label={cat}
-                onMouseEnter={() => onSelectCategory(cat)}
-                onMouseLeave={() => onSelectCategory(null)}
-                onClick={() => handleSliceActivate(cat)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    handleSliceActivate(cat);
-                  }
-                }}
-                style={{
-                  transform: isActive ? 'scale(1.05)' : 'scale(1)',
-                  transformOrigin: '100px 100px',
-                  opacity: isDimmed ? 0.55 : 1,
-                  transition: 'transform 180ms ease-out, opacity 180ms ease-out',
-                }}
-                className="cursor-pointer focus:outline-none"
-              />
-            );
-          })
-        )}
+            })
+          )}
+        </g>
       </svg>
 
-      {/* Center Readout */}
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center px-6 text-center">
+      {/* Center Elevated Readout Disc */}
+      <div
+        key={hasEnteredView ? `center-${animCycle}` : 'center-init'}
+        className={`pointer-events-none absolute flex h-[96px] w-[96px] flex-col items-center justify-center rounded-full border border-slate-200/80 bg-white/95 px-2.5 text-center shadow-sm backdrop-blur-xs sm:h-[104px] sm:w-[104px] dark:border-slate-700/80 dark:bg-slate-900/95 ${
+          hasEnteredView ? 'animate-pie-center' : 'opacity-0'
+        }`}
+      >
         {activeEntry ? (
           <>
-            <span className="max-w-[84px] truncate text-[11px] font-bold text-slate-600 dark:text-slate-300">
-              {activeEntry[0]}
+            <span className="flex max-w-full items-center justify-center gap-1">
+              {activeColor && (
+                <span
+                  aria-hidden="true"
+                  className="h-2 w-2 shrink-0 rounded-full"
+                  style={{ backgroundColor: activeColor }}
+                />
+              )}
+              <span className="truncate text-[10px] font-bold text-slate-600 dark:text-slate-300">
+                {activeEntry[0]}
+              </span>
             </span>
-            <span className="font-mono-num mt-0.5 text-xs font-extrabold text-[#102A43] dark:text-slate-100">
+            <span className="font-mono-num mt-0.5 text-xs font-extrabold tabular-nums text-[#102A43] sm:text-[13px] dark:text-slate-100">
               {formatMoney(activeEntry[1], currency, hideBalances)}
             </span>
-            <span className="font-mono-num text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+            <span
+              className="font-mono-num mt-0.5 text-[10px] font-extrabold tabular-nums"
+              style={{ color: activeColor || undefined }}
+            >
               {activePct}%
             </span>
           </>
         ) : (
           <>
-            <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">
+            <span className="max-w-full truncate text-[10px] font-semibold text-slate-500 dark:text-slate-400">
               {totalLabel}
             </span>
-            <span className="font-mono-num mt-0.5 text-xs font-extrabold text-[#102A43] dark:text-slate-100">
+            <span className="font-mono-num mt-0.5 text-xs font-extrabold tabular-nums text-[#102A43] sm:text-[13px] dark:text-slate-100">
               {formatMoney(total, currency, hideBalances)}
             </span>
-            <span className="text-[10px] text-slate-400 dark:text-slate-500">
+            <span className="mt-0.5 text-[10px] font-medium text-slate-400 dark:text-slate-500">
               {nonZeroItems.length}{' '}
               {nonZeroItems.length === 1 ? t.common.categorySingular : t.common.categories}
             </span>
