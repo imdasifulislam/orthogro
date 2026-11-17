@@ -1519,6 +1519,20 @@ function OrthoGroApp() {
 
   // Hardware/Browser Back button navigation: step back overlays -> Settings -> Home, then exit from Home
   const isWorkspaceActive = Boolean(currentUser || isGuest) && !authLoading && !isAppLocked;
+  const hasPlayedAddLaunchRef = useRef(false);
+  const [showAddLaunchCue, setShowAddLaunchCue] = useState(false);
+
+  useEffect(() => {
+    if (!isWorkspaceActive || hasPlayedAddLaunchRef.current) return;
+    hasPlayedAddLaunchRef.current = true;
+    setShowAddLaunchCue(true);
+  }, [isWorkspaceActive]);
+
+  useEffect(() => {
+    if (!showAddLaunchCue) return;
+    const timer = window.setTimeout(() => setShowAddLaunchCue(false), 1200);
+    return () => window.clearTimeout(timer);
+  }, [showAddLaunchCue]);
   const hasOpenOverlay = Boolean(
     confirmDialog ||
       activeMilestone ||
@@ -4776,7 +4790,13 @@ function OrthoGroApp() {
                         : 'text-slate-600 hover:bg-slate-100 hover:text-[#102A43] dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
                     }`}
                   >
-                    <Icon className="h-4 w-4 shrink-0" />
+                    <Icon
+                      className={`h-4 w-4 shrink-0 ${
+                        item.key === 'transactions' && showAddLaunchCue && !isReadOnlyPartner
+                          ? 'animate-add-launch'
+                          : ''
+                      }`}
+                    />
                     <span>{item.key === 'transactions' ? t.app.navNewEntry : item.label}</span>
                   </button>
                 );
@@ -5152,12 +5172,24 @@ function OrthoGroApp() {
                 }}
                 className="flex h-full items-center justify-center"
               >
-                <span
-                  className={`flex h-11 w-11 items-center justify-center rounded-full bg-[#16845B] text-white shadow-md transition-transform active:scale-95 ${
-                    isReadOnlyPartner ? 'opacity-50' : ''
-                  }`}
-                >
-                  <Plus className="h-5 w-5" />
+                <span className="relative flex h-11 w-11 items-center justify-center">
+                  {showAddLaunchCue && !isReadOnlyPartner && (
+                    <span
+                      aria-hidden="true"
+                      className="animate-add-ripple pointer-events-none absolute inset-0 rounded-full bg-[#16845B]/45 dark:bg-emerald-400/45"
+                    />
+                  )}
+                  <span
+                    className={`relative flex h-11 w-11 items-center justify-center rounded-full bg-[#16845B] text-white shadow-md transition-transform active:scale-95 ${
+                      isReadOnlyPartner
+                        ? 'opacity-50'
+                        : showAddLaunchCue
+                        ? 'animate-add-launch'
+                        : ''
+                    }`}
+                  >
+                    <Plus className="h-5 w-5" />
+                  </span>
                 </span>
               </button>
             );
