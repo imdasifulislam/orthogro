@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { CheckCircle2, Pencil, Plus, Repeat, Trash2 } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Pencil, Plus, Repeat, Trash2 } from 'lucide-react';
 import { useTranslation } from '../i18n';
 import type {
   CategoryStyle,
@@ -7,9 +7,18 @@ import type {
   RecurringBill,
   RecurringBillType,
 } from '../types';
-import { CategoryIconBadge, getCategoryStyle } from '../utils/categoryVisuals';
+import {
+  CategoryIconBadge,
+  getCategoryStyle,
+  getExpenseOrSubCategoryStyle,
+} from '../utils/categoryVisuals';
 import { formatMoney } from '../utils/format';
 import { formatDueDayLabel, sortRecurringBills } from '../utils/recurringBills';
+import {
+  type AddableItemKind,
+  TransactionPickerDrawer,
+  type TransactionPickerMode,
+} from './TransactionPickerDrawer';
 
 export interface RecurringBillSavePayload {
   title: string;
@@ -27,15 +36,29 @@ export interface RecurringBillsPanelProps {
   incomeCategories: string[];
   expenseSubCategories?: Record<string, string[]>;
   allAccountOptions: string[];
+  wallets?: string[];
+  savingsList?: string[];
   categoryStyles?: Record<string, CategoryStyle>;
   currency: CurrencySymbol;
   isReadOnly?: boolean;
   resetTrigger?: number;
+  onAddListItem?: (
+    type: 'wallet' | 'savings' | 'exp_cat' | 'inc_cat',
+    name: string,
+    style?: CategoryStyle
+  ) => Promise<boolean>;
+  onAddSubCategory?: (
+    parentCat: string,
+    subName: string,
+    style?: CategoryStyle
+  ) => Promise<boolean>;
   onSaveBill: (payload: RecurringBillSavePayload, editId?: string) => Promise<boolean>;
   onDeleteBill: (id: string) => Promise<void>;
   onOneTapLog: (bill: RecurringBill) => Promise<void>;
   onAdjustAndLog: (bill: RecurringBill) => void;
 }
+
+type RecurringPickerField = 'category' | 'subCategory' | 'wallet';
 
 export const RecurringBillsPanel: React.FC<RecurringBillsPanelProps> = ({
   bills,
@@ -43,10 +66,14 @@ export const RecurringBillsPanel: React.FC<RecurringBillsPanelProps> = ({
   incomeCategories,
   expenseSubCategories,
   allAccountOptions,
+  wallets = [],
+  savingsList = [],
   categoryStyles,
   currency,
   isReadOnly = false,
   resetTrigger = 0,
+  onAddListItem,
+  onAddSubCategory,
   onSaveBill,
   onDeleteBill,
   onOneTapLog,
@@ -64,6 +91,7 @@ export const RecurringBillsPanel: React.FC<RecurringBillsPanelProps> = ({
   const [dueDayInput, setDueDayInput] = useState<number>(() => new Date().getDate());
   const [isSaving, setIsSaving] = useState(false);
   const [loggingBillId, setLoggingBillId] = useState<string | null>(null);
+  const [activePickerField, setActivePickerField] = useState<RecurringPickerField | null>(null);
 
   const resetForm = (nextType: RecurringBillType = 'expense') => {
     setEditingBillId(null);
@@ -76,6 +104,7 @@ export const RecurringBillsPanel: React.FC<RecurringBillsPanelProps> = ({
     setSubCategoryInput('');
     setWalletInput(allAccountOptions[0] || 'Cash');
     setDueDayInput(new Date().getDate());
+    setActivePickerField(null);
   };
 
   useEffect(() => {
@@ -86,7 +115,18 @@ export const RecurringBillsPanel: React.FC<RecurringBillsPanelProps> = ({
   }, [resetTrigger]);
 
   const evaluatedBills = sortRecurringBills(bills);
-  const attentionCount = evaluatedBills.filter((item) => item.needsAttention).length;
+  const unpaidThisMonth = evaluatedBills.filter((item) => !item.isPaidThisMonth);
+  const unpaidExpenseThisMonth = unpaidThisMonth.filter((item) => item.bill.type === 'expense');
+  const unpaidIncomeThisMonth = unpaidThisMonth.filter((item) => item.bill.type === 'income');
+  const isIncomeOnlyList =
+    evaluatedBills.length > 0 && evaluatedBills.every((item) => item.bill.type === 'income');
+  const dueBillCount = isIncomeOnlyList
+    ? unpaidIncomeThisMonth.length
+    : unpaidExpenseThisMonth.length;
+  const dueBillTotal = (isIncomeOnlyList ? unpaidIncomeThisMonth : unpaidExpenseThisMonth).reduce(
+    (sum, item) => sum + item.bill.amount,
+    0
+  );
 
   const currentCategories = billType === 'expense' ? expenseCategories : incomeCategories;
   const categoryOptions = Array.from(
@@ -170,8 +210,57 @@ export const RecurringBillsPanel: React.FC<RecurringBillsPanelProps> = ({
     }
   };
 
+  const getAccountStyle = (accountName: string) =>
+    getCategoryStyle(
+      categoryStyles,
+      savingsList.includes(accountName) ? 'sav' : 'wal',
+      accountName
+    );
+
   if (mode === 'form') {
+    const pickerMode: TransactionPickerMode | null =
+      activePickerField === 'category'
+        ? billType === 'income'
+          ? 'inc_cat'
+          : 'exp_cat'
+        : activePickerField === 'subCategory'
+        ? 'sub_cat'
+        : activePickerField === 'wallet'
+        ? 'account'
+        : null;
+
+    const pickerTitle =
+      pickerMode === 'exp_cat'
+        ? t.txForm.drawerChooseExpCategory
+        : pickerMode === 'inc_cat'
+        ? t.txForm.drawerChooseIncCategory
+        : pickerMode === 'sub_cat'
+        ? `${t.txForm.drawerChooseSubCategory} · ${categoryInput}`
+        : t.txForm.drawerChooseAccount;
+
+    const pickerSelectedValue =
+      activePickerField === 'category'
+        ? categoryInput
+        : activePickerField === 'subCategory'
+        ? subCategoryInput
+        : walletInput;
+
+    const handleCreateFromDrawer = async (
+      kind: AddableItemKind,
+      name: string,
+      parentCat?: string,
+      style?: CategoryStyle
+    ): Promise<boolean> => {
+      if (kind === 'sub_cat') {
+        if (!onAddSubCategory || !parentCat) return false;
+        return onAddSubCategory(parentCat, name, style);
+      }
+      if (!onAddListItem) return false;
+      return onAddListItem(kind, name, style);
+    };
+
     return (
+      <>
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
           {/* Minimal Inline Metadata Header (matches New Transaction form) */}
@@ -180,7 +269,7 @@ export const RecurringBillsPanel: React.FC<RecurringBillsPanelProps> = ({
             <div
               role="tablist"
               aria-label={t.recurring.typeLabel}
-              className="flex w-full items-center gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800"
+              className="flex w-full items-center gap-1 rounded-xl border border-slate-200 bg-slate-50/70 p-1 dark:border-slate-800 dark:bg-slate-950/60"
             >
               {(['expense', 'income'] as const).map((typeOpt) => {
                 const active = billType === typeOpt;
@@ -193,7 +282,7 @@ export const RecurringBillsPanel: React.FC<RecurringBillsPanelProps> = ({
                     onClick={() => handleTypeSwitch(typeOpt)}
                     className={`min-h-[38px] flex-1 rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
                       active
-                        ? 'bg-white text-[#16845B] shadow-xs dark:bg-slate-900 dark:text-emerald-400'
+                        ? 'bg-white text-[#16845B] shadow-xs ring-1 ring-slate-200/80 dark:bg-slate-900 dark:text-emerald-400 dark:ring-slate-700'
                         : 'text-slate-600 hover:text-[#102A43] dark:text-slate-400 dark:hover:text-slate-200'
                     }`}
                   >
@@ -210,7 +299,7 @@ export const RecurringBillsPanel: React.FC<RecurringBillsPanelProps> = ({
                   aria-label={t.recurring.dueDayLabel}
                   value={dueDayInput}
                   onChange={(e) => setDueDayInput(Number(e.target.value))}
-                  className="min-h-[36px] shrink-0 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-[#102A43] transition-colors focus:bg-slate-200/70 focus:outline-none dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-700"
+                  className="min-h-[44px] shrink-0 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-xs font-bold text-[#102A43] transition-colors hover:border-slate-300 focus:border-[#16845B] focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100 dark:hover:border-slate-700 dark:focus:border-emerald-400 dark:focus:bg-slate-900"
                 >
                   {Array.from({ length: 31 }, (_, idx) => idx + 1).map((dayNum) => (
                     <option key={dayNum} value={dayNum}>
@@ -219,63 +308,78 @@ export const RecurringBillsPanel: React.FC<RecurringBillsPanelProps> = ({
                   ))}
                 </select>
 
-                <div className="flex min-h-[36px] min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-slate-100 pl-1.5 pr-1 dark:bg-slate-800">
-                  <CategoryIconBadge
-                    style={getCategoryStyle(
-                      categoryStyles,
-                      billType === 'income' ? 'inc' : 'exp',
-                      categoryInput
-                    )}
-                    size="sm"
-                  />
-                  <select
-                    aria-label={t.recurring.categoryLabel}
-                    value={categoryInput}
-                    onChange={(e) => {
-                      setCategoryInput(e.target.value);
-                      setSubCategoryInput('');
-                    }}
-                    className="min-h-[34px] min-w-0 flex-1 truncate bg-transparent pr-1.5 text-xs font-medium text-[#102A43] focus:outline-none dark:text-slate-200"
-                  >
-                    {categoryOptions.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                <button
+                  type="button"
+                  aria-label={t.recurring.categoryLabel}
+                  onClick={() => setActivePickerField('category')}
+                  className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
+                >
+                  <span className="flex min-w-0 items-center gap-2">
+                    <CategoryIconBadge
+                      style={
+                        billType === 'income'
+                          ? getCategoryStyle(categoryStyles, 'inc', categoryInput)
+                          : getCategoryStyle(categoryStyles, 'exp', categoryInput)
+                      }
+                      size="sm"
+                    />
+                    <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                      {categoryInput}
+                    </span>
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                </button>
               </div>
 
-              {/* Row 3: Sub-Category (when available) + Wallet */}
+              {/* Row 3: Sub-Category (Expense) + Wallet */}
               <div className="flex items-center gap-2">
-                {billType === 'expense' && subCategoryOptions.length > 0 && (
-                  <select
+                {billType === 'expense' && (
+                  <button
+                    type="button"
                     aria-label={t.recurring.subCategoryLabel}
-                    value={subCategoryInput}
-                    onChange={(e) => setSubCategoryInput(e.target.value)}
-                    className="min-h-[36px] min-w-0 flex-1 truncate rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-[#102A43] transition-colors focus:bg-slate-200/70 focus:outline-none dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-700"
+                    onClick={() => setActivePickerField('subCategory')}
+                    className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
                   >
-                    <option value="">{t.recurring.subCategoryOptional}</option>
-                    {subCategoryOptions.map((sub) => (
-                      <option key={sub} value={sub}>
-                        {sub}
-                      </option>
-                    ))}
-                  </select>
+                    <span className="flex min-w-0 items-center gap-2">
+                      <CategoryIconBadge
+                        style={getExpenseOrSubCategoryStyle(
+                          categoryStyles,
+                          categoryInput,
+                          subCategoryInput
+                        )}
+                        size="sm"
+                      />
+                      <span
+                        className={`truncate text-xs ${
+                          subCategoryInput
+                            ? 'font-bold text-[#102A43] dark:text-slate-100'
+                            : 'font-semibold text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        {subCategoryInput || t.txForm.subCategoryChipPlaceholder}
+                      </span>
+                    </span>
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                  </button>
                 )}
 
-                <select
+                <button
+                  type="button"
                   aria-label={t.recurring.walletLabel}
-                  value={walletInput}
-                  onChange={(e) => setWalletInput(e.target.value)}
-                  className="min-h-[36px] min-w-0 flex-1 truncate rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-[#102A43] transition-colors focus:bg-slate-200/70 focus:outline-none dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-700"
+                  onClick={() => setActivePickerField('wallet')}
+                  className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
                 >
-                  {walletOptions.map((wal) => (
-                    <option key={wal} value={wal}>
-                      {wal}
-                    </option>
-                  ))}
-                </select>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <CategoryIconBadge
+                      style={getAccountStyle(walletInput)}
+                      size="sm"
+                    />
+                    <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                      {walletInput}
+                    </span>
+                  </span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                </button>
               </div>
             </div>
           </div>
@@ -349,6 +453,41 @@ export const RecurringBillsPanel: React.FC<RecurringBillsPanelProps> = ({
           </button>
         </div>
       </form>
+
+      {pickerMode && activePickerField && (
+        <TransactionPickerDrawer
+          open={true}
+          mode={pickerMode}
+          title={pickerTitle}
+          selectedValue={pickerSelectedValue}
+          parentCategory={categoryInput}
+          expenseCategories={
+            billType === 'expense' ? categoryOptions : expenseCategories
+          }
+          incomeCategories={
+            billType === 'income' ? categoryOptions : incomeCategories
+          }
+          subCategories={subCategoryOptions}
+          wallets={wallets}
+          savingsList={savingsList}
+          allAccountOptions={walletOptions}
+          categoryStyles={categoryStyles}
+          isReadOnly={isReadOnly}
+          onSelect={(val) => {
+            if (activePickerField === 'category') {
+              setCategoryInput(val);
+              setSubCategoryInput('');
+            } else if (activePickerField === 'subCategory') {
+              setSubCategoryInput(val);
+            } else {
+              setWalletInput(val);
+            }
+          }}
+          onCreateItem={handleCreateFromDrawer}
+          onClose={() => setActivePickerField(null)}
+        />
+      )}
+      </>
     );
   }
 
@@ -384,23 +523,44 @@ export const RecurringBillsPanel: React.FC<RecurringBillsPanelProps> = ({
         </div>
       ) : (
         <>
-          <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-5 py-3 dark:border-slate-800">
-            <div className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-              <span>
+          <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 sm:px-5 dark:border-slate-800">
+            <div className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              <span className="whitespace-nowrap">
                 {evaluatedBills.length}{' '}
-                {evaluatedBills.length === 1 ? t.settings.billSingular : t.settings.billsPlural}
+                {evaluatedBills.length === 1
+                  ? t.recurring.billHeaderSingular
+                  : t.recurring.billHeaderPlural}
               </span>
-              {attentionCount > 0 && (
-                <span className="ml-2 font-bold text-amber-600 dark:text-amber-400">
-                  · {attentionCount} {t.settings.recurringDueSuffix}
-                </span>
-              )}
+              <span aria-hidden="true">·</span>
+              <span
+                className={`whitespace-nowrap font-bold ${
+                  dueBillCount > 0
+                    ? isIncomeOnlyList
+                      ? 'text-[#16845B] dark:text-emerald-400'
+                      : 'text-amber-600 dark:text-amber-400'
+                    : 'text-[#16845B] dark:text-emerald-400'
+                }`}
+              >
+                {t.recurring.totalDueLabel}
+              </span>
+              <span aria-hidden="true">·</span>
+              <span
+                className={`font-mono-num whitespace-nowrap font-bold ${
+                  dueBillCount > 0
+                    ? isIncomeOnlyList
+                      ? 'text-[#16845B] dark:text-emerald-400'
+                      : 'text-amber-600 dark:text-amber-400'
+                    : 'text-[#16845B] dark:text-emerald-400'
+                }`}
+              >
+                {formatMoney(dueBillTotal, currency)}
+              </span>
             </div>
             {!isReadOnly && (
               <button
                 type="button"
                 onClick={openCreateForm}
-                className="inline-flex min-h-[32px] items-center gap-1 rounded-lg bg-[#16845B] px-3 py-1 text-xs font-bold text-white transition-colors hover:bg-[#126B4A]"
+                className="inline-flex min-h-[32px] shrink-0 whitespace-nowrap items-center gap-1 rounded-lg bg-[#16845B] px-3 py-1 text-xs font-bold text-white transition-colors hover:bg-[#126B4A]"
               >
                 <Plus className="h-3.5 w-3.5" />
                 {t.recurring.addNewBtn}
@@ -411,11 +571,10 @@ export const RecurringBillsPanel: React.FC<RecurringBillsPanelProps> = ({
           <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
             {evaluatedBills.map((item) => {
               const { bill, status, isPaidThisMonth, daysUntilDue } = item;
-              const catStyle = getCategoryStyle(
-                categoryStyles,
-                bill.type === 'income' ? 'inc' : 'exp',
-                bill.category
-              );
+              const catStyle =
+                bill.type === 'income'
+                  ? getCategoryStyle(categoryStyles, 'inc', bill.category)
+                  : getExpenseOrSubCategoryStyle(categoryStyles, bill.category, bill.subCategory);
 
               const statusLabel =
                 status === 'paid'

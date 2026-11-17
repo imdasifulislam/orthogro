@@ -2,7 +2,11 @@ import React, { useEffect, useRef } from 'react';
 import { Banknote, CheckCircle2, History, Pencil, Trash2 } from 'lucide-react';
 import { useTranslation } from '../i18n';
 import type { CategoryStyle, CurrencySymbol, Transaction } from '../types';
-import { CategoryIconBadge, getCategoryStyle } from '../utils/categoryVisuals';
+import {
+  CategoryIconBadge,
+  getCategoryStyle,
+  getExpenseOrSubCategoryStyle,
+} from '../utils/categoryVisuals';
 import { formatMoney } from '../utils/format';
 import { getTransactionHierarchy } from '../utils/transactionDisplay';
 
@@ -17,6 +21,7 @@ interface SwipeableTransactionProps {
   onResolveDebt: (tx: Transaction) => void;
   onInspectDebt?: (tx: Transaction) => void;
   isSwipeBlocked?: () => boolean;
+  hideBalances?: boolean;
 }
 
 export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
@@ -30,6 +35,7 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
   onResolveDebt,
   onInspectDebt,
   isSwipeBlocked,
+  hideBalances = false,
 }) => {
   const { t } = useTranslation();
   const pressTimerRef = useRef<number | null>(null);
@@ -145,7 +151,7 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
             <>
               <span aria-hidden="true">·</span>
               <span>
-                {t.txItem.fee}: {formatMoney(tx.charge, currency)}
+                {t.txItem.fee}: {formatMoney(tx.charge, currency, hideBalances)}
               </span>
             </>
           ) : null}
@@ -163,7 +169,7 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
           <span>{tx.type === 'lend' ? t.txItem.lent : t.txItem.borrowed}</span>
           <span aria-hidden="true">·</span>
           <span className={tx.resolved ? 'font-semibold text-[#16845B] dark:text-emerald-400' : ''}>
-            {tx.resolved ? t.txItem.paidInFull : `${t.txItem.due} ${formatMoney(dueAmount, currency)}`}
+            {tx.resolved ? t.txItem.paidInFull : `${t.txItem.due} ${formatMoney(dueAmount, currency, hideBalances)}`}
           </span>
           <span aria-hidden="true">·</span>
           <span>{tx.date}</span>
@@ -320,11 +326,15 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
             </button>
           ) : tx.type === 'expense' || tx.type === 'income' ? (
             <CategoryIconBadge
-              style={getCategoryStyle(
-                categoryStyles,
-                tx.type === 'income' ? 'inc' : 'exp',
-                tx.category || 'Others'
-              )}
+              style={
+                tx.type === 'income'
+                  ? getCategoryStyle(categoryStyles, 'inc', tx.category || 'Others')
+                  : getExpenseOrSubCategoryStyle(
+                      categoryStyles,
+                      tx.category || 'Others',
+                      tx.subCategory
+                    )
+              }
               size="md"
               className="mt-0.5"
             />
@@ -349,8 +359,8 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
           <div
             className={`font-mono-num text-right text-sm font-bold sm:text-base ${amountColorClass()}`}
           >
-            {amountPrefix()}
-            {formatMoney(Math.abs(tx.amount), currency)}
+            {!hideBalances ? amountPrefix() : tx.resolved && isDebt ? `${t.txItem.settledPrefix} ` : ''}
+            {formatMoney(Math.abs(tx.amount), currency, hideBalances)}
           </div>
 
           {/* Desktop quick action buttons */}

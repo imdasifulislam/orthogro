@@ -1862,30 +1862,38 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               }}
               className={!isSwipingCategory ? 'transition-transform duration-200 ease-out' : ''}
             >
-              {/* Slim Period Filter Bar + Expense/Income Switch Icon */}
+              {/* Header: Title + Period Filter & Top-Right Expense/Income Switch Icon */}
               <div
-                className={`flex items-center justify-between gap-2 border-b px-3 py-1.5 sm:px-4 ${
+                className={`flex items-center justify-between gap-2 border-b px-4 py-2.5 sm:px-5 ${
                   isExpenseView
                     ? 'border-rose-200/60 dark:border-rose-900/35'
                     : 'border-emerald-200/60 dark:border-emerald-900/35'
                 }`}
               >
-                <button
-                  type="button"
-                  onTouchStart={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (isLongPressRef.current || didCategorySwipeRef.current) return;
-                    onOpenFilterCard('categoryReport');
-                  }}
-                  aria-label={t.modals.selectTimePeriod}
-                  title={t.modals.selectTimePeriod}
-                  className="inline-flex min-h-[36px] min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-white/70 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-slate-100"
-                >
-                  <span className="truncate">{categoryReportData.filterButtonLabel}</span>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
-                </button>
+                <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                  <h3 className="shrink-0 whitespace-nowrap text-[13px] font-bold text-[#102A43] sm:text-sm dark:text-slate-100">
+                    {isExpenseView ? t.dashboard.expenseByCategory : t.dashboard.incomeByCategory}
+                  </h3>
+                  <span aria-hidden="true" className="shrink-0 text-xs text-slate-300 dark:text-slate-600">
+                    ·
+                  </span>
+                  <button
+                    type="button"
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isLongPressRef.current || didCategorySwipeRef.current) return;
+                      onOpenFilterCard('categoryReport');
+                    }}
+                    aria-label={t.modals.selectTimePeriod}
+                    title={t.modals.selectTimePeriod}
+                    className="inline-flex min-h-[30px] min-w-0 cursor-pointer items-center gap-0.5 rounded-lg px-1.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-white/70 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
+                  >
+                    <span className="truncate">{categoryReportData.filterButtonLabel}</span>
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+                  </button>
+                </div>
 
                 <button
                   type="button"
@@ -2071,30 +2079,38 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               }}
               className={!isSwipingPie ? 'transition-transform duration-200 ease-out' : ''}
             >
-              {/* Slim Period Filter Bar + Expense/Income Switch Icon */}
+              {/* Header: Title + Period Filter & Top-Right Expense/Income Switch Icon */}
               <div
-                className={`flex items-center justify-between gap-2 border-b px-3 py-1.5 sm:px-4 ${
+                className={`flex items-center justify-between gap-2 border-b px-4 py-2.5 sm:px-5 ${
                   isExpensePie
                     ? 'border-rose-200/60 dark:border-rose-900/35'
                     : 'border-emerald-200/60 dark:border-emerald-900/35'
                 }`}
               >
-                <button
-                  type="button"
-                  onTouchStart={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (isLongPressRef.current || didPieSwipeRef.current) return;
-                    onOpenFilterCard('categoryPieChart');
-                  }}
-                  aria-label={t.modals.selectTimePeriod}
-                  title={t.modals.selectTimePeriod}
-                  className="inline-flex min-h-[36px] min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-white/70 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-slate-100"
-                >
-                  <span className="truncate">{pieReportData.filterButtonLabel}</span>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
-                </button>
+                <div className="flex min-w-0 flex-1 items-center gap-1.5">
+                  <h3 className="shrink-0 whitespace-nowrap text-[13px] font-bold text-[#102A43] sm:text-sm dark:text-slate-100">
+                    {isExpensePie ? t.dashboard.expenseByCategory : t.dashboard.incomeByCategory}
+                  </h3>
+                  <span aria-hidden="true" className="shrink-0 text-xs text-slate-300 dark:text-slate-600">
+                    ·
+                  </span>
+                  <button
+                    type="button"
+                    onTouchStart={(e) => e.stopPropagation()}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (isLongPressRef.current || didPieSwipeRef.current) return;
+                      onOpenFilterCard('categoryPieChart');
+                    }}
+                    aria-label={t.modals.selectTimePeriod}
+                    title={t.modals.selectTimePeriod}
+                    className="inline-flex min-h-[30px] min-w-0 cursor-pointer items-center gap-0.5 rounded-lg px-1.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-white/70 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
+                  >
+                    <span className="truncate">{pieReportData.filterButtonLabel}</span>
+                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+                  </button>
+                </div>
 
                 <button
                   type="button"

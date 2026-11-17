@@ -40,7 +40,7 @@ export type SettingsView =
   | 'tax_report'
   | 'shared_access';
 
-export type CategoryKind = 'exp' | 'inc' | 'sav' | 'wal';
+export type CategoryKind = 'exp' | 'inc' | 'sav' | 'wal' | 'sub';
 
 export interface CategoryStyle {
   icon: string;
@@ -248,7 +248,6 @@ export type FeatureTipId =
   | 'bazar_memo'
   | 'budget_goals'
   | 'recurring_bills'
-  | 'category_breakdown'
   | 'floating_assistant'
   | 'category_pie_chart'
   | 'tax_report'

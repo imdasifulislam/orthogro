@@ -1,32 +1,81 @@
 import React from 'react';
 import {
   Award,
+  Baby,
+  BadgePercent,
   Banknote,
+  BarChart3,
+  BedDouble,
+  Bike,
   BookOpen,
   Briefcase,
   Building2,
+  Bus,
+  Calendar,
+  Camera,
   Car,
+  Clock,
+  Cloud,
+  Coffee,
   Coins,
+  Compass,
+  CreditCard,
+  Dog,
+  DollarSign,
+  Droplets,
+  Dumbbell,
+  FileText,
+  Flame,
+  Fuel,
   Gamepad2,
+  Gem,
   Gift,
   GraduationCap,
+  Hammer,
   HandHeart,
+  Headphones,
+  Heart,
   HeartPulse,
   Home,
+  Key,
   Landmark,
   Laptop,
   type LucideIcon,
+  MapPin,
+  Music,
+  Package,
+  Palette,
+  Percent,
+  PieChart,
   PiggyBank,
+  Pill,
   Plane,
+  Receipt,
+  Repeat,
+  Scale,
+  Scissors,
   ShieldCheck,
+  Shirt,
+  ShoppingBag,
   ShoppingCart,
+  Smartphone,
+  Sofa,
   Sparkles,
+  Star,
+  Stethoscope,
+  Store,
   Tag,
+  TrainFront,
   TrendingUp,
+  Trophy,
+  Tv,
+  Umbrella,
   User,
   Users,
   Utensils,
+  Vault,
   Wallet,
+  Wifi,
   Wrench,
   Zap,
 } from 'lucide-react';
@@ -39,49 +88,125 @@ export interface CategoryIconOption {
 }
 
 export const CATEGORY_ICONS: CategoryIconOption[] = [
+  // Home & Family
   { key: 'home', label: 'Home', icon: Home },
-  { key: 'shopping-cart', label: 'Shopping', icon: ShoppingCart },
-  { key: 'utensils', label: 'Food', icon: Utensils },
-  { key: 'zap', label: 'Utilities', icon: Zap },
-  { key: 'heart-pulse', label: 'Health', icon: HeartPulse },
-  { key: 'graduation-cap', label: 'Education', icon: GraduationCap },
+  { key: 'sofa', label: 'Living / Furniture', icon: Sofa },
+  { key: 'bed-double', label: 'Rent / Bedroom', icon: BedDouble },
   { key: 'users', label: 'Family', icon: Users },
   { key: 'user', label: 'Personal', icon: User },
-  { key: 'briefcase', label: 'Career', icon: Briefcase },
-  { key: 'laptop', label: 'Freelance', icon: Laptop },
-  { key: 'hand-heart', label: 'Charity', icon: HandHeart },
-  { key: 'tag', label: 'Category', icon: Tag },
-  { key: 'shield-check', label: 'Emergency', icon: ShieldCheck },
-  { key: 'piggy-bank', label: 'Savings', icon: PiggyBank },
-  { key: 'landmark', label: 'Deposit', icon: Landmark },
-  { key: 'gamepad-2', label: 'Hobby', icon: Gamepad2 },
-  { key: 'trending-up', label: 'Invest', icon: TrendingUp },
-  { key: 'banknote', label: 'Salary', icon: Banknote },
-  { key: 'building-2', label: 'Business', icon: Building2 },
-  { key: 'gift', label: 'Gift', icon: Gift },
-  { key: 'award', label: 'Bonus', icon: Award },
-  { key: 'coins', label: 'Income', icon: Coins },
-  { key: 'car', label: 'Transport', icon: Car },
-  { key: 'plane', label: 'Travel', icon: Plane },
+  { key: 'baby', label: 'Baby / Kids', icon: Baby },
+  { key: 'heart', label: 'Care / Love', icon: Heart },
+  { key: 'hand-heart', label: 'Charity / Sadakah', icon: HandHeart },
+  { key: 'dog', label: 'Pets', icon: Dog },
+
+  // Food & Shopping
+  { key: 'utensils', label: 'Food & Dining', icon: Utensils },
+  { key: 'coffee', label: 'Coffee / Snacks', icon: Coffee },
+  { key: 'shopping-cart', label: 'Groceries / Bazar', icon: ShoppingCart },
+  { key: 'shopping-bag', label: 'Shopping', icon: ShoppingBag },
+  { key: 'store', label: 'Store / Market', icon: Store },
+  { key: 'package', label: 'Delivery / Parcel', icon: Package },
+  { key: 'shirt', label: 'Clothing', icon: Shirt },
+  { key: 'scissors', label: 'Salon / Grooming', icon: Scissors },
+
+  // Transport & Travel
+  { key: 'car', label: 'Car / Ride', icon: Car },
+  { key: 'bus', label: 'Bus / Transit', icon: Bus },
+  { key: 'train-front', label: 'Train / Metro', icon: TrainFront },
+  { key: 'bike', label: 'Bike / Scooter', icon: Bike },
+  { key: 'fuel', label: 'Fuel / Gas', icon: Fuel },
+  { key: 'plane', label: 'Flight / Travel', icon: Plane },
+  { key: 'map-pin', label: 'Location / Trip', icon: MapPin },
+  { key: 'compass', label: 'Explore', icon: Compass },
+
+  // Utilities, Tech & Repairs
+  { key: 'zap', label: 'Electricity', icon: Zap },
+  { key: 'droplets', label: 'Water Bill', icon: Droplets },
+  { key: 'flame', label: 'Gas / Heating', icon: Flame },
+  { key: 'wifi', label: 'Internet / Wi-Fi', icon: Wifi },
+  { key: 'smartphone', label: 'Mobile / Recharge', icon: Smartphone },
+  { key: 'tv', label: 'TV / Streaming', icon: Tv },
+  { key: 'laptop', label: 'Tech / Freelance', icon: Laptop },
+  { key: 'headphones', label: 'Audio / Media', icon: Headphones },
+  { key: 'cloud', label: 'Cloud / Software', icon: Cloud },
+  { key: 'wrench', label: 'Repair / Service', icon: Wrench },
+  { key: 'hammer', label: 'Renovation', icon: Hammer },
+
+  // Health & Wellness
+  { key: 'heart-pulse', label: 'Health / Medical', icon: HeartPulse },
+  { key: 'pill', label: 'Medicine / Pharmacy', icon: Pill },
+  { key: 'stethoscope', label: 'Doctor / Clinic', icon: Stethoscope },
+  { key: 'dumbbell', label: 'Gym / Fitness', icon: Dumbbell },
+  { key: 'umbrella', label: 'Insurance / Safety', icon: Umbrella },
+
+  // Money, Wallets, Banks & Investments
   { key: 'wallet', label: 'Wallet', icon: Wallet },
-  { key: 'wrench', label: 'Maintenance', icon: Wrench },
-  { key: 'book-open', label: 'Books', icon: BookOpen },
+  { key: 'credit-card', label: 'Card / Bank Card', icon: CreditCard },
+  { key: 'landmark', label: 'Bank / Deposit', icon: Landmark },
+  { key: 'piggy-bank', label: 'Savings', icon: PiggyBank },
+  { key: 'shield-check', label: 'Emergency Fund', icon: ShieldCheck },
+  { key: 'vault', label: 'Vault / Locker', icon: Vault },
+  { key: 'trending-up', label: 'Invest / Growth', icon: TrendingUp },
+  { key: 'bar-chart-3', label: 'Stocks / Portfolio', icon: BarChart3 },
+  { key: 'pie-chart', label: 'Mutual Fund / Share', icon: PieChart },
+  { key: 'gem', label: 'Gold / Jewelry', icon: Gem },
+  { key: 'key', label: 'Property / Asset', icon: Key },
+
+  // Work, Income & Bills
+  { key: 'banknote', label: 'Cash / Salary', icon: Banknote },
+  { key: 'coins', label: 'Coins / Income', icon: Coins },
+  { key: 'dollar-sign', label: 'Currency / Fee', icon: DollarSign },
+  { key: 'briefcase', label: 'Career / Job', icon: Briefcase },
+  { key: 'building-2', label: 'Business / Office', icon: Building2 },
+  { key: 'receipt', label: 'Bills / Receipt', icon: Receipt },
+  { key: 'file-text', label: 'Tax / Documents', icon: FileText },
+  { key: 'percent', label: 'Interest / Rate', icon: Percent },
+  { key: 'badge-percent', label: 'Discount / Cashback', icon: BadgePercent },
+  { key: 'scale', label: 'Legal / Taxes', icon: Scale },
+  { key: 'repeat', label: 'Subscription / EMI', icon: Repeat },
+  { key: 'calendar', label: 'Monthly / Rent', icon: Calendar },
+  { key: 'clock', label: 'Hourly / Overtime', icon: Clock },
+
+  // Education, Gifts & Lifestyle
+  { key: 'graduation-cap', label: 'Education', icon: GraduationCap },
+  { key: 'book-open', label: 'Books / Tuition', icon: BookOpen },
+  { key: 'gamepad-2', label: 'Games / Hobby', icon: Gamepad2 },
+  { key: 'music', label: 'Music / Events', icon: Music },
+  { key: 'camera', label: 'Photo / Hobby', icon: Camera },
+  { key: 'palette', label: 'Art / Design', icon: Palette },
+  { key: 'gift', label: 'Gift', icon: Gift },
+  { key: 'award', label: 'Bonus / Reward', icon: Award },
+  { key: 'trophy', label: 'Achievement / Prize', icon: Trophy },
+  { key: 'star', label: 'Favorite / Priority', icon: Star },
   { key: 'sparkles', label: 'Lifestyle', icon: Sparkles },
+  { key: 'tag', label: 'Category / Other', icon: Tag },
 ];
 
 export const CATEGORY_COLORS: string[] = [
-  '#16845B',
-  '#059669',
-  '#0D9488',
-  '#0284C7',
-  '#2563EB',
-  '#4F46E5',
-  '#7C3AED',
-  '#DB2777',
-  '#D94848',
-  '#EA580C',
-  '#D97706',
-  '#475569',
+  '#16845B', // Brand Emerald
+  '#059669', // Emerald
+  '#15803D', // Forest Green
+  '#65A30D', // Olive Lime
+  '#0D9488', // Teal
+  '#0891B2', // Cyan
+  '#0284C7', // Sky Blue
+  '#2563EB', // Royal Blue
+  '#1D4ED8', // Deep Blue
+  '#102A43', // Midnight Navy
+  '#4F46E5', // Indigo
+  '#7C3AED', // Violet
+  '#9333EA', // Purple
+  '#C026D3', // Fuchsia
+  '#DB2777', // Pink
+  '#E11D48', // Rose
+  '#D94848', // Crimson Red
+  '#DC2626', // Scarlet
+  '#EA580C', // Burnt Orange
+  '#F97316', // Tangerine
+  '#D97706', // Amber
+  '#CA8A04', // Ochre Gold
+  '#92400E', // Warm Bronze
+  '#475569', // Cool Slate
 ];
 
 const ICON_MAP: Record<string, LucideIcon> = CATEGORY_ICONS.reduce(
@@ -127,6 +252,18 @@ export function getCategoryStyleKey(kind: CategoryKind, name: string): string {
   return `${kind}:${name}`;
 }
 
+export function getSubCategoryTargetName(parentCategory: string, subCategory: string): string {
+  return `${parentCategory}::${subCategory}`;
+}
+
+export function formatCategoryStyleTargetLabel(kind: CategoryKind, name: string): string {
+  if (kind === 'sub' && name.includes('::')) {
+    const [parent, sub] = name.split('::');
+    return `${parent} › ${sub}`;
+  }
+  return name;
+}
+
 function hashCategoryName(name: string): number {
   let hash = 0;
   for (let i = 0; i < name.length; i++) {
@@ -146,6 +283,13 @@ export function getCategoryStyle(
     return custom;
   }
 
+  if (kind === 'sub' && name.includes('::')) {
+    const [parentCategory] = name.split('::');
+    if (parentCategory) {
+      return getCategoryStyle(categoryStyles, 'exp', parentCategory);
+    }
+  }
+
   const preset = DEFAULT_CATEGORY_STYLES[scopedKey];
   if (preset) {
     return preset;
@@ -163,6 +307,23 @@ export function getCategoryStyle(
     CATEGORY_COLORS[hashCategoryName(scopedKey) % CATEGORY_COLORS.length];
 
   return { icon: fallbackIcon, color: fallbackColor };
+}
+
+export function getExpenseOrSubCategoryStyle(
+  categoryStyles: Record<string, CategoryStyle> | undefined,
+  category: string,
+  subCategory?: string
+): CategoryStyle {
+  const cleanCat = (category || 'Others').trim() || 'Others';
+  const cleanSub = (subCategory || '').trim();
+  if (cleanSub) {
+    const subKey = getCategoryStyleKey('sub', getSubCategoryTargetName(cleanCat, cleanSub));
+    const customSub = categoryStyles?.[subKey];
+    if (customSub && customSub.icon && customSub.color) {
+      return customSub;
+    }
+  }
+  return getCategoryStyle(categoryStyles, 'exp', cleanCat);
 }
 
 export function getCategoryIconComponent(iconKey: string): LucideIcon {

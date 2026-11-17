@@ -8,11 +8,13 @@ import {
   Coins,
   CornerDownRight,
   Download,
+  ExternalLink,
   FileBarChart2,
   FolderKanban,
   GripVertical,
   Landmark,
   Languages,
+  Lock,
   LogIn,
   LogOut,
   Monitor,
@@ -22,6 +24,8 @@ import {
   Plus,
   Repeat,
   RotateCcw,
+  Share2,
+  ShieldCheck,
   ShoppingBag,
   Sparkles,
   Sun,
@@ -46,10 +50,15 @@ import type {
   ThemeMode,
   Transaction,
 } from '../types';
-import { CategoryIconBadge, getCategoryStyle } from '../utils/categoryVisuals';
+import {
+  CategoryIconBadge,
+  getCategoryStyle,
+  getSubCategoryTargetName,
+} from '../utils/categoryVisuals';
 import { PWAInstallButton } from './PWAInstallButton';
 import { SharedAccessView } from './SharedAccessView';
 import { TaxReportView } from './TaxReportView';
+import type { PinLength } from '../utils/appPin';
 
 interface SettingsViewProps {
   settingsView: SettingsViewType;
@@ -89,6 +98,9 @@ interface SettingsViewProps {
   onOpenBudgetGoals: () => void;
   onOpenSavingGoals: () => void;
   onOpenRecurringBills: () => void;
+  appPinEnabled: boolean;
+  appPinLength?: PinLength;
+  onOpenAppLock: () => void;
   onExportBackup: () => void;
   onResetAllData: () => void;
   activeSharedWorkspace: ActiveSharedWorkspace | null;
@@ -107,6 +119,7 @@ interface SettingsViewProps {
   onRevokeInvite: (invite: ShareInvite) => Promise<void>;
   onDeleteInvite: (invite: ShareInvite) => Promise<void>;
   onLeaveSharedWorkspace: (invite: ShareInvite) => Promise<void>;
+  onOpenShareApp: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -147,6 +160,9 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onOpenBudgetGoals,
   onOpenSavingGoals,
   onOpenRecurringBills,
+  appPinEnabled,
+  appPinLength,
+  onOpenAppLock,
   onExportBackup,
   onResetAllData,
   activeSharedWorkspace,
@@ -165,6 +181,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onRevokeInvite,
   onDeleteInvite,
   onLeaveSharedWorkspace,
+  onOpenShareApp,
 }) => {
   const { t } = useTranslation();
   const [newItemInput, setNewItemInput] = useState('');
@@ -432,34 +449,49 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       </p>
                     ) : (
                       <div className="mb-2.5 space-y-1.5">
-                        {subCats.map((sub) => (
-                          <div
-                            key={sub}
-                            className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900"
-                          >
-                            <span className="truncate text-xs font-semibold text-[#102A43] dark:text-slate-200">
-                              {sub}
-                            </span>
-                            <div className="flex shrink-0 items-center gap-1">
-                              <button
-                                type="button"
-                                onClick={() => onRenameSubCategory(item, sub)}
-                                aria-label={`Rename ${sub}`}
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => onDeleteSubCategory(item, sub)}
-                                aria-label={`Delete ${sub}`}
-                                className="flex h-7 w-7 items-center justify-center rounded-md text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/60"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
+                        {subCats.map((sub) => {
+                          const subTargetName = getSubCategoryTargetName(item, sub);
+                          const subStyle = getCategoryStyle(categoryStyles, 'sub', subTargetName);
+                          return (
+                            <div
+                              key={sub}
+                              className="flex items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 dark:border-slate-800 dark:bg-slate-900"
+                            >
+                              <div className="flex min-w-0 items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => onOpenCategoryStyle('sub', subTargetName)}
+                                  title={t.settings.editIconColorAria}
+                                  aria-label={`${t.settings.editIconColorAria}: ${sub}`}
+                                  className="shrink-0 rounded-lg transition-transform hover:scale-105 active:scale-95"
+                                >
+                                  <CategoryIconBadge style={subStyle} size="sm" />
+                                </button>
+                                <span className="truncate text-xs font-semibold text-[#102A43] dark:text-slate-200">
+                                  {sub}
+                                </span>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => onRenameSubCategory(item, sub)}
+                                  aria-label={`Rename ${sub}`}
+                                  className="flex h-7 w-7 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-slate-800"
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => onDeleteSubCategory(item, sub)}
+                                  aria-label={`Delete ${sub}`}
+                                  className="flex h-7 w-7 items-center justify-center rounded-md text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-950/60"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
 
@@ -744,6 +776,42 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 </div>
                 <div className="truncate text-xs text-slate-500 dark:text-slate-400">
                   {t.settings.taxYearReportDesc}
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+          </button>
+
+          {/* App Lock (Optional Startup PIN) */}
+          <button
+            type="button"
+            onClick={onOpenAppLock}
+            className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800"
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <div
+                className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                  appPinEnabled
+                    ? 'bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400'
+                    : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400'
+                }`}
+              >
+                {appPinEnabled ? (
+                  <ShieldCheck className="h-[18px] w-[18px]" />
+                ) : (
+                  <Lock className="h-[18px] w-[18px]" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-[#102A43] dark:text-slate-100">
+                  {t.settings.appLockTitle}
+                </div>
+                <div className="truncate text-xs text-slate-500 dark:text-slate-400">
+                  {appPinEnabled
+                    ? appPinLength === 6
+                      ? t.settings.appLockDescOn6
+                      : t.settings.appLockDescOn4
+                    : t.settings.appLockDescOff}
                 </div>
               </div>
             </div>
@@ -1105,6 +1173,100 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           )}
         </div>
       </div>
+
+      {/* Social Media */}
+      <section
+        aria-labelledby="settings-social-media-heading"
+        className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+      >
+        <div className="mb-3.5">
+          <h3
+            id="settings-social-media-heading"
+            className="text-sm font-bold text-[#102A43] dark:text-slate-100"
+          >
+            {t.settings.socialMedia}
+          </h3>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {t.settings.socialMediaDesc}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
+          <a
+            href="https://www.facebook.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex min-h-[48px] min-w-0 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition-colors hover:border-[#1877F2]/40 hover:bg-[#1877F2]/[0.05] sm:gap-3 sm:px-4 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-[#1877F2]/50 dark:hover:bg-[#1877F2]/10"
+          >
+            <span className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#1877F2] text-white shadow-xs sm:h-9 sm:w-9">
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  className="h-[17px] w-[17px] fill-current sm:h-[18px] sm:w-[18px]"
+                >
+                  <path d="M13.5 21v-7.5h2.52l.38-2.93H13.5V8.7c0-.85.24-1.43 1.45-1.43h1.55V4.64A20.7 20.7 0 0 0 14.24 4.5c-2.24 0-3.77 1.37-3.77 3.88v2.19H8v2.93h2.47V21h3.03Z" />
+                </svg>
+              </span>
+              <span className="truncate text-xs font-bold text-[#102A43] whitespace-nowrap sm:text-sm dark:text-slate-100">
+                {t.settings.facebook}
+              </span>
+            </span>
+            <ExternalLink className="h-3.5 w-3.5 shrink-0 text-slate-400 sm:h-4 sm:w-4" />
+          </a>
+
+          <a
+            href="https://www.instagram.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex min-h-[48px] min-w-0 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition-colors hover:border-pink-400/50 hover:bg-pink-500/[0.05] sm:gap-3 sm:px-4 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-pink-500/40 dark:hover:bg-pink-500/10"
+          >
+            <span className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-tr from-[#F58529] via-[#DD2A7B] to-[#8134AF] text-white shadow-xs sm:h-9 sm:w-9">
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="h-[17px] w-[17px] sm:h-[18px] sm:w-[18px]"
+                >
+                  <rect width="18" height="18" x="3" y="3" rx="5" />
+                  <circle cx="12" cy="12" r="4" />
+                  <circle cx="17.5" cy="6.5" r="1" fill="currentColor" stroke="none" />
+                </svg>
+              </span>
+              <span className="truncate text-xs font-bold text-[#102A43] whitespace-nowrap sm:text-sm dark:text-slate-100">
+                {t.settings.instagram}
+              </span>
+            </span>
+            <ExternalLink className="h-3.5 w-3.5 shrink-0 text-slate-400 sm:h-4 sm:w-4" />
+          </a>
+        </div>
+
+        <button
+          type="button"
+          onClick={onOpenShareApp}
+          className="mt-2.5 flex min-h-[52px] w-full items-center justify-between gap-3 rounded-xl border border-emerald-200/80 bg-emerald-50/50 px-4 py-2.5 text-left transition-colors hover:border-[#16845B]/50 hover:bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:hover:border-emerald-700/60 dark:hover:bg-emerald-950/40"
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#16845B] text-white shadow-xs">
+              <Share2 className="h-[18px] w-[18px]" />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
+                {t.settings.shareAppBtn}
+              </span>
+              <span className="block truncate text-xs text-slate-500 dark:text-slate-400">
+                {t.settings.shareAppBtnDesc}
+              </span>
+            </span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+        </button>
+      </section>
     </div>
   );
 };

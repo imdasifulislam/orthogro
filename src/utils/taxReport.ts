@@ -4,6 +4,8 @@ import type { AppLanguage, CategoryStyle, CurrencySymbol, Transaction } from '..
 import { getCategoryStyle } from './categoryVisuals';
 import { formatDisplayDate, formatMoney, getTodayISO } from './format';
 
+export type ReportScope = 'monthly' | 'yearly' | 'tax_year';
+
 export interface TaxCategorySlice {
   category: string;
   amount: number;
@@ -51,7 +53,17 @@ export interface TaxLendBorrowSummary {
   openPayables: TaxOpenDebtRow[];
 }
 
+export interface MonthlyTrendPoint {
+  monthKey: string;
+  shortLabel: string;
+  income: number;
+  expense: number;
+  net: number;
+}
+
 export interface TaxYearReportData {
+  scope?: ReportScope;
+  periodKey?: string;
   startYear: number;
   endYear: number;
   fyCode: string;
@@ -73,6 +85,55 @@ export interface TaxYearReportData {
   totalClosingSavings: number;
   totalClosingAssets: number;
   lendBorrow: TaxLendBorrowSummary;
+  monthlyTrend?: MonthlyTrendPoint[];
+}
+
+export interface FinancialReportData extends TaxYearReportData {
+  scope: ReportScope;
+  periodKey: string;
+  monthlyTrend: MonthlyTrendPoint[];
+}
+
+export interface ComparisonMetricDelta {
+  current: number;
+  previous: number;
+  diff: number;
+  pctChange: number | null;
+}
+
+export interface CategoryComparisonRow {
+  category: string;
+  currentAmount: number;
+  previousAmount: number;
+  diff: number;
+  pctChange: number | null;
+  currentCount: number;
+  previousCount: number;
+  currentSharePct: number;
+  previousSharePct: number;
+}
+
+export interface ReportComparisonData {
+  primary: FinancialReportData;
+  baseline: FinancialReportData;
+  income: ComparisonMetricDelta;
+  expense: ComparisonMetricDelta;
+  netSurplus: ComparisonMetricDelta;
+  savingsRatePct: {
+    current: number;
+    previous: number;
+    diffPts: number;
+  };
+  closingAssets: ComparisonMetricDelta;
+  txCount: {
+    current: number;
+    previous: number;
+    diff: number;
+  };
+  incomeCategories: CategoryComparisonRow[];
+  expenseCategories: CategoryComparisonRow[];
+  topExpenseIncrease: CategoryComparisonRow | null;
+  topExpenseDecrease: CategoryComparisonRow | null;
 }
 
 export function getTaxYearStartYear(isoDate: string): number {
@@ -86,6 +147,20 @@ export function getTaxYearStartYear(isoDate: string): number {
   return month >= 7 ? year : year - 1;
 }
 
+export function getCurrentMonthKey(): string {
+  const today = getTodayISO();
+  return today.slice(0, 7);
+}
+
+export function getPreviousMonthKey(monthKey: string): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!match) return getCurrentMonthKey();
+  const y = Number(match[1]);
+  const m = Number(match[2]);
+  if (m === 1) return `${y - 1}-12`;
+  return `${y}-${String(m - 1).padStart(2, '0')}`;
+}
+
 export function getAvailableTaxYears(transactions: Transaction[]): number[] {
   const currentStartYear = getTaxYearStartYear(getTodayISO());
   const years = new Set<number>([currentStartYear, currentStartYear - 1]);
@@ -97,6 +172,29 @@ export function getAvailableTaxYears(transactions: Transaction[]): number[] {
   return Array.from(years).sort((a, b) => b - a);
 }
 
+export function getAvailableCalendarYears(transactions: Transaction[]): number[] {
+  const currentYear = new Date().getFullYear();
+  const years = new Set<number>([currentYear, currentYear - 1]);
+  transactions.forEach((tx) => {
+    if (tx.rawDate && /^\d{4}-\d{2}-\d{2}$/.test(tx.rawDate)) {
+      years.add(Number(tx.rawDate.slice(0, 4)));
+    }
+  });
+  return Array.from(years).sort((a, b) => b - a);
+}
+
+export function getAvailableMonthKeys(transactions: Transaction[]): string[] {
+  const current = getCurrentMonthKey();
+  const prev = getPreviousMonthKey(current);
+  const months = new Set<string>([current, prev]);
+  transactions.forEach((tx) => {
+    if (tx.rawDate && /^\d{4}-\d{2}-\d{2}$/.test(tx.rawDate)) {
+      months.add(tx.rawDate.slice(0, 7));
+    }
+  });
+  return Array.from(months).sort((a, b) => b.localeCompare(a));
+}
+
 export function formatTaxYearOptionLabel(startYear: number, lang: AppLanguage): string {
   const endYear = startYear + 1;
   const startLabel = formatDisplayDate(`${startYear}-07-01`, lang);
@@ -105,22 +203,146 @@ export function formatTaxYearOptionLabel(startYear: number, lang: AppLanguage): 
   return `${fyWord} ${startYear}–${endYear} (${startLabel} – ${endLabel})`;
 }
 
-export function computeTaxYearReportData(params: {
+export function formatCalendarYearOptionLabel(year: number, lang: AppLanguage): string {
+  const startLabel = formatDisplayDate(`${year}-01-01`, lang);
+  const endLabel = formatDisplayDate(`${year}-12-31`, lang);
+  const yearLabel = lang === 'bn' ? `${year} সাল` : `${year}`;
+  return `${yearLabel} (${startLabel} – ${endLabel})`;
+}
+
+export function formatMonthOptionLabel(monthKey: string, lang: AppLanguage): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!match) return monthKey;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+  return date.toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US', {
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
+export function formatMonthShortLabel(monthKey: string, lang: AppLanguage): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!match) return monthKey;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+  return date.toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US', {
+    month: 'short',
+    year: '2-digit',
+  });
+}
+
+function getMonthOnlyShortLabel(monthKey: string, lang: AppLanguage): string {
+  const match = /^(\d{4})-(\d{2})$/.exec(monthKey);
+  if (!match) return monthKey;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, 1);
+  return date.toLocaleDateString(lang === 'bn' ? 'bn-BD' : 'en-US', {
+    month: 'short',
+  });
+}
+
+export function getPeriodBounds(
+  scope: ReportScope,
+  periodKey: string,
+  lang: AppLanguage
+): {
   startYear: number;
+  endYear: number;
+  startDate: string;
+  endDate: string;
+  fyCode: string;
+  fyLabel: string;
+  periodDisplay: string;
+  monthKeysInPeriod: string[];
+} {
+  if (scope === 'monthly') {
+    const match = /^(\d{4})-(\d{2})$/.exec(periodKey);
+    const now = new Date();
+    const year = match ? Number(match[1]) : now.getFullYear();
+    const monthNum = match ? Number(match[2]) : now.getMonth() + 1;
+    const mm = String(monthNum).padStart(2, '0');
+    const lastDay = new Date(year, monthNum, 0).getDate();
+    const startDate = `${year}-${mm}-01`;
+    const endDate = `${year}-${mm}-${String(lastDay).padStart(2, '0')}`;
+    const fyCode = `${year}-${mm}`;
+    const fyLabel = formatMonthOptionLabel(fyCode, lang);
+    const periodDisplay = `${formatDisplayDate(startDate, lang)} – ${formatDisplayDate(endDate, lang)}`;
+    return {
+      startYear: year,
+      endYear: year,
+      startDate,
+      endDate,
+      fyCode,
+      fyLabel,
+      periodDisplay,
+      monthKeysInPeriod: [fyCode],
+    };
+  }
+
+  if (scope === 'yearly') {
+    const parsedYear = Number(periodKey);
+    const year = Number.isFinite(parsedYear) && parsedYear > 1900 ? parsedYear : new Date().getFullYear();
+    const startDate = `${year}-01-01`;
+    const endDate = `${year}-12-31`;
+    const fyCode = String(year);
+    const fyLabel = lang === 'bn' ? `${year} সাল` : `Year ${year}`;
+    const periodDisplay = `${formatDisplayDate(startDate, lang)} – ${formatDisplayDate(endDate, lang)}`;
+    const monthKeysInPeriod = Array.from(
+      { length: 12 },
+      (_, idx) => `${year}-${String(idx + 1).padStart(2, '0')}`
+    );
+    return {
+      startYear: year,
+      endYear: year,
+      startDate,
+      endDate,
+      fyCode,
+      fyLabel,
+      periodDisplay,
+      monthKeysInPeriod,
+    };
+  }
+
+  // tax_year (July 1 – June 30)
+  const parsedStartYear = Number(periodKey);
+  const startYear =
+    Number.isFinite(parsedStartYear) && parsedStartYear > 1900
+      ? parsedStartYear
+      : getTaxYearStartYear(getTodayISO());
+  const endYear = startYear + 1;
+  const startDate = `${startYear}-07-01`;
+  const endDate = `${endYear}-06-30`;
+  const fyCode = `FY${startYear}-${endYear}`;
+  const fyWord = lang === 'bn' ? 'অর্থবছর' : 'FY';
+  const fyLabel = `${fyWord} ${startYear}–${endYear}`;
+  const periodDisplay = `${formatDisplayDate(startDate, lang)} – ${formatDisplayDate(endDate, lang)}`;
+  const monthKeysInPeriod = [
+    ...Array.from({ length: 6 }, (_, idx) => `${startYear}-${String(idx + 7).padStart(2, '0')}`),
+    ...Array.from({ length: 6 }, (_, idx) => `${endYear}-${String(idx + 1).padStart(2, '0')}`),
+  ];
+  return {
+    startYear,
+    endYear,
+    startDate,
+    endDate,
+    fyCode,
+    fyLabel,
+    periodDisplay,
+    monthKeysInPeriod,
+  };
+}
+
+export function computeFinancialReportData(params: {
+  scope: ReportScope;
+  periodKey: string;
   transactions: Transaction[];
   wallets: string[];
   savingsList: string[];
   categoryStyles?: Record<string, CategoryStyle>;
   lang: AppLanguage;
-}): TaxYearReportData {
-  const { startYear, transactions, wallets, savingsList, categoryStyles, lang } = params;
-  const endYear = startYear + 1;
-  const startDate = `${startYear}-07-01`;
-  const endDate = `${endYear}-06-30`;
-  const fyCode = `${startYear}-${endYear}`;
-  const fyWord = lang === 'bn' ? 'অর্থবছর' : 'FY';
-  const fyLabel = `${fyWord} ${startYear}–${endYear}`;
-  const periodDisplay = `${formatDisplayDate(startDate, lang)} – ${formatDisplayDate(endDate, lang)}`;
+}): FinancialReportData {
+  const { scope, periodKey, transactions, wallets, savingsList, categoryStyles, lang } = params;
+  const bounds = getPeriodBounds(scope, periodKey, lang);
+  const { startYear, endYear, startDate, endDate, fyCode, fyLabel, periodDisplay, monthKeysInPeriod } =
+    bounds;
 
   const incMap: Record<
     string,
@@ -131,12 +353,17 @@ export function computeTaxYearReportData(params: {
     { amount: number; count: number; subs: Record<string, { amount: number; count: number }> }
   > = {};
 
+  const monthBuckets: Record<string, { income: number; expense: number }> = {};
+  monthKeysInPeriod.forEach((mk) => {
+    monthBuckets[mk] = { income: 0, expense: 0 };
+  });
+
   let totalIncome = 0;
   let totalExpense = 0;
   const incomeTransactions: TaxLedgerRow[] = [];
   const expenseTransactions: TaxLedgerRow[] = [];
 
-  // 1. Income & Expense within Jul 01 .. Jun 30
+  // 1. Income & Expense within [startDate, endDate]
   transactions.forEach((tx) => {
     if (!tx.rawDate || tx.rawDate < startDate || tx.rawDate > endDate) return;
 
@@ -160,10 +387,13 @@ export function computeTaxYearReportData(params: {
       }
     };
 
+    const mk = tx.rawDate.slice(0, 7);
+
     if (tx.type === 'income' || (tx.type === 'adjustment' && tx.amount > 0)) {
       const cat = tx.category || (tx.type === 'adjustment' ? 'Adjustment' : 'Others');
       const amt = tx.amount;
       totalIncome += amt;
+      if (monthBuckets[mk]) monthBuckets[mk].income += amt;
       addBucket(incMap, cat, tx.subCategory || '', amt);
       incomeTransactions.push({
         id: tx.id,
@@ -181,6 +411,7 @@ export function computeTaxYearReportData(params: {
       const cat = tx.category || (tx.type === 'adjustment' ? 'Adjustment' : 'Others');
       const amt = Math.abs(tx.amount);
       totalExpense += amt;
+      if (monthBuckets[mk]) monthBuckets[mk].expense += amt;
       addBucket(expMap, cat, tx.subCategory || '', amt);
       expenseTransactions.push({
         id: tx.id,
@@ -229,65 +460,64 @@ export function computeTaxYearReportData(params: {
   const incomeCategories = toCategorySlices(incMap, totalIncome, 'inc');
   const expenseCategories = toCategorySlices(expMap, totalExpense, 'exp');
 
-  // 2. Closing balances as of June 30 (endDate)
-  const balancesAsOfJune30: Record<string, number> = {};
+  // 2. Closing balances as of endDate
+  const balancesAsOfEnd: Record<string, number> = {};
   wallets.forEach((w) => {
-    balancesAsOfJune30[w] = 0;
+    balancesAsOfEnd[w] = 0;
   });
   savingsList.forEach((s) => {
-    balancesAsOfJune30[s] = 0;
+    balancesAsOfEnd[s] = 0;
   });
 
   transactions.forEach((tx) => {
     if (tx.rawDate && tx.rawDate > endDate) return;
 
     if (tx.type === 'income' && tx.wallet) {
-      balancesAsOfJune30[tx.wallet] = (balancesAsOfJune30[tx.wallet] || 0) + tx.amount;
+      balancesAsOfEnd[tx.wallet] = (balancesAsOfEnd[tx.wallet] || 0) + tx.amount;
     } else if (tx.type === 'expense' && tx.wallet) {
-      balancesAsOfJune30[tx.wallet] = (balancesAsOfJune30[tx.wallet] || 0) - tx.amount;
+      balancesAsOfEnd[tx.wallet] = (balancesAsOfEnd[tx.wallet] || 0) - tx.amount;
     } else if (tx.type === 'transfer' && tx.fromWallet && tx.toWallet) {
       const deduction = tx.amount + (tx.charge || 0);
-      balancesAsOfJune30[tx.fromWallet] = (balancesAsOfJune30[tx.fromWallet] || 0) - deduction;
-      balancesAsOfJune30[tx.toWallet] = (balancesAsOfJune30[tx.toWallet] || 0) + tx.amount;
+      balancesAsOfEnd[tx.fromWallet] = (balancesAsOfEnd[tx.fromWallet] || 0) - deduction;
+      balancesAsOfEnd[tx.toWallet] = (balancesAsOfEnd[tx.toWallet] || 0) + tx.amount;
     } else if (tx.type === 'lend' && tx.wallet) {
-      balancesAsOfJune30[tx.wallet] = (balancesAsOfJune30[tx.wallet] || 0) - tx.amount;
+      balancesAsOfEnd[tx.wallet] = (balancesAsOfEnd[tx.wallet] || 0) - tx.amount;
     } else if (tx.type === 'borrow' && tx.wallet) {
-      balancesAsOfJune30[tx.wallet] = (balancesAsOfJune30[tx.wallet] || 0) + tx.amount;
+      balancesAsOfEnd[tx.wallet] = (balancesAsOfEnd[tx.wallet] || 0) + tx.amount;
     } else if (tx.type === 'partial_payment' && tx.wallet) {
-      balancesAsOfJune30[tx.wallet] =
-        (balancesAsOfJune30[tx.wallet] || 0) + (tx.isLendPay ? tx.amount : -tx.amount);
+      balancesAsOfEnd[tx.wallet] =
+        (balancesAsOfEnd[tx.wallet] || 0) + (tx.isLendPay ? tx.amount : -tx.amount);
     } else if ((tx.type === 'correction' || tx.type === 'adjustment') && tx.wallet) {
-      balancesAsOfJune30[tx.wallet] = (balancesAsOfJune30[tx.wallet] || 0) + tx.amount;
+      balancesAsOfEnd[tx.wallet] = (balancesAsOfEnd[tx.wallet] || 0) + tx.amount;
     }
   });
 
   const closingWallets = wallets.map((name) => ({
     name,
-    balance: balancesAsOfJune30[name] || 0,
+    balance: balancesAsOfEnd[name] || 0,
   }));
   const closingSavings = savingsList.map((name) => ({
     name,
-    balance: balancesAsOfJune30[name] || 0,
+    balance: balancesAsOfEnd[name] || 0,
   }));
   const totalClosingWallets = closingWallets.reduce((sum, item) => sum + item.balance, 0);
   const totalClosingSavings = closingSavings.reduce((sum, item) => sum + item.balance, 0);
   const totalClosingAssets = totalClosingWallets + totalClosingSavings;
 
-  // 3. Lent & Borrowed summary (year activity + outstanding as of June 30)
+  // 3. Lent & Borrowed summary (period activity + outstanding as of endDate)
   let lentInYear = 0;
   let lentRecoveredInYear = 0;
   let borrowedInYear = 0;
   let repaidInYear = 0;
 
   const hasAnyPartialPaymentForParent = new Set<string>();
-  const paidByParentAsOfJune30: Record<string, number> = {};
+  const paidByParentAsOfEnd: Record<string, number> = {};
 
   transactions.forEach((tx) => {
     if (tx.type === 'partial_payment' && tx.parentId) {
       hasAnyPartialPaymentForParent.add(tx.parentId);
       if (!tx.rawDate || tx.rawDate <= endDate) {
-        paidByParentAsOfJune30[tx.parentId] =
-          (paidByParentAsOfJune30[tx.parentId] || 0) + tx.amount;
+        paidByParentAsOfEnd[tx.parentId] = (paidByParentAsOfEnd[tx.parentId] || 0) + tx.amount;
       }
     }
 
@@ -312,7 +542,7 @@ export function computeTaxYearReportData(params: {
 
     let dueAmount: number;
     if (hasAnyPartialPaymentForParent.has(tx.id)) {
-      dueAmount = Math.max(0, tx.amount - (paidByParentAsOfJune30[tx.id] || 0));
+      dueAmount = Math.max(0, tx.amount - (paidByParentAsOfEnd[tx.id] || 0));
     } else if (tx.resolved) {
       dueAmount = 0;
     } else {
@@ -343,7 +573,23 @@ export function computeTaxYearReportData(params: {
   const netSurplus = totalIncome - totalExpense;
   const savingsRatePct = totalIncome > 0 ? (netSurplus / totalIncome) * 100 : 0;
 
+  const monthlyTrend: MonthlyTrendPoint[] =
+    scope === 'monthly'
+      ? []
+      : monthKeysInPeriod.map((mk) => {
+          const bucket = monthBuckets[mk] || { income: 0, expense: 0 };
+          return {
+            monthKey: mk,
+            shortLabel: getMonthOnlyShortLabel(mk, lang),
+            income: bucket.income,
+            expense: bucket.expense,
+            net: bucket.income - bucket.expense,
+          };
+        });
+
   return {
+    scope,
+    periodKey,
     startYear,
     endYear,
     fyCode,
@@ -374,6 +620,160 @@ export function computeTaxYearReportData(params: {
       openReceivables,
       openPayables,
     },
+    monthlyTrend,
+  };
+}
+
+export function computeTaxYearReportData(params: {
+  startYear: number;
+  transactions: Transaction[];
+  wallets: string[];
+  savingsList: string[];
+  categoryStyles?: Record<string, CategoryStyle>;
+  lang: AppLanguage;
+}): TaxYearReportData {
+  return computeFinancialReportData({
+    scope: 'tax_year',
+    periodKey: String(params.startYear),
+    transactions: params.transactions,
+    wallets: params.wallets,
+    savingsList: params.savingsList,
+    categoryStyles: params.categoryStyles,
+    lang: params.lang,
+  });
+}
+
+function makeDelta(current: number, previous: number): ComparisonMetricDelta {
+  const diff = current - previous;
+  let pctChange: number | null = null;
+  if (Math.abs(previous) > 0.0001) {
+    pctChange = (diff / Math.abs(previous)) * 100;
+  } else if (Math.abs(current) <= 0.0001) {
+    pctChange = 0;
+  }
+  return { current, previous, diff, pctChange };
+}
+
+function buildCategoryComparison(
+  currentSlices: TaxCategorySlice[],
+  previousSlices: TaxCategorySlice[]
+): CategoryComparisonRow[] {
+  const map = new Map<
+    string,
+    {
+      currentAmount: number;
+      previousAmount: number;
+      currentCount: number;
+      previousCount: number;
+      currentSharePct: number;
+      previousSharePct: number;
+    }
+  >();
+
+  currentSlices.forEach((s) => {
+    map.set(s.category, {
+      currentAmount: s.amount,
+      previousAmount: 0,
+      currentCount: s.count,
+      previousCount: 0,
+      currentSharePct: s.pct,
+      previousSharePct: 0,
+    });
+  });
+
+  previousSlices.forEach((s) => {
+    const existing = map.get(s.category);
+    if (existing) {
+      existing.previousAmount = s.amount;
+      existing.previousCount = s.count;
+      existing.previousSharePct = s.pct;
+    } else {
+      map.set(s.category, {
+        currentAmount: 0,
+        previousAmount: s.amount,
+        currentCount: 0,
+        previousCount: s.count,
+        currentSharePct: 0,
+        previousSharePct: s.pct,
+      });
+    }
+  });
+
+  return Array.from(map.entries())
+    .map(([category, v]) => {
+      const diff = v.currentAmount - v.previousAmount;
+      let pctChange: number | null = null;
+      if (v.previousAmount > 0.0001) {
+        pctChange = (diff / v.previousAmount) * 100;
+      } else if (v.currentAmount <= 0.0001) {
+        pctChange = 0;
+      }
+      return {
+        category,
+        currentAmount: v.currentAmount,
+        previousAmount: v.previousAmount,
+        diff,
+        pctChange,
+        currentCount: v.currentCount,
+        previousCount: v.previousCount,
+        currentSharePct: v.currentSharePct,
+        previousSharePct: v.previousSharePct,
+      };
+    })
+    .sort(
+      (a, b) =>
+        Math.max(b.currentAmount, b.previousAmount) - Math.max(a.currentAmount, a.previousAmount)
+    );
+}
+
+export function computeReportComparison(
+  primary: FinancialReportData,
+  baseline: FinancialReportData
+): ReportComparisonData {
+  const incomeCategories = buildCategoryComparison(
+    primary.incomeCategories,
+    baseline.incomeCategories
+  );
+  const expenseCategories = buildCategoryComparison(
+    primary.expenseCategories,
+    baseline.expenseCategories
+  );
+
+  let topExpenseIncrease: CategoryComparisonRow | null = null;
+  let topExpenseDecrease: CategoryComparisonRow | null = null;
+  expenseCategories.forEach((row) => {
+    if (row.diff > 0 && (!topExpenseIncrease || row.diff > topExpenseIncrease.diff)) {
+      topExpenseIncrease = row;
+    }
+    if (row.diff < 0 && (!topExpenseDecrease || row.diff < topExpenseDecrease.diff)) {
+      topExpenseDecrease = row;
+    }
+  });
+
+  const currentTxCount = primary.incomeTransactions.length + primary.expenseTransactions.length;
+  const previousTxCount = baseline.incomeTransactions.length + baseline.expenseTransactions.length;
+
+  return {
+    primary,
+    baseline,
+    income: makeDelta(primary.totalIncome, baseline.totalIncome),
+    expense: makeDelta(primary.totalExpense, baseline.totalExpense),
+    netSurplus: makeDelta(primary.netSurplus, baseline.netSurplus),
+    savingsRatePct: {
+      current: primary.savingsRatePct,
+      previous: baseline.savingsRatePct,
+      diffPts: primary.savingsRatePct - baseline.savingsRatePct,
+    },
+    closingAssets: makeDelta(primary.totalClosingAssets, baseline.totalClosingAssets),
+    txCount: {
+      current: currentTxCount,
+      previous: previousTxCount,
+      diff: currentTxCount - previousTxCount,
+    },
+    incomeCategories,
+    expenseCategories,
+    topExpenseIncrease,
+    topExpenseDecrease,
   };
 }
 
@@ -384,6 +784,19 @@ function csvCell(value: string | number): string {
   const str = String(value ?? '');
   const safe = /^[=+\-@\t\r]/.test(str) ? `'${str}` : str;
   return `"${safe.replace(/"/g, '""')}"`;
+}
+
+function triggerCsvDownload(rows: string[], filename: string): void {
+  const csvContent = `\uFEFF${rows.join('\r\n')}`;
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 export function downloadTaxYearCsv(
@@ -397,6 +810,7 @@ export function downloadTaxYearCsv(
   const pushRow = (...cells: Array<string | number>) => {
     rows.push(cells.map(csvCell).join(','));
   };
+  const endDateDisplay = formatDisplayDate(report.endDate, lang);
 
   pushRow(`OrthoGro - ${tr.title}`, report.fyLabel, report.periodDisplay);
   pushRow(tr.generatedOn, formatDisplayDate(getTodayISO(), lang), `Currency: ${currency}`);
@@ -408,8 +822,23 @@ export function downloadTaxYearCsv(
   pushRow(tr.totalExpense, report.totalExpense);
   pushRow(report.netSurplus >= 0 ? tr.netSurplus : tr.netDeficit, report.netSurplus);
   pushRow(`${tr.savingsRate} (%)`, `${report.savingsRatePct.toFixed(1)}%`);
-  pushRow(tr.closingAssetsJune30, report.totalClosingAssets);
+  pushRow(`${tr.closingAssetsAsOf} ${endDateDisplay}`, report.totalClosingAssets);
   pushRow('');
+
+  // Monthly trend (Yearly / Tax Year)
+  if (report.monthlyTrend && report.monthlyTrend.length > 0) {
+    pushRow(`=== ${tr.monthlyBreakdownTitle.toUpperCase()} ===`);
+    pushRow(
+      tr.monthCol,
+      `${tr.incomeTab} (${currency})`,
+      `${tr.expenseTab} (${currency})`,
+      `${tr.netCol} (${currency})`
+    );
+    report.monthlyTrend.forEach((m) => {
+      pushRow(formatMonthShortLabel(m.monthKey, lang), m.income, m.expense, m.net);
+    });
+    pushRow('');
+  }
 
   // Income by Category
   pushRow(`=== ${tr.incomePieTitle.toUpperCase()} ===`);
@@ -471,8 +900,8 @@ export function downloadTaxYearCsv(
   }
   pushRow('');
 
-  // Closing Balances as of June 30
-  pushRow(`=== ${tr.closingBalancesTitle.toUpperCase()} (${report.endDate}) ===`);
+  // Closing Balances as of period endDate
+  pushRow(`=== ${tr.closingBalancesTitle.toUpperCase()} (${endDateDisplay}) ===`);
   pushRow('Group', tr.accountCol, `Balance (${currency})`);
   report.closingWallets.forEach((w) => pushRow(tr.walletsGroup, w.name, w.balance));
   report.closingSavings.forEach((s) => pushRow(tr.savingsGroup, s.name, s.balance));
@@ -487,8 +916,8 @@ export function downloadTaxYearCsv(
   pushRow(tr.recoveredInYear, report.lendBorrow.lentRecoveredInYear);
   pushRow(tr.borrowedInYear, report.lendBorrow.borrowedInYear);
   pushRow(tr.repaidInYear, report.lendBorrow.repaidInYear);
-  pushRow(tr.receivableJune30, report.lendBorrow.outstandingReceivableAsOfJune30);
-  pushRow(tr.payableJune30, report.lendBorrow.outstandingPayableAsOfJune30);
+  pushRow(`${tr.receivableJune30} (${endDateDisplay})`, report.lendBorrow.outstandingReceivableAsOfJune30);
+  pushRow(`${tr.payableJune30} (${endDateDisplay})`, report.lendBorrow.outstandingPayableAsOfJune30);
 
   if (report.lendBorrow.openReceivables.length > 0) {
     pushRow('');
@@ -505,16 +934,120 @@ export function downloadTaxYearCsv(
     );
   }
 
-  const csvContent = `\uFEFF${rows.join('\r\n')}`;
-  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `OrthoGro-Tax-Report-FY${report.fyCode}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  triggerCsvDownload(rows, `OrthoGro-Report-${report.fyCode}.csv`);
+}
+
+function formatPctDeltaText(pctChange: number | null, trNew: string): string {
+  if (pctChange === null) return trNew;
+  const sign = pctChange > 0 ? '+' : '';
+  return `${sign}${pctChange.toFixed(1)}%`;
+}
+
+export function downloadComparisonCsv(
+  comparison: ReportComparisonData,
+  currency: CurrencySymbol,
+  lang: AppLanguage
+): void {
+  const t = getTranslations(lang);
+  const tr = t.taxReport;
+  const rows: string[] = [];
+  const pushRow = (...cells: Array<string | number>) => {
+    rows.push(cells.map(csvCell).join(','));
+  };
+
+  const pLabel = comparison.primary.fyLabel;
+  const bLabel = comparison.baseline.fyLabel;
+
+  pushRow(`OrthoGro - ${tr.title} (${tr.modeCompare})`, `${pLabel} ${tr.compareVsLabel} ${bLabel}`);
+  pushRow(tr.generatedOn, formatDisplayDate(getTodayISO(), lang), `Currency: ${currency}`);
+  pushRow('');
+
+  pushRow(`=== ${tr.compareOverviewTitle.toUpperCase()} ===`);
+  pushRow(
+    tr.catCol,
+    `${pLabel} (${currency})`,
+    `${bLabel} (${currency})`,
+    `${tr.compareChangeLabel} (${currency})`,
+    `${tr.compareChangeLabel} (%)`
+  );
+  pushRow(
+    tr.totalIncome,
+    comparison.income.current,
+    comparison.income.previous,
+    comparison.income.diff,
+    formatPctDeltaText(comparison.income.pctChange, tr.compareNewLabel)
+  );
+  pushRow(
+    tr.totalExpense,
+    comparison.expense.current,
+    comparison.expense.previous,
+    comparison.expense.diff,
+    formatPctDeltaText(comparison.expense.pctChange, tr.compareNewLabel)
+  );
+  pushRow(
+    comparison.netSurplus.current >= 0 ? tr.netSurplus : tr.netDeficit,
+    comparison.netSurplus.current,
+    comparison.netSurplus.previous,
+    comparison.netSurplus.diff,
+    formatPctDeltaText(comparison.netSurplus.pctChange, tr.compareNewLabel)
+  );
+  pushRow(
+    `${tr.savingsRate} (%)`,
+    `${comparison.savingsRatePct.current.toFixed(1)}%`,
+    `${comparison.savingsRatePct.previous.toFixed(1)}%`,
+    `${comparison.savingsRatePct.diffPts > 0 ? '+' : ''}${comparison.savingsRatePct.diffPts.toFixed(1)} ${tr.comparePtsSuffix}`,
+    ''
+  );
+  pushRow(
+    tr.closingAssetsJune30,
+    comparison.closingAssets.current,
+    comparison.closingAssets.previous,
+    comparison.closingAssets.diff,
+    formatPctDeltaText(comparison.closingAssets.pctChange, tr.compareNewLabel)
+  );
+  pushRow('');
+
+  pushRow(`=== ${tr.expensePieTitle.toUpperCase()} ===`);
+  pushRow(
+    tr.categoryHeader,
+    `${pLabel} (${currency})`,
+    `${bLabel} (${currency})`,
+    `${tr.compareChangeLabel} (${currency})`,
+    `${tr.compareChangeLabel} (%)`
+  );
+  comparison.expenseCategories.forEach((c) => {
+    pushRow(
+      c.category,
+      c.currentAmount,
+      c.previousAmount,
+      c.diff,
+      formatPctDeltaText(c.pctChange, tr.compareNewLabel)
+    );
+  });
+  pushRow('');
+
+  pushRow(`=== ${tr.incomePieTitle.toUpperCase()} ===`);
+  pushRow(
+    tr.categoryHeader,
+    `${pLabel} (${currency})`,
+    `${bLabel} (${currency})`,
+    `${tr.compareChangeLabel} (${currency})`,
+    `${tr.compareChangeLabel} (%)`
+  );
+  comparison.incomeCategories.forEach((c) => {
+    pushRow(
+      c.category,
+      c.currentAmount,
+      c.previousAmount,
+      c.diff,
+      formatPctDeltaText(c.pctChange, tr.compareNewLabel)
+    );
+  });
+
+  triggerCsvDownload(
+    rows,
+    `OrthoGro-Comparison-${comparison.primary.fyCode}-vs-${comparison.baseline.fyCode}.csv`
+  );
 }
 
 // ---------- Canvas2D A4 Multi-Page PDF Composer ----------
@@ -527,7 +1060,7 @@ const MARGIN_TOP = 64;
 const MARGIN_BOTTOM = 76;
 const CONTENT_W = PAGE_W - MARGIN_X * 2;
 const FONT_STACK =
-  '"Noto Sans Bengali", "Hind Siliguri", "Inter", system-ui, -apple-system, sans-serif';
+  '"Noto Sans Bengali", "Hind Siliguri", "Plus Jakarta Sans", system-ui, -apple-system, sans-serif';
 
 function fitText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string {
   if (!text) return '';
@@ -614,15 +1147,13 @@ function drawDonutChartOnCanvas(
   ctx.fillText(fitText(ctx, centerValue, innerR * 1.85), cx, cy + 14);
 }
 
-export async function downloadTaxYearPdf(
-  report: TaxYearReportData,
-  currency: CurrencySymbol,
-  lang: AppLanguage
-): Promise<void> {
-  if (document.fonts?.ready) {
-    await document.fonts.ready;
-  }
+interface PdfTableCol {
+  label: string;
+  width: number;
+  align?: 'left' | 'right';
+}
 
+function createPdfComposer(footerTitle: string, lang: AppLanguage) {
   const t = getTranslations(lang);
   const tr = t.taxReport;
   const pages: HTMLCanvasElement[] = [];
@@ -638,15 +1169,15 @@ export async function downloadTaxYearPdf(
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, PAGE_W, PAGE_H);
     pages.push(canvas);
-    return { canvas, ctx };
+    return ctx;
   };
 
-  let { ctx } = createPage();
+  let ctx = createPage();
   let y = MARGIN_TOP;
 
   const ensureSpace = (neededH: number, onNewPage?: () => void) => {
     if (y + neededH > PAGE_H - MARGIN_BOTTOM) {
-      ({ ctx } = createPage());
+      ctx = createPage();
       y = MARGIN_TOP;
       if (onNewPage) onNewPage();
     }
@@ -666,216 +1197,10 @@ export async function downloadTaxYearPdf(
     y += 42;
   };
 
-  // --- PAGE 1 HEADER BANNER ---
-  drawRoundedRect(ctx, MARGIN_X, y, CONTENT_W, 126, 18);
-  ctx.fillStyle = '#0F766E';
-  ctx.fill();
-  ctx.fillStyle = '#16845B';
-  drawRoundedRect(ctx, MARGIN_X, y, CONTENT_W * 0.65, 126, 18);
-  ctx.fill();
-
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'top';
-  ctx.fillStyle = '#D1FAE5';
-  ctx.font = `700 17px ${FONT_STACK}`;
-  ctx.fillText(`OrthoGro · ${t.app.tagline}`, MARGIN_X + 28, y + 22);
-
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = `800 32px ${FONT_STACK}`;
-  ctx.fillText(tr.title, MARGIN_X + 28, y + 48);
-
-  ctx.fillStyle = '#ECFDF5';
-  ctx.font = `600 18px ${FONT_STACK}`;
-  ctx.fillText(`${report.fyLabel}  ·  ${report.periodDisplay}`, MARGIN_X + 28, y + 89);
-
-  ctx.textAlign = 'right';
-  ctx.fillStyle = '#D1FAE5';
-  ctx.font = `500 16px ${FONT_STACK}`;
-  ctx.fillText(
-    `${tr.generatedOn}: ${formatDisplayDate(getTodayISO(), lang)}`,
-    MARGIN_X + CONTENT_W - 28,
-    y + 24
-  );
-  ctx.fillStyle = '#FFFFFF';
-  ctx.font = `700 20px ${FONT_STACK}`;
-  ctx.fillText(report.fyLabel, MARGIN_X + CONTENT_W - 28, y + 54);
-  y += 150;
-
-  // --- KPI SUMMARY CARDS (4-up) ---
-  const kpiGap = 16;
-  const kpiW = (CONTENT_W - kpiGap * 3) / 4;
-  const kpiH = 98;
-  const kpis = [
-    {
-      label: tr.totalIncome,
-      value: formatMoney(report.totalIncome, currency),
-      bg: '#ECFDF5',
-      border: '#A7F3D0',
-      valColor: '#16845B',
-    },
-    {
-      label: tr.totalExpense,
-      value: formatMoney(report.totalExpense, currency),
-      bg: '#FFF1F2',
-      border: '#FECDD3',
-      valColor: '#D94848',
-    },
-    {
-      label: report.netSurplus >= 0 ? tr.netSurplus : tr.netDeficit,
-      value: formatMoney(report.netSurplus, currency),
-      bg: '#F8FAFC',
-      border: '#CBD5E1',
-      valColor: report.netSurplus >= 0 ? '#102A43' : '#D94848',
-    },
-    {
-      label: tr.closingAssetsJune30,
-      value: formatMoney(report.totalClosingAssets, currency),
-      bg: '#EFF6FF',
-      border: '#BFDBFE',
-      valColor: '#1D4ED8',
-    },
-  ];
-
-  kpis.forEach((kpi, idx) => {
-    const kx = MARGIN_X + idx * (kpiW + kpiGap);
-    drawRoundedRect(ctx, kx, y, kpiW, kpiH, 14);
-    ctx.fillStyle = kpi.bg;
-    ctx.fill();
-    ctx.strokeStyle = kpi.border;
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = '#475569';
-    ctx.font = `600 15px ${FONT_STACK}`;
-    ctx.fillText(fitText(ctx, kpi.label, kpiW - 28), kx + 14, y + 18);
-
-    ctx.fillStyle = kpi.valColor;
-    ctx.font = `800 22px ${FONT_STACK}`;
-    ctx.fillText(fitText(ctx, kpi.value, kpiW - 28), kx + 14, y + 50);
-  });
-  y += kpiH + 34;
-
-  // --- PIE CHARTS SECTION (Income & Expense side by side) ---
-  drawSectionHeading(tr.chartsTitle);
-
-  const chartBoxGap = 20;
-  const chartBoxW = (CONTENT_W - chartBoxGap) / 2;
-  const maxLegendRows = Math.max(
-    Math.min(report.incomeCategories.length, 8),
-    Math.min(report.expenseCategories.length, 8),
-    1
-  );
-  const chartBoxH = 264 + maxLegendRows * 30 + 24;
-  ensureSpace(chartBoxH + 24);
-
-  const drawPieCard = (
-    x: number,
-    cardY: number,
-    title: string,
-    slices: TaxCategorySlice[],
-    total: number,
-    emptyMsg: string,
-    accent: string
-  ) => {
-    drawRoundedRect(ctx, x, cardY, chartBoxW, chartBoxH, 16);
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fill();
-    ctx.strokeStyle = '#E2E8F0';
-    ctx.lineWidth = 1.5;
-    ctx.stroke();
-
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = '#102A43';
-    ctx.font = `700 20px ${FONT_STACK}`;
-    ctx.fillText(title, x + 22, cardY + 20);
-
-    ctx.textAlign = 'right';
-    ctx.fillStyle = accent;
-    ctx.font = `800 20px ${FONT_STACK}`;
-    ctx.fillText(formatMoney(total, currency), x + chartBoxW - 22, cardY + 20);
-
-    const pieCx = x + chartBoxW / 2;
-    const pieCy = cardY + 152;
-    drawDonutChartOnCanvas(
-      ctx,
-      pieCx,
-      pieCy,
-      90,
-      50,
-      slices,
-      total,
-      t.common.total,
-      formatMoney(total, currency)
-    );
-
-    let ly = cardY + 266;
-    if (slices.length === 0) {
-      ctx.textAlign = 'center';
-      ctx.fillStyle = '#64748B';
-      ctx.font = `500 16px ${FONT_STACK}`;
-      ctx.fillText(emptyMsg, pieCx, ly + 8);
-      return;
-    }
-
-    slices.slice(0, 8).forEach((slice) => {
-      ctx.fillStyle = slice.color;
-      drawRoundedRect(ctx, x + 22, ly + 5, 13, 13, 4);
-      ctx.fill();
-
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-      ctx.fillStyle = '#1E293B';
-      ctx.font = `600 16px ${FONT_STACK}`;
-      ctx.fillText(fitText(ctx, slice.category, chartBoxW - 225), x + 44, ly);
-
-      ctx.textAlign = 'right';
-      ctx.fillStyle = '#64748B';
-      ctx.font = `600 15px ${FONT_STACK}`;
-      ctx.fillText(`${slice.pct.toFixed(1)}%`, x + chartBoxW - 140, ly + 1);
-
-      ctx.fillStyle = '#102A43';
-      ctx.font = `700 16px ${FONT_STACK}`;
-      ctx.fillText(formatMoney(slice.amount, currency), x + chartBoxW - 22, ly);
-
-      ly += 30;
-    });
-  };
-
-  drawPieCard(
-    MARGIN_X,
-    y,
-    tr.incomePieTitle,
-    report.incomeCategories,
-    report.totalIncome,
-    tr.noIncomeInYear,
-    '#16845B'
-  );
-  drawPieCard(
-    MARGIN_X + chartBoxW + chartBoxGap,
-    y,
-    tr.expensePieTitle,
-    report.expenseCategories,
-    report.totalExpense,
-    tr.noExpenseInYear,
-    '#D94848'
-  );
-
-  y += chartBoxH + 34;
-
-  // --- HELPER: PAGINATED TABLE RENDERER ---
-  interface TableCol {
-    label: string;
-    width: number;
-    align?: 'left' | 'right';
-  }
-
   const drawPaginatedTable = (
     heading: string,
     accent: string,
-    cols: TableCol[],
+    cols: PdfTableCol[],
     rowsData: Array<Array<{ text: string; color?: string; bold?: boolean }>>,
     emptyText: string
   ) => {
@@ -898,7 +1223,11 @@ export async function downloadTaxYearPdf(
         const usableW = col.width - (i === 0 ? 14 : 8) - (isLast ? 14 : 8);
         if (col.align === 'right') {
           ctx.textAlign = 'right';
-          ctx.fillText(fitText(ctx, col.label, usableW), cx + col.width - (isLast ? 28 : 10), y + headerH / 2);
+          ctx.fillText(
+            fitText(ctx, col.label, usableW),
+            cx + col.width - (isLast ? 28 : 10),
+            y + headerH / 2
+          );
         } else {
           ctx.textAlign = 'left';
           ctx.fillText(fitText(ctx, col.label, usableW), cx, y + headerH / 2);
@@ -968,15 +1297,318 @@ export async function downloadTaxYearPdf(
     y += 28;
   };
 
+  const finalizeAndSave = (filename: string) => {
+    const totalPages = pages.length;
+    pages.forEach((canvas, idx) => {
+      const pCtx = canvas.getContext('2d');
+      if (!pCtx) return;
+      pCtx.strokeStyle = '#E2E8F0';
+      pCtx.lineWidth = 1;
+      pCtx.beginPath();
+      pCtx.moveTo(MARGIN_X, PAGE_H - 52);
+      pCtx.lineTo(MARGIN_X + CONTENT_W, PAGE_H - 52);
+      pCtx.stroke();
+
+      pCtx.textBaseline = 'middle';
+      pCtx.fillStyle = '#64748B';
+      pCtx.font = `500 14px ${FONT_STACK}`;
+      pCtx.textAlign = 'left';
+      pCtx.fillText(footerTitle, MARGIN_X, PAGE_H - 30);
+
+      pCtx.textAlign = 'right';
+      pCtx.fillText(
+        `${tr.pageLabel} ${idx + 1} ${tr.ofLabel} ${totalPages}`,
+        MARGIN_X + CONTENT_W,
+        PAGE_H - 30
+      );
+    });
+
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'pt',
+      format: 'a4',
+      compress: true,
+    });
+    const pdfW = doc.internal.pageSize.getWidth();
+    const pdfH = doc.internal.pageSize.getHeight();
+
+    pages.forEach((canvas, idx) => {
+      if (idx > 0) doc.addPage();
+      const imgData = canvas.toDataURL('image/jpeg', 0.94);
+      doc.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH, undefined, 'FAST');
+    });
+
+    doc.save(filename);
+  };
+
+  return {
+    getCtx: () => ctx,
+    getY: () => y,
+    setY: (nextY: number) => {
+      y = nextY;
+    },
+    ensureSpace,
+    drawSectionHeading,
+    drawPaginatedTable,
+    finalizeAndSave,
+  };
+}
+
+export async function downloadTaxYearPdf(
+  report: TaxYearReportData,
+  currency: CurrencySymbol,
+  lang: AppLanguage
+): Promise<void> {
+  if (document.fonts?.ready) {
+    await document.fonts.ready;
+  }
+
+  const t = getTranslations(lang);
+  const tr = t.taxReport;
+  const endDateDisplay = formatDisplayDate(report.endDate, lang);
+  const composer = createPdfComposer(`OrthoGro · ${tr.title} (${report.fyLabel})`, lang);
+  const ctx = composer.getCtx();
+  let y = composer.getY();
+
+  // --- PAGE 1 HEADER BANNER ---
+  drawRoundedRect(ctx, MARGIN_X, y, CONTENT_W, 126, 18);
+  ctx.fillStyle = '#0F766E';
+  ctx.fill();
+  ctx.fillStyle = '#16845B';
+  drawRoundedRect(ctx, MARGIN_X, y, CONTENT_W * 0.65, 126, 18);
+  ctx.fill();
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#D1FAE5';
+  ctx.font = `700 17px ${FONT_STACK}`;
+  ctx.fillText(`OrthoGro · ${t.app.tagline}`, MARGIN_X + 28, y + 22);
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = `800 32px ${FONT_STACK}`;
+  ctx.fillText(tr.title, MARGIN_X + 28, y + 48);
+
+  ctx.fillStyle = '#ECFDF5';
+  ctx.font = `600 18px ${FONT_STACK}`;
+  ctx.fillText(`${report.fyLabel}  ·  ${report.periodDisplay}`, MARGIN_X + 28, y + 89);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#D1FAE5';
+  ctx.font = `500 16px ${FONT_STACK}`;
+  ctx.fillText(
+    `${tr.generatedOn}: ${formatDisplayDate(getTodayISO(), lang)}`,
+    MARGIN_X + CONTENT_W - 28,
+    y + 24
+  );
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = `700 20px ${FONT_STACK}`;
+  ctx.fillText(report.fyLabel, MARGIN_X + CONTENT_W - 28, y + 54);
+  y += 150;
+  composer.setY(y);
+
+  // --- KPI SUMMARY CARDS (4-up) ---
+  const kpiGap = 16;
+  const kpiW = (CONTENT_W - kpiGap * 3) / 4;
+  const kpiH = 98;
+  const kpis = [
+    {
+      label: tr.totalIncome,
+      value: formatMoney(report.totalIncome, currency),
+      bg: '#ECFDF5',
+      border: '#A7F3D0',
+      valColor: '#16845B',
+    },
+    {
+      label: tr.totalExpense,
+      value: formatMoney(report.totalExpense, currency),
+      bg: '#FFF1F2',
+      border: '#FECDD3',
+      valColor: '#D94848',
+    },
+    {
+      label: report.netSurplus >= 0 ? tr.netSurplus : tr.netDeficit,
+      value: formatMoney(report.netSurplus, currency),
+      bg: '#F8FAFC',
+      border: '#CBD5E1',
+      valColor: report.netSurplus >= 0 ? '#102A43' : '#D94848',
+    },
+    {
+      label: `${tr.closingAssetsJune30} (${endDateDisplay})`,
+      value: formatMoney(report.totalClosingAssets, currency),
+      bg: '#EFF6FF',
+      border: '#BFDBFE',
+      valColor: '#1D4ED8',
+    },
+  ];
+
+  kpis.forEach((kpi, idx) => {
+    const kx = MARGIN_X + idx * (kpiW + kpiGap);
+    drawRoundedRect(ctx, kx, y, kpiW, kpiH, 14);
+    ctx.fillStyle = kpi.bg;
+    ctx.fill();
+    ctx.strokeStyle = kpi.border;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#475569';
+    ctx.font = `600 15px ${FONT_STACK}`;
+    ctx.fillText(fitText(ctx, kpi.label, kpiW - 28), kx + 14, y + 18);
+
+    ctx.fillStyle = kpi.valColor;
+    ctx.font = `800 22px ${FONT_STACK}`;
+    ctx.fillText(fitText(ctx, kpi.value, kpiW - 28), kx + 14, y + 50);
+  });
+  y += kpiH + 34;
+  composer.setY(y);
+
+  // --- PIE CHARTS SECTION (Income & Expense side by side) ---
+  composer.drawSectionHeading(tr.chartsTitle);
+  y = composer.getY();
+
+  const chartBoxGap = 20;
+  const chartBoxW = (CONTENT_W - chartBoxGap) / 2;
+  const maxLegendRows = Math.max(
+    Math.min(report.incomeCategories.length, 8),
+    Math.min(report.expenseCategories.length, 8),
+    1
+  );
+  const chartBoxH = 264 + maxLegendRows * 30 + 24;
+  composer.ensureSpace(chartBoxH + 24);
+  y = composer.getY();
+  const chartCtx = composer.getCtx();
+
+  const drawPieCard = (
+    x: number,
+    cardY: number,
+    title: string,
+    slices: TaxCategorySlice[],
+    total: number,
+    emptyMsg: string,
+    accent: string
+  ) => {
+    drawRoundedRect(chartCtx, x, cardY, chartBoxW, chartBoxH, 16);
+    chartCtx.fillStyle = '#FFFFFF';
+    chartCtx.fill();
+    chartCtx.strokeStyle = '#E2E8F0';
+    chartCtx.lineWidth = 1.5;
+    chartCtx.stroke();
+
+    chartCtx.textAlign = 'left';
+    chartCtx.textBaseline = 'top';
+    chartCtx.fillStyle = '#102A43';
+    chartCtx.font = `700 20px ${FONT_STACK}`;
+    chartCtx.fillText(title, x + 22, cardY + 20);
+
+    chartCtx.textAlign = 'right';
+    chartCtx.fillStyle = accent;
+    chartCtx.font = `800 20px ${FONT_STACK}`;
+    chartCtx.fillText(formatMoney(total, currency), x + chartBoxW - 22, cardY + 20);
+
+    const pieCx = x + chartBoxW / 2;
+    const pieCy = cardY + 152;
+    drawDonutChartOnCanvas(
+      chartCtx,
+      pieCx,
+      pieCy,
+      90,
+      50,
+      slices,
+      total,
+      t.common.total,
+      formatMoney(total, currency)
+    );
+
+    let ly = cardY + 266;
+    if (slices.length === 0) {
+      chartCtx.textAlign = 'center';
+      chartCtx.fillStyle = '#64748B';
+      chartCtx.font = `500 16px ${FONT_STACK}`;
+      chartCtx.fillText(emptyMsg, pieCx, ly + 8);
+      return;
+    }
+
+    slices.slice(0, 8).forEach((slice) => {
+      chartCtx.fillStyle = slice.color;
+      drawRoundedRect(chartCtx, x + 22, ly + 5, 13, 13, 4);
+      chartCtx.fill();
+
+      chartCtx.textAlign = 'left';
+      chartCtx.textBaseline = 'top';
+      chartCtx.fillStyle = '#1E293B';
+      chartCtx.font = `600 16px ${FONT_STACK}`;
+      chartCtx.fillText(fitText(chartCtx, slice.category, chartBoxW - 225), x + 44, ly);
+
+      chartCtx.textAlign = 'right';
+      chartCtx.fillStyle = '#64748B';
+      chartCtx.font = `600 15px ${FONT_STACK}`;
+      chartCtx.fillText(`${slice.pct.toFixed(1)}%`, x + chartBoxW - 140, ly + 1);
+
+      chartCtx.fillStyle = '#102A43';
+      chartCtx.font = `700 16px ${FONT_STACK}`;
+      chartCtx.fillText(formatMoney(slice.amount, currency), x + chartBoxW - 22, ly);
+
+      ly += 30;
+    });
+  };
+
+  drawPieCard(
+    MARGIN_X,
+    y,
+    tr.incomePieTitle,
+    report.incomeCategories,
+    report.totalIncome,
+    tr.noIncomeInYear,
+    '#16845B'
+  );
+  drawPieCard(
+    MARGIN_X + chartBoxW + chartBoxGap,
+    y,
+    tr.expensePieTitle,
+    report.expenseCategories,
+    report.totalExpense,
+    tr.noExpenseInYear,
+    '#D94848'
+  );
+
+  composer.setY(y + chartBoxH + 34);
+
+  // --- MONTHLY TREND TABLE (for Yearly & Tax Year reports) ---
+  if (report.monthlyTrend && report.monthlyTrend.length > 0) {
+    const trendCols: PdfTableCol[] = [
+      { label: tr.monthCol, width: 320 },
+      { label: tr.incomeTab, width: 260, align: 'right' },
+      { label: tr.expenseTab, width: 260, align: 'right' },
+      { label: tr.netCol, width: CONTENT_W - 840, align: 'right' },
+    ];
+    composer.drawPaginatedTable(
+      tr.monthlyBreakdownTitle,
+      '#0F766E',
+      trendCols,
+      report.monthlyTrend.map((m) => [
+        { text: formatMonthShortLabel(m.monthKey, lang), bold: true },
+        { text: formatMoney(m.income, currency), color: '#16845B', bold: m.income > 0 },
+        { text: formatMoney(m.expense, currency), color: '#D94848', bold: m.expense > 0 },
+        {
+          text: formatMoney(m.net, currency),
+          color: m.net >= 0 ? '#102A43' : '#D94848',
+          bold: true,
+        },
+      ]),
+      tr.noLedgerRows
+    );
+  }
+
   // --- CATEGORY BREAKDOWN TABLES ---
-  const catCols: TableCol[] = [
+  const catCols: PdfTableCol[] = [
     { label: tr.categoryHeader, width: 540 },
     { label: tr.entriesCount, width: 140, align: 'right' },
     { label: tr.shareHeader, width: 160, align: 'right' },
     { label: tr.amountHeader, width: CONTENT_W - 840, align: 'right' },
   ];
 
-  drawPaginatedTable(
+  composer.drawPaginatedTable(
     tr.incomePieTitle,
     '#16845B',
     catCols,
@@ -1007,7 +1639,7 @@ export async function downloadTaxYearPdf(
     });
   });
 
-  drawPaginatedTable(
+  composer.drawPaginatedTable(
     tr.expensePieTitle,
     '#D94848',
     catCols,
@@ -1016,7 +1648,7 @@ export async function downloadTaxYearPdf(
   );
 
   // --- DETAILED INCOME & EXPENSE LEDGERS ---
-  const ledgerCols: TableCol[] = [
+  const ledgerCols: PdfTableCol[] = [
     { label: tr.dateCol, width: 145 },
     { label: tr.catCol, width: 250 },
     { label: tr.titleCol, width: 325 },
@@ -1024,7 +1656,7 @@ export async function downloadTaxYearPdf(
     { label: tr.amountHeader, width: CONTENT_W - 890, align: 'right' },
   ];
 
-  drawPaginatedTable(
+  composer.drawPaginatedTable(
     `${tr.detailedLedgerTitle} · ${tr.incomeTab}`,
     '#16845B',
     ledgerCols,
@@ -1038,7 +1670,7 @@ export async function downloadTaxYearPdf(
     tr.noIncomeInYear
   );
 
-  drawPaginatedTable(
+  composer.drawPaginatedTable(
     `${tr.detailedLedgerTitle} · ${tr.expenseTab}`,
     '#D94848',
     ledgerCols,
@@ -1052,8 +1684,8 @@ export async function downloadTaxYearPdf(
     tr.noExpenseInYear
   );
 
-  // --- CLOSING BALANCES AS OF JUNE 30 ---
-  const closingCols: TableCol[] = [
+  // --- CLOSING BALANCES ---
+  const closingCols: PdfTableCol[] = [
     { label: tr.typeCol, width: 280 },
     { label: tr.accountCol, width: 520 },
     { label: tr.amountHeader, width: CONTENT_W - 800, align: 'right' },
@@ -1080,8 +1712,8 @@ export async function downloadTaxYearPdf(
     ],
   ];
 
-  drawPaginatedTable(
-    `${tr.closingBalancesTitle} (${formatDisplayDate(report.endDate, lang)})`,
+  composer.drawPaginatedTable(
+    `${tr.closingBalancesTitle} (${endDateDisplay})`,
     '#1D4ED8',
     closingCols,
     closingRows,
@@ -1089,7 +1721,7 @@ export async function downloadTaxYearPdf(
   );
 
   // --- LENT & BORROWED SUMMARY ---
-  const lbCols: TableCol[] = [
+  const lbCols: PdfTableCol[] = [
     { label: tr.catCol, width: 760 },
     { label: tr.amountHeader, width: CONTENT_W - 760, align: 'right' },
   ];
@@ -1100,18 +1732,26 @@ export async function downloadTaxYearPdf(
     ],
     [
       { text: tr.recoveredInYear },
-      { text: formatMoney(report.lendBorrow.lentRecoveredInYear, currency), color: '#16845B', bold: true },
+      {
+        text: formatMoney(report.lendBorrow.lentRecoveredInYear, currency),
+        color: '#16845B',
+        bold: true,
+      },
     ],
     [
       { text: tr.borrowedInYear },
-      { text: formatMoney(report.lendBorrow.borrowedInYear, currency), color: '#D97706', bold: true },
+      {
+        text: formatMoney(report.lendBorrow.borrowedInYear, currency),
+        color: '#D97706',
+        bold: true,
+      },
     ],
     [
       { text: tr.repaidInYear },
       { text: formatMoney(report.lendBorrow.repaidInYear, currency), color: '#16845B', bold: true },
     ],
     [
-      { text: tr.receivableJune30, bold: true },
+      { text: `${tr.receivableJune30} (${endDateDisplay})`, bold: true },
       {
         text: formatMoney(report.lendBorrow.outstandingReceivableAsOfJune30, currency),
         color: '#0284C7',
@@ -1119,7 +1759,7 @@ export async function downloadTaxYearPdf(
       },
     ],
     [
-      { text: tr.payableJune30, bold: true },
+      { text: `${tr.payableJune30} (${endDateDisplay})`, bold: true },
       {
         text: formatMoney(report.lendBorrow.outstandingPayableAsOfJune30, currency),
         color: '#D97706',
@@ -1128,7 +1768,7 @@ export async function downloadTaxYearPdf(
     ],
   ];
 
-  drawPaginatedTable(tr.lendBorrowTitle, '#0284C7', lbCols, lbSummaryRows, '—');
+  composer.drawPaginatedTable(tr.lendBorrowTitle, '#0284C7', lbCols, lbSummaryRows, '—');
 
   const openDebtRows: Array<Array<{ text: string; color?: string; bold?: boolean }>> = [
     ...report.lendBorrow.openReceivables.map((d) => [
@@ -1148,14 +1788,14 @@ export async function downloadTaxYearPdf(
   ];
 
   if (openDebtRows.length > 0) {
-    const openDebtCols: TableCol[] = [
+    const openDebtCols: PdfTableCol[] = [
       { label: tr.typeCol, width: 255 },
       { label: tr.titleCol, width: 325 },
       { label: tr.accountCol, width: 170 },
       { label: tr.originalAmt, width: 165, align: 'right' },
       { label: tr.dueAmt, width: CONTENT_W - 915, align: 'right' },
     ];
-    drawPaginatedTable(
+    composer.drawPaginatedTable(
       `${tr.openReceivables} / ${tr.openPayables}`,
       '#D97706',
       openDebtCols,
@@ -1164,47 +1804,209 @@ export async function downloadTaxYearPdf(
     );
   }
 
-  // --- FOOTER ON ALL PAGES ---
-  const totalPages = pages.length;
-  pages.forEach((canvas, idx) => {
-    const pCtx = canvas.getContext('2d');
-    if (!pCtx) return;
-    pCtx.strokeStyle = '#E2E8F0';
-    pCtx.lineWidth = 1;
-    pCtx.beginPath();
-    pCtx.moveTo(MARGIN_X, PAGE_H - 52);
-    pCtx.lineTo(MARGIN_X + CONTENT_W, PAGE_H - 52);
-    pCtx.stroke();
+  composer.finalizeAndSave(`OrthoGro-Report-${report.fyCode}.pdf`);
+}
 
-    pCtx.textBaseline = 'middle';
-    pCtx.fillStyle = '#64748B';
-    pCtx.font = `500 14px ${FONT_STACK}`;
-    pCtx.textAlign = 'left';
-    pCtx.fillText(`OrthoGro · ${tr.title} (${report.fyLabel})`, MARGIN_X, PAGE_H - 30);
+export async function downloadComparisonPdf(
+  comparison: ReportComparisonData,
+  currency: CurrencySymbol,
+  lang: AppLanguage
+): Promise<void> {
+  if (document.fonts?.ready) {
+    await document.fonts.ready;
+  }
 
-    pCtx.textAlign = 'right';
-    pCtx.fillText(
-      `${tr.pageLabel} ${idx + 1} ${tr.ofLabel} ${totalPages}`,
-      MARGIN_X + CONTENT_W,
-      PAGE_H - 30
-    );
-  });
+  const t = getTranslations(lang);
+  const tr = t.taxReport;
+  const pLabel = comparison.primary.fyLabel;
+  const bLabel = comparison.baseline.fyLabel;
 
-  // Assemble A4 PDF with jsPDF
-  const doc = new jsPDF({
-    orientation: 'portrait',
-    unit: 'pt',
-    format: 'a4',
-    compress: true,
-  });
-  const pdfW = doc.internal.pageSize.getWidth();
-  const pdfH = doc.internal.pageSize.getHeight();
+  const composer = createPdfComposer(
+    `OrthoGro · ${tr.title} (${pLabel} ${tr.compareVsLabel} ${bLabel})`,
+    lang
+  );
+  const ctx = composer.getCtx();
+  let y = composer.getY();
 
-  pages.forEach((canvas, idx) => {
-    if (idx > 0) doc.addPage();
-    const imgData = canvas.toDataURL('image/jpeg', 0.94);
-    doc.addImage(imgData, 'JPEG', 0, 0, pdfW, pdfH, undefined, 'FAST');
-  });
+  // Header Banner
+  drawRoundedRect(ctx, MARGIN_X, y, CONTENT_W, 126, 18);
+  ctx.fillStyle = '#0F766E';
+  ctx.fill();
+  ctx.fillStyle = '#16845B';
+  drawRoundedRect(ctx, MARGIN_X, y, CONTENT_W * 0.65, 126, 18);
+  ctx.fill();
 
-  doc.save(`OrthoGro-Tax-Report-FY${report.fyCode}.pdf`);
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = '#D1FAE5';
+  ctx.font = `700 17px ${FONT_STACK}`;
+  ctx.fillText(`OrthoGro · ${tr.modeCompare}`, MARGIN_X + 28, y + 22);
+
+  ctx.fillStyle = '#FFFFFF';
+  ctx.font = `800 32px ${FONT_STACK}`;
+  ctx.fillText(tr.title, MARGIN_X + 28, y + 48);
+
+  ctx.fillStyle = '#ECFDF5';
+  ctx.font = `600 18px ${FONT_STACK}`;
+  ctx.fillText(`${pLabel}  ${tr.compareVsLabel}  ${bLabel}`, MARGIN_X + 28, y + 89);
+
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#D1FAE5';
+  ctx.font = `500 16px ${FONT_STACK}`;
+  ctx.fillText(
+    `${tr.generatedOn}: ${formatDisplayDate(getTodayISO(), lang)}`,
+    MARGIN_X + CONTENT_W - 28,
+    y + 24
+  );
+  composer.setY(y + 150);
+
+  // KPI Comparison Table
+  const cmpCols: PdfTableCol[] = [
+    { label: tr.catCol, width: 320 },
+    { label: pLabel, width: 220, align: 'right' },
+    { label: bLabel, width: 220, align: 'right' },
+    { label: tr.compareChangeLabel, width: 200, align: 'right' },
+    { label: '%', width: CONTENT_W - 960, align: 'right' },
+  ];
+
+  const formatSignedMoney = (val: number) =>
+    `${val > 0 ? '+' : ''}${formatMoney(val, currency)}`;
+
+  composer.drawPaginatedTable(
+    tr.compareOverviewTitle,
+    '#16845B',
+    cmpCols,
+    [
+      [
+        { text: tr.totalIncome, bold: true },
+        { text: formatMoney(comparison.income.current, currency), color: '#16845B', bold: true },
+        { text: formatMoney(comparison.income.previous, currency), color: '#475569' },
+        {
+          text: formatSignedMoney(comparison.income.diff),
+          color: comparison.income.diff >= 0 ? '#16845B' : '#D94848',
+          bold: true,
+        },
+        {
+          text: formatPctDeltaText(comparison.income.pctChange, tr.compareNewLabel),
+          color: comparison.income.diff >= 0 ? '#16845B' : '#D94848',
+          bold: true,
+        },
+      ],
+      [
+        { text: tr.totalExpense, bold: true },
+        { text: formatMoney(comparison.expense.current, currency), color: '#D94848', bold: true },
+        { text: formatMoney(comparison.expense.previous, currency), color: '#475569' },
+        {
+          text: formatSignedMoney(comparison.expense.diff),
+          color: comparison.expense.diff <= 0 ? '#16845B' : '#D94848',
+          bold: true,
+        },
+        {
+          text: formatPctDeltaText(comparison.expense.pctChange, tr.compareNewLabel),
+          color: comparison.expense.diff <= 0 ? '#16845B' : '#D94848',
+          bold: true,
+        },
+      ],
+      [
+        { text: comparison.netSurplus.current >= 0 ? tr.netSurplus : tr.netDeficit, bold: true },
+        {
+          text: formatMoney(comparison.netSurplus.current, currency),
+          color: comparison.netSurplus.current >= 0 ? '#102A43' : '#D94848',
+          bold: true,
+        },
+        { text: formatMoney(comparison.netSurplus.previous, currency), color: '#475569' },
+        {
+          text: formatSignedMoney(comparison.netSurplus.diff),
+          color: comparison.netSurplus.diff >= 0 ? '#16845B' : '#D94848',
+          bold: true,
+        },
+        {
+          text: formatPctDeltaText(comparison.netSurplus.pctChange, tr.compareNewLabel),
+          color: comparison.netSurplus.diff >= 0 ? '#16845B' : '#D94848',
+          bold: true,
+        },
+      ],
+      [
+        { text: tr.savingsRate, bold: true },
+        { text: `${comparison.savingsRatePct.current.toFixed(1)}%`, bold: true },
+        { text: `${comparison.savingsRatePct.previous.toFixed(1)}%`, color: '#475569' },
+        {
+          text: `${comparison.savingsRatePct.diffPts > 0 ? '+' : ''}${comparison.savingsRatePct.diffPts.toFixed(1)} ${tr.comparePtsSuffix}`,
+          color: comparison.savingsRatePct.diffPts >= 0 ? '#16845B' : '#D94848',
+          bold: true,
+        },
+        { text: '—', color: '#94A3B8' },
+      ],
+      [
+        { text: tr.closingAssetsJune30, bold: true },
+        {
+          text: formatMoney(comparison.closingAssets.current, currency),
+          color: '#1D4ED8',
+          bold: true,
+        },
+        { text: formatMoney(comparison.closingAssets.previous, currency), color: '#475569' },
+        {
+          text: formatSignedMoney(comparison.closingAssets.diff),
+          color: comparison.closingAssets.diff >= 0 ? '#16845B' : '#D94848',
+          bold: true,
+        },
+        {
+          text: formatPctDeltaText(comparison.closingAssets.pctChange, tr.compareNewLabel),
+          color: comparison.closingAssets.diff >= 0 ? '#16845B' : '#D94848',
+          bold: true,
+        },
+      ],
+    ],
+    '—'
+  );
+
+  // Expense Category Comparison Table
+  composer.drawPaginatedTable(
+    `${tr.compareCategoryTitle} · ${tr.expenseTab}`,
+    '#D94848',
+    cmpCols,
+    comparison.expenseCategories.map((c) => [
+      { text: c.category, bold: true },
+      { text: formatMoney(c.currentAmount, currency), color: '#102A43', bold: true },
+      { text: formatMoney(c.previousAmount, currency), color: '#475569' },
+      {
+        text: formatSignedMoney(c.diff),
+        color: c.diff <= 0 ? '#16845B' : '#D94848',
+        bold: true,
+      },
+      {
+        text: formatPctDeltaText(c.pctChange, tr.compareNewLabel),
+        color: c.diff <= 0 ? '#16845B' : '#D94848',
+        bold: true,
+      },
+    ]),
+    tr.compareNoCategoryData
+  );
+
+  // Income Category Comparison Table
+  composer.drawPaginatedTable(
+    `${tr.compareCategoryTitle} · ${tr.incomeTab}`,
+    '#16845B',
+    cmpCols,
+    comparison.incomeCategories.map((c) => [
+      { text: c.category, bold: true },
+      { text: formatMoney(c.currentAmount, currency), color: '#16845B', bold: true },
+      { text: formatMoney(c.previousAmount, currency), color: '#475569' },
+      {
+        text: formatSignedMoney(c.diff),
+        color: c.diff >= 0 ? '#16845B' : '#D94848',
+        bold: true,
+      },
+      {
+        text: formatPctDeltaText(c.pctChange, tr.compareNewLabel),
+        color: c.diff >= 0 ? '#16845B' : '#D94848',
+        bold: true,
+      },
+    ]),
+    tr.compareNoCategoryData
+  );
+
+  composer.finalizeAndSave(
+    `OrthoGro-Comparison-${comparison.primary.fyCode}-vs-${comparison.baseline.fyCode}.pdf`
+  );
 }

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Plus, Trash2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { ChevronDown, Plus, Trash2, X } from 'lucide-react';
 import { useTranslation } from '../i18n';
 import type {
   CategoryStyle,
@@ -7,19 +7,37 @@ import type {
   RecurringBill,
   TransactionDraft,
 } from '../types';
-import { CategoryIconBadge, getCategoryStyle } from '../utils/categoryVisuals';
+import {
+  CategoryIconBadge,
+  getCategoryStyle,
+  getExpenseOrSubCategoryStyle,
+} from '../utils/categoryVisuals';
 import {
   RecurringBillsPanel,
   type RecurringBillSavePayload,
 } from './RecurringBillsPanel';
+import {
+  type AddableItemKind,
+  TransactionPickerDrawer,
+  type TransactionPickerMode,
+} from './TransactionPickerDrawer';
 
 export type TransactionPageSubTab = 'new' | 'recurring';
+
+type DrawerField = 'category' | 'subCategory' | 'wallet' | 'fromWallet' | 'toWallet';
+
+interface ActivePickerState {
+  entryIndex: number;
+  field: DrawerField;
+}
 
 interface TransactionFormProps {
   entries: TransactionDraft[];
   setEntries: React.Dispatch<React.SetStateAction<TransactionDraft[]>>;
   defaultEntry: TransactionDraft;
   allAccountOptions: string[];
+  wallets?: string[];
+  savingsList?: string[];
   expenseCategories: string[];
   incomeCategories: string[];
   expenseSubCategories?: Record<string, string[]>;
@@ -30,6 +48,16 @@ interface TransactionFormProps {
   recurringBills?: RecurringBill[];
   dueRecurringCount?: number;
   isReadOnly?: boolean;
+  onAddListItem?: (
+    type: 'wallet' | 'savings' | 'exp_cat' | 'inc_cat',
+    name: string,
+    style?: CategoryStyle
+  ) => Promise<boolean>;
+  onAddSubCategory?: (
+    parentCat: string,
+    subName: string,
+    style?: CategoryStyle
+  ) => Promise<boolean>;
   onSaveRecurringBill?: (
     payload: RecurringBillSavePayload,
     editId?: string
@@ -46,6 +74,8 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   setEntries,
   defaultEntry,
   allAccountOptions,
+  wallets = [],
+  savingsList = [],
   expenseCategories,
   incomeCategories,
   expenseSubCategories,
@@ -56,6 +86,8 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
   recurringBills = [],
   dueRecurringCount = 0,
   isReadOnly = false,
+  onAddListItem,
+  onAddSubCategory,
   onSaveRecurringBill,
   onDeleteRecurringBill,
   onOneTapLogRecurringBill,
@@ -65,9 +97,18 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
 }) => {
   const { t } = useTranslation();
   const isEditing = Boolean(entries[0]?.id);
+  const editingId = entries[0]?.id || null;
   const currentSubTab: TransactionPageSubTab = isEditing ? 'new' : activeSubTab;
   const showRecurringTab =
     !isEditing && (dueRecurringCount > 0 || currentSubTab === 'recurring');
+  const [showLegacyTitleInput, setShowLegacyTitleInput] = useState(false);
+  const [activePicker, setActivePicker] = useState<ActivePickerState | null>(null);
+
+  useEffect(() => {
+    setShowLegacyTitleInput(Boolean(editingId && entries[0]?.title.trim()));
+    // Only evaluate when entering edit mode for a specific transaction ID
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId]);
 
   const handleEntryChange = <K extends keyof TransactionDraft>(
     index: number,
@@ -183,9 +224,13 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
           incomeCategories={incomeCategories}
           expenseSubCategories={expenseSubCategories}
           allAccountOptions={allAccountOptions}
+          wallets={wallets}
+          savingsList={savingsList}
           categoryStyles={categoryStyles}
           currency={currency}
           isReadOnly={isReadOnly}
+          onAddListItem={onAddListItem}
+          onAddSubCategory={onAddSubCategory}
           onSaveBill={onSaveRecurringBill}
           onDeleteBill={onDeleteRecurringBill}
           onOneTapLog={onOneTapLogRecurringBill}
@@ -194,14 +239,14 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
       ) : (
         <form onSubmit={onSubmit} className="space-y-4">
         {entries.map((entry, index) => {
-          const currentCategories =
-            entry.type === 'expense' ? expenseCategories : incomeCategories;
           const showCategoryAndSub = entry.type === 'expense' || entry.type === 'income';
-          const availableSubCategories =
-            entry.type === 'expense' ? expenseSubCategories?.[entry.category] || [] : [];
-          const showSubCategory =
-            entry.type === 'expense' &&
-            (availableSubCategories.length > 0 || Boolean(entry.subCategory));
+          const showSubCategory = entry.type === 'expense';
+          const getAccountStyle = (accountName: string) =>
+            getCategoryStyle(
+              categoryStyles,
+              savingsList.includes(accountName) ? 'sav' : 'wal',
+              accountName
+            );
 
           return (
             <div
@@ -230,7 +275,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
                 <div
                   role="tablist"
                   aria-label={t.txForm.typeLabel}
-                  className="flex w-full items-center gap-1 overflow-x-auto no-scrollbar rounded-xl bg-slate-100 p-1 dark:bg-slate-800"
+                  className="flex w-full items-center gap-1 overflow-x-auto no-scrollbar rounded-xl border border-slate-200 bg-slate-50/70 p-1 dark:border-slate-800 dark:bg-slate-950/60"
                 >
                   {(['expense', 'income', 'transfer', 'lend', 'borrow'] as const).map((txType) => {
                     const active = entry.type === txType;
@@ -253,7 +298,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
                         onClick={() => handleEntryChange(index, 'type', txType)}
                         className={`min-h-[38px] min-w-fit flex-1 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs font-bold transition-colors ${
                           active
-                            ? 'bg-white text-[#16845B] shadow-xs dark:bg-slate-900 dark:text-emerald-400'
+                            ? 'bg-white text-[#16845B] shadow-xs ring-1 ring-slate-200/80 dark:bg-slate-900 dark:text-emerald-400 dark:ring-slate-700'
                             : 'text-slate-600 hover:text-[#102A43] dark:text-slate-400 dark:hover:text-slate-200'
                         }`}
                       >
@@ -263,7 +308,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
                   })}
                 </div>
 
-                {/* Row 2 & Row 3: Date + Category on same line, then Sub-Category + Wallet */}
+                {/* Row 2 & Row 3: Date + Drawer Pickers */}
                 {entry.type === 'transfer' ? (
                   <div className="mt-3 space-y-2">
                     <input
@@ -271,39 +316,51 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
                       aria-label={t.txForm.dateLabel}
                       value={entry.date}
                       onChange={(e) => handleEntryChange(index, 'date', e.target.value)}
-                      className="min-h-[36px] w-full rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-[#102A43] transition-colors focus:bg-slate-200/70 focus:outline-none sm:w-auto dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-700"
+                      className="min-h-[44px] w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-1.5 text-xs font-bold text-[#102A43] transition-colors hover:border-slate-300 focus:border-[#16845B] focus:bg-white focus:outline-none sm:w-auto dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100 dark:hover:border-slate-700 dark:focus:border-emerald-400 dark:focus:bg-slate-900"
                     />
                     <div className="flex items-center gap-2">
-                      <select
+                      <button
+                        type="button"
                         aria-label={t.txForm.fromAccount}
-                        value={entry.fromWallet}
-                        onChange={(e) => handleEntryChange(index, 'fromWallet', e.target.value)}
-                        className="min-h-[36px] min-w-0 flex-1 truncate rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-[#102A43] transition-colors focus:bg-slate-200/70 focus:outline-none dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-700"
+                        onClick={() => setActivePicker({ entryIndex: index, field: 'fromWallet' })}
+                        className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
                       >
-                        {allAccountOptions.map((acc) => (
-                          <option key={acc} value={acc}>
-                            {acc}
-                          </option>
-                        ))}
-                      </select>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <CategoryIconBadge
+                            style={getAccountStyle(entry.fromWallet)}
+                            size="sm"
+                          />
+                          <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                            {entry.fromWallet}
+                          </span>
+                        </span>
+                        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      </button>
+
                       <span
                         aria-hidden="true"
                         className="shrink-0 text-xs font-semibold text-slate-400 dark:text-slate-500"
                       >
                         →
                       </span>
-                      <select
+
+                      <button
+                        type="button"
                         aria-label={t.txForm.toAccount}
-                        value={entry.toWallet}
-                        onChange={(e) => handleEntryChange(index, 'toWallet', e.target.value)}
-                        className="min-h-[36px] min-w-0 flex-1 truncate rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-[#102A43] transition-colors focus:bg-slate-200/70 focus:outline-none dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-700"
+                        onClick={() => setActivePicker({ entryIndex: index, field: 'toWallet' })}
+                        className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
                       >
-                        {allAccountOptions.map((acc) => (
-                          <option key={acc} value={acc}>
-                            {acc}
-                          </option>
-                        ))}
-                      </select>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <CategoryIconBadge
+                            style={getAccountStyle(entry.toWallet)}
+                            size="sm"
+                          />
+                          <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                            {entry.toWallet}
+                          </span>
+                        </span>
+                        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -315,86 +372,104 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
                         aria-label={t.txForm.dateLabel}
                         value={entry.date}
                         onChange={(e) => handleEntryChange(index, 'date', e.target.value)}
-                        className="min-h-[36px] shrink-0 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-[#102A43] transition-colors focus:bg-slate-200/70 focus:outline-none dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-700"
+                        className="min-h-[44px] shrink-0 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-xs font-bold text-[#102A43] transition-colors hover:border-slate-300 focus:border-[#16845B] focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100 dark:hover:border-slate-700 dark:focus:border-emerald-400 dark:focus:bg-slate-900"
                       />
 
                       {showCategoryAndSub ? (
-                        <div className="flex min-h-[36px] min-w-0 flex-1 items-center gap-1.5 rounded-lg bg-slate-100 pl-1.5 pr-1 dark:bg-slate-800">
-                          <CategoryIconBadge
-                            style={getCategoryStyle(
-                              categoryStyles,
-                              entry.type === 'income' ? 'inc' : 'exp',
-                              entry.category
-                            )}
-                            size="sm"
-                          />
-                          <select
-                            aria-label={t.common.category}
-                            value={entry.category}
-                            onChange={(e) => handleEntryChange(index, 'category', e.target.value)}
-                            className="min-h-[34px] min-w-0 flex-1 truncate bg-transparent pr-1.5 text-xs font-medium text-[#102A43] focus:outline-none dark:text-slate-200"
-                          >
-                            {currentCategories.map((cat) => (
-                              <option key={cat} value={cat}>
-                                {cat}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      ) : (
-                        <select
-                          aria-label={t.txForm.walletAccount}
-                          value={entry.wallet}
-                          onChange={(e) => handleEntryChange(index, 'wallet', e.target.value)}
-                          className="min-h-[36px] min-w-0 flex-1 truncate rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-[#102A43] transition-colors focus:bg-slate-200/70 focus:outline-none dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-700"
+                        <button
+                          type="button"
+                          aria-label={t.common.category}
+                          onClick={() => setActivePicker({ entryIndex: index, field: 'category' })}
+                          className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
                         >
-                          {allAccountOptions.map((acc) => (
-                            <option key={acc} value={acc}>
-                              {acc}
-                            </option>
-                          ))}
-                        </select>
+                          <span className="flex min-w-0 items-center gap-2">
+                            <CategoryIconBadge
+                              style={
+                                entry.type === 'income'
+                                  ? getCategoryStyle(categoryStyles, 'inc', entry.category)
+                                  : getCategoryStyle(categoryStyles, 'exp', entry.category)
+                              }
+                              size="sm"
+                            />
+                            <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                              {entry.category}
+                            </span>
+                          </span>
+                          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          aria-label={t.txForm.walletAccount}
+                          onClick={() => setActivePicker({ entryIndex: index, field: 'wallet' })}
+                          className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <CategoryIconBadge
+                              style={getAccountStyle(entry.wallet)}
+                              size="sm"
+                            />
+                            <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                              {entry.wallet}
+                            </span>
+                          </span>
+                          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        </button>
                       )}
                     </div>
 
-                    {/* Following line: Sub-Category (if available) + Wallet */}
+                    {/* Following line: Sub-Category (Expense) + Wallet */}
                     {showCategoryAndSub && (
                       <div className="flex items-center gap-2">
                         {showSubCategory && (
-                          <select
+                          <button
+                            type="button"
                             aria-label={t.txForm.subCategoryLabel}
-                            value={entry.subCategory}
-                            onChange={(e) =>
-                              handleEntryChange(index, 'subCategory', e.target.value)
+                            onClick={() =>
+                              setActivePicker({ entryIndex: index, field: 'subCategory' })
                             }
-                            className="min-h-[36px] min-w-0 flex-1 truncate rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-[#102A43] transition-colors focus:bg-slate-200/70 focus:outline-none dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-700"
+                            className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
                           >
-                            <option value="">{t.txForm.subCategoryOptional}</option>
-                            {Array.from(
-                              new Set([
-                                ...availableSubCategories,
-                                ...(entry.subCategory ? [entry.subCategory] : []),
-                              ])
-                            ).map((sub) => (
-                              <option key={sub} value={sub}>
-                                {sub}
-                              </option>
-                            ))}
-                          </select>
+                            <span className="flex min-w-0 items-center gap-2">
+                              <CategoryIconBadge
+                                style={getExpenseOrSubCategoryStyle(
+                                  categoryStyles,
+                                  entry.category,
+                                  entry.subCategory
+                                )}
+                                size="sm"
+                              />
+                              <span
+                                className={`truncate text-xs ${
+                                  entry.subCategory
+                                    ? 'font-bold text-[#102A43] dark:text-slate-100'
+                                    : 'font-semibold text-slate-500 dark:text-slate-400'
+                                }`}
+                              >
+                                {entry.subCategory || t.txForm.subCategoryChipPlaceholder}
+                              </span>
+                            </span>
+                            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                          </button>
                         )}
 
-                        <select
+                        <button
+                          type="button"
                           aria-label={t.txForm.walletAccount}
-                          value={entry.wallet}
-                          onChange={(e) => handleEntryChange(index, 'wallet', e.target.value)}
-                          className="min-h-[36px] min-w-0 flex-1 truncate rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-[#102A43] transition-colors focus:bg-slate-200/70 focus:outline-none dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-700"
+                          onClick={() => setActivePicker({ entryIndex: index, field: 'wallet' })}
+                          className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
                         >
-                          {allAccountOptions.map((acc) => (
-                            <option key={acc} value={acc}>
-                              {acc}
-                            </option>
-                          ))}
-                        </select>
+                          <span className="flex min-w-0 items-center gap-2">
+                            <CategoryIconBadge
+                              style={getAccountStyle(entry.wallet)}
+                              size="sm"
+                            />
+                            <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                              {entry.wallet}
+                            </span>
+                          </span>
+                          <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        </button>
                       </div>
                     )}
                   </div>
@@ -459,6 +534,34 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
                   </div>
                 )}
 
+                {isEditing && showLegacyTitleInput && (
+                  <div className="flex items-center gap-2 px-5 py-2 transition-colors focus-within:bg-emerald-50/40 dark:focus-within:bg-emerald-950/20">
+                    <span className="shrink-0 text-xs font-semibold text-slate-400 dark:text-slate-500">
+                      {t.txForm.titleLabel}
+                    </span>
+                    <input
+                      type="text"
+                      maxLength={200}
+                      aria-label={t.txForm.titleLabel}
+                      placeholder={t.txForm.titleLabel}
+                      value={entry.title}
+                      onChange={(e) => handleEntryChange(index, 'title', e.target.value)}
+                      className="min-w-0 flex-1 bg-transparent py-1.5 text-sm font-semibold text-[#102A43] placeholder:font-normal placeholder:text-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
+                    />
+                    {entry.title.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => handleEntryChange(index, 'title', '')}
+                        aria-label={t.common.remove}
+                        title={t.common.remove}
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                )}
+
                 <div className="px-5 py-2 transition-colors focus-within:bg-emerald-50/40 dark:focus-within:bg-emerald-950/20">
                   <input
                     type="text"
@@ -500,6 +603,86 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
         </button>
       </form>
       )}
+
+      {activePicker && entries[activePicker.entryIndex] && (() => {
+        const pickerEntry = entries[activePicker.entryIndex];
+        const pickerMode: TransactionPickerMode =
+          activePicker.field === 'category'
+            ? pickerEntry.type === 'income'
+              ? 'inc_cat'
+              : 'exp_cat'
+            : activePicker.field === 'subCategory'
+            ? 'sub_cat'
+            : 'account';
+
+        const pickerTitle =
+          pickerMode === 'exp_cat'
+            ? t.txForm.drawerChooseExpCategory
+            : pickerMode === 'inc_cat'
+            ? t.txForm.drawerChooseIncCategory
+            : pickerMode === 'sub_cat'
+            ? `${t.txForm.drawerChooseSubCategory} · ${pickerEntry.category}`
+            : activePicker.field === 'fromWallet'
+            ? t.txForm.drawerChooseFromAccount
+            : activePicker.field === 'toWallet'
+            ? t.txForm.drawerChooseToAccount
+            : t.txForm.drawerChooseAccount;
+
+        const selectedValue =
+          activePicker.field === 'category'
+            ? pickerEntry.category
+            : activePicker.field === 'subCategory'
+            ? pickerEntry.subCategory
+            : activePicker.field === 'fromWallet'
+            ? pickerEntry.fromWallet
+            : activePicker.field === 'toWallet'
+            ? pickerEntry.toWallet
+            : pickerEntry.wallet;
+
+        const pickerSubs = Array.from(
+          new Set([
+            ...(expenseSubCategories?.[pickerEntry.category] || []),
+            ...(pickerEntry.subCategory ? [pickerEntry.subCategory] : []),
+          ])
+        );
+
+        const handleCreateFromDrawer = async (
+          kind: AddableItemKind,
+          name: string,
+          parentCat?: string,
+          style?: CategoryStyle
+        ): Promise<boolean> => {
+          if (kind === 'sub_cat') {
+            if (!onAddSubCategory || !parentCat) return false;
+            return onAddSubCategory(parentCat, name, style);
+          }
+          if (!onAddListItem) return false;
+          return onAddListItem(kind, name, style);
+        };
+
+        return (
+          <TransactionPickerDrawer
+            open={true}
+            mode={pickerMode}
+            title={pickerTitle}
+            selectedValue={selectedValue}
+            parentCategory={pickerEntry.category}
+            expenseCategories={expenseCategories}
+            incomeCategories={incomeCategories}
+            subCategories={pickerSubs}
+            wallets={wallets}
+            savingsList={savingsList}
+            allAccountOptions={allAccountOptions}
+            categoryStyles={categoryStyles}
+            isReadOnly={isReadOnly}
+            onSelect={(val) =>
+              handleEntryChange(activePicker.entryIndex, activePicker.field, val)
+            }
+            onCreateItem={handleCreateFromDrawer}
+            onClose={() => setActivePicker(null)}
+          />
+        );
+      })()}
     </div>
   );
 };
