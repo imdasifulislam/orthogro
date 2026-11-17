@@ -1530,7 +1530,7 @@ function OrthoGroApp() {
 
   useEffect(() => {
     if (!showAddLaunchCue) return;
-    const timer = window.setTimeout(() => setShowAddLaunchCue(false), 1200);
+    const timer = window.setTimeout(() => setShowAddLaunchCue(false), 3300);
     return () => window.clearTimeout(timer);
   }, [showAddLaunchCue]);
   const hasOpenOverlay = Boolean(

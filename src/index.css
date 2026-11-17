@@ -61,26 +61,30 @@ input[type='number'] {
 }
 
 .animate-pie-sweep {
-  animation: pieSweepReveal 680ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: pieSweepReveal 950ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 .animate-pie-center {
-  animation: pieCenterPop 440ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: pieCenterPop 520ms cubic-bezier(0.16, 1, 0.3, 1) 100ms both;
 }
 
 .animate-share-bar {
   transform-origin: left center;
-  animation: shareBarGrow 560ms cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: shareBarGrow 760ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 @keyframes addBtnLaunchPop {
   0% {
-    opacity: 0.7;
-    transform: scale(0.76) rotate(-45deg);
-  }
-  62% {
     opacity: 1;
-    transform: scale(1.1) rotate(6deg);
+    transform: scale(1) rotate(0deg);
+  }
+  22% {
+    opacity: 0.92;
+    transform: scale(0.84) rotate(-20deg);
+  }
+  68% {
+    opacity: 1;
+    transform: scale(1.14) rotate(8deg);
   }
   100% {
     opacity: 1;
@@ -90,32 +94,37 @@ input[type='number'] {
 
 @keyframes addBtnLaunchRipple {
   0% {
-    opacity: 0.55;
+    opacity: 0.65;
     transform: scale(0.92);
   }
   100% {
     opacity: 0;
-    transform: scale(1.68);
+    transform: scale(1.78);
   }
 }
 
 .animate-add-launch {
-  animation: addBtnLaunchPop 580ms cubic-bezier(0.16, 1, 0.3, 1) 160ms both;
+  animation: addBtnLaunchPop 760ms cubic-bezier(0.16, 1, 0.3, 1) 1920ms both;
 }
 
 .animate-add-ripple {
-  animation: addBtnLaunchRipple 760ms cubic-bezier(0.16, 1, 0.3, 1) 220ms both;
+  opacity: 0;
+  animation: addBtnLaunchRipple 920ms cubic-bezier(0.16, 1, 0.3, 1) 1980ms forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-pie-sweep,
   .animate-pie-center,
   .animate-share-bar,
-  .animate-add-launch,
-  .animate-add-ripple {
+  .animate-add-launch {
     animation: none !important;
     transform: none !important;
     opacity: 1 !important;
     stroke-dashoffset: 0 !important;
+  }
+
+  .animate-add-ripple {
+    animation: none !important;
+    opacity: 0 !important;
   }
 }
