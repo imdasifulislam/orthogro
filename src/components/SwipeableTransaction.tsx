@@ -1,5 +1,5 @@
-import React, { useRef, useState } from 'react';
-import { Banknote, CheckCircle2, Pencil, Trash2 } from 'lucide-react';
+import React, { useEffect, useRef } from 'react';
+import { Banknote, CheckCircle2, History, Pencil, Trash2 } from 'lucide-react';
 import { useTranslation } from '../i18n';
 import type { CategoryStyle, CurrencySymbol, Transaction } from '../types';
 import { CategoryIconBadge, getCategoryStyle } from '../utils/categoryVisuals';
@@ -10,80 +10,88 @@ interface SwipeableTransactionProps {
   tx: Transaction;
   currency: CurrencySymbol;
   categoryStyles?: Record<string, CategoryStyle>;
+  isOpen: boolean;
+  onToggleOpen: (id: string | null) => void;
   onDelete: (id: string) => void;
   onEdit: (tx: Transaction) => void;
   onResolveDebt: (tx: Transaction) => void;
   onInspectDebt?: (tx: Transaction) => void;
-  onRowSwipeClaim?: () => void;
+  isSwipeBlocked?: () => boolean;
 }
 
 export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
   tx,
   currency,
   categoryStyles,
+  isOpen,
+  onToggleOpen,
   onDelete,
   onEdit,
   onResolveDebt,
   onInspectDebt,
-  onRowSwipeClaim,
+  isSwipeBlocked,
 }) => {
   const { t } = useTranslation();
-  const [offsetX, setOffsetX] = useState(0);
-  const [isSwiped, setIsSwiped] = useState(false);
-  const startXRef = useRef(0);
-  const startYRef = useRef(0);
-  const axisRef = useRef<'x' | 'y' | null>(null);
-  const claimedRef = useRef(false);
-  const draggingRef = useRef(false);
+  const pressTimerRef = useRef<number | null>(null);
+  const pressOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const didLongPressRef = useRef(false);
 
-  const handleStart = (clientX: number, clientY: number) => {
-    startXRef.current = clientX;
-    startYRef.current = clientY;
-    axisRef.current = null;
-    claimedRef.current = false;
-    draggingRef.current = true;
+  const isDebt = tx.type === 'lend' || tx.type === 'borrow';
+  const isSystemTx =
+    tx.type === 'partial_payment' ||
+    tx.type === 'correction' ||
+    tx.type === 'adjustment';
+  const canEdit = !isSystemTx;
+  const hasInspectDebt = isDebt && Boolean(onInspectDebt);
+  const revealWidth = hasInspectDebt && canEdit ? 144 : canEdit ? 112 : 56;
+  const trayWidthClass = hasInspectDebt && canEdit ? 'w-36' : canEdit ? 'w-28' : 'w-14';
+  const dueAmount = tx.remainingBalance !== undefined ? tx.remainingBalance : tx.amount;
+
+  const clearPressTimer = () => {
+    if (pressTimerRef.current !== null) {
+      window.clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    pressOriginRef.current = null;
   };
 
-  const handleMove = (
-    clientX: number,
-    clientY: number,
-    stopPropagation: () => void
-  ) => {
-    if (!draggingRef.current) return;
-    const diffX = clientX - startXRef.current;
-    const diffY = clientY - startYRef.current;
+  useEffect(() => clearPressTimer, []);
 
-    if (!axisRef.current && (Math.abs(diffX) > 7 || Math.abs(diffY) > 7)) {
-      axisRef.current = Math.abs(diffX) > Math.abs(diffY) ? 'x' : 'y';
-    }
-    if (axisRef.current !== 'x') return;
+  const toggleTray = () => {
+    onToggleOpen(isOpen ? null : tx.id);
+  };
 
-    if ((!isSwiped && diffX < -5) || (isSwiped && diffX > 5)) {
-      if (!claimedRef.current) {
-        claimedRef.current = true;
-        onRowSwipeClaim?.();
+  const startLongPress = (clientX: number, clientY: number) => {
+    clearPressTimer();
+    didLongPressRef.current = false;
+    pressOriginRef.current = { x: clientX, y: clientY };
+    pressTimerRef.current = window.setTimeout(() => {
+      pressTimerRef.current = null;
+      pressOriginRef.current = null;
+      if (isSwipeBlocked?.()) return;
+      didLongPressRef.current = true;
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(12);
       }
-      stopPropagation();
-      if (diffX < -5 && diffX > -130) {
-        setOffsetX(diffX);
-      } else if (diffX > 5 && isSwiped) {
-        setOffsetX(0);
-        setIsSwiped(false);
-      }
+      toggleTray();
+    }, 420);
+  };
+
+  const moveLongPress = (clientX: number, clientY: number) => {
+    if (pressTimerRef.current === null || !pressOriginRef.current) return;
+    const dx = clientX - pressOriginRef.current.x;
+    const dy = clientY - pressOriginRef.current.y;
+    if (Math.hypot(dx, dy) > 8) {
+      clearPressTimer();
     }
   };
 
-  const handleEnd = () => {
-    if (!draggingRef.current) return;
-    draggingRef.current = false;
-    axisRef.current = null;
-    claimedRef.current = false;
-    if (offsetX < -55) {
-      setIsSwiped(true);
-      setOffsetX(-112);
-    } else {
-      setIsSwiped(false);
-      setOffsetX(0);
+  const endLongPress = () => {
+    clearPressTimer();
+    if (didLongPressRef.current) {
+      window.setTimeout(() => {
+        didLongPressRef.current = false;
+      }, 120);
     }
   };
 
@@ -97,7 +105,7 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
   };
 
   const amountPrefix = () => {
-    if (tx.resolved && (tx.type === 'lend' || tx.type === 'borrow')) {
+    if (tx.resolved && isDebt) {
       return `${t.txItem.settledPrefix} `;
     }
     if (tx.type === 'income' || tx.type === 'borrow') return '+';
@@ -106,9 +114,6 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
     if (tx.type === 'transfer') return '⇄ ';
     return tx.amount >= 0 ? '+' : '';
   };
-
-  const isDebt = tx.type === 'lend' || tx.type === 'borrow';
-  const dueAmount = tx.remainingBalance !== undefined ? tx.remainingBalance : tx.amount;
 
   const hierarchy = getTransactionHierarchy(tx, {
     expense: t.common.expense,
@@ -202,13 +207,33 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800">
-      {/* Swipe revealed actions */}
-      <div className="absolute inset-y-0 right-0 flex w-28 bg-slate-100 dark:bg-slate-800">
+      {/* Revealed action tray (slide style) */}
+      <div
+        className={`absolute inset-y-0 right-0 flex ${trayWidthClass} bg-slate-100 dark:bg-slate-800`}
+      >
+        {hasInspectDebt && (
+          <button
+            type="button"
+            onTouchStart={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleOpen(null);
+              onInspectDebt?.(tx);
+            }}
+            aria-label={t.txItem.viewHistoryAction}
+            className="flex flex-1 items-center justify-center text-sky-600 transition-colors hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/50"
+          >
+            <History className="h-4 w-4" />
+          </button>
+        )}
         <button
           type="button"
-          onClick={() => {
-            setIsSwiped(false);
-            setOffsetX(0);
+          onTouchStart={(e) => e.stopPropagation()}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleOpen(null);
             onDelete(tx.id);
           }}
           aria-label={t.txItem.deleteAria}
@@ -216,49 +241,68 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
         >
           <Trash2 className="h-4 w-4" />
         </button>
-        <button
-          type="button"
-          onClick={() => {
-            setIsSwiped(false);
-            setOffsetX(0);
-            onEdit(tx);
-          }}
-          aria-label={t.txItem.editAria}
-          className="flex flex-1 items-center justify-center text-slate-600 transition-colors hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700"
-        >
-          <Pencil className="h-4 w-4" />
-        </button>
+        {canEdit && (
+          <button
+            type="button"
+            onTouchStart={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleOpen(null);
+              onEdit(tx);
+            }}
+            aria-label={t.txItem.editAria}
+            className="flex flex-1 items-center justify-center text-slate-600 transition-colors hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700"
+          >
+            <Pencil className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       {/* Foreground card */}
       <div
-        onTouchStart={(e) => handleStart(e.touches[0].clientX, e.touches[0].clientY)}
-        onTouchMove={(e) =>
-          handleMove(e.touches[0].clientX, e.touches[0].clientY, () => e.stopPropagation())
-        }
-        onTouchEnd={handleEnd}
-        onTouchCancel={handleEnd}
+        role="button"
+        tabIndex={0}
+        onTouchStart={(e) => startLongPress(e.touches[0].clientX, e.touches[0].clientY)}
+        onTouchMove={(e) => moveLongPress(e.touches[0].clientX, e.touches[0].clientY)}
+        onTouchEnd={endLongPress}
+        onTouchCancel={endLongPress}
         onMouseDown={(e) => {
-          if (e.button === 0) handleStart(e.clientX, e.clientY);
+          if (e.button === 0) startLongPress(e.clientX, e.clientY);
         }}
         onMouseMove={(e) => {
-          if (e.buttons === 1) handleMove(e.clientX, e.clientY, () => e.stopPropagation());
+          if (e.buttons === 1) moveLongPress(e.clientX, e.clientY);
         }}
-        onMouseUp={handleEnd}
-        onMouseLeave={handleEnd}
+        onMouseUp={endLongPress}
+        onMouseLeave={endLongPress}
+        onContextMenu={(e) => e.preventDefault()}
+        onClick={() => {
+          if (didLongPressRef.current || isSwipeBlocked?.()) return;
+          toggleTray();
+        }}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            toggleTray();
+          }
+        }}
         style={{
-          transform: `translateX(${isSwiped ? -112 : offsetX < 0 ? offsetX : 0}px)`,
+          transform: `translateX(${isOpen ? -revealWidth : 0}px)`,
         }}
-        className={`relative z-10 flex items-center justify-between gap-3 bg-white px-4 py-3.5 select-none dark:bg-slate-900 ${
-          isSwiped || offsetX === 0 ? 'transition-transform duration-200 ease-out' : ''
-        }`}
+        className="relative z-10 flex cursor-pointer items-center justify-between gap-3 bg-white px-4 py-3.5 transition-transform duration-200 ease-out select-none hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800"
       >
         <div className="flex min-w-0 flex-1 items-start gap-3">
           {isDebt ? (
             <button
               type="button"
+              onTouchStart={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
+                if (isOpen) {
+                  onToggleOpen(null);
+                  return;
+                }
                 onResolveDebt(tx);
               }}
               title={tx.resolved ? t.txItem.settledTitle : t.txItem.recordPaymentTitle}
@@ -274,7 +318,7 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
                 <Banknote className="h-4 w-4" />
               )}
             </button>
-          ) : (tx.type === 'expense' || tx.type === 'income') ? (
+          ) : tx.type === 'expense' || tx.type === 'income' ? (
             <CategoryIconBadge
               style={getCategoryStyle(
                 categoryStyles,
@@ -286,14 +330,7 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
             />
           ) : null}
 
-          <div
-            className={`min-w-0 flex-1 ${isDebt && onInspectDebt ? 'cursor-pointer' : ''}`}
-            onClick={() => {
-              if (isDebt && onInspectDebt && !isSwiped) {
-                onInspectDebt(tx);
-              }
-            }}
-          >
+          <div className="min-w-0 flex-1">
             <h4 className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
               {hierarchy.mainTitle}
             </h4>
@@ -309,26 +346,38 @@ export const SwipeableTransaction: React.FC<SwipeableTransactionProps> = ({
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          <div className={`font-mono-num text-right text-sm font-bold sm:text-base ${amountColorClass()}`}>
+          <div
+            className={`font-mono-num text-right text-sm font-bold sm:text-base ${amountColorClass()}`}
+          >
             {amountPrefix()}
             {formatMoney(Math.abs(tx.amount), currency)}
           </div>
 
-          {/* Desktop / accessible action buttons */}
-          <div className="hidden items-center gap-1 sm:flex">
+          {/* Desktop quick action buttons */}
+          <div
+            className={`hidden items-center gap-1 transition-opacity sm:flex ${
+              isOpen ? 'pointer-events-none opacity-0' : ''
+            }`}
+          >
+            {canEdit && (
+              <button
+                type="button"
+                onTouchStart={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onEdit(tx);
+                }}
+                aria-label={t.txItem.editAria}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            )}
             <button
               type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit(tx);
-              }}
-              aria-label={t.txItem.editAria}
-              className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-            >
-              <Pencil className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
+              onTouchStart={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {
                 e.stopPropagation();
                 onDelete(tx.id);

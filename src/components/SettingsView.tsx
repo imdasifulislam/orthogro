@@ -23,6 +23,7 @@ import {
   Repeat,
   RotateCcw,
   ShoppingBag,
+  Sparkles,
   Sun,
   SunMoon,
   Target,
@@ -617,6 +618,142 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     );
   }
 
+  if (settingsView === 'pro_features') {
+    return (
+      <div className="mx-auto max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <button
+          type="button"
+          onClick={() => setSettingsView('menu')}
+          className="mb-4 inline-flex items-center gap-1.5 text-sm font-bold text-[#16845B] hover:underline dark:text-emerald-400"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          {t.settings.backToSettings}
+        </button>
+
+        <div className="mb-4 flex items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600 dark:bg-violet-950/60 dark:text-violet-400">
+            <Sparkles className="h-[18px] w-[18px]" />
+          </div>
+          <div>
+            <h2 className="text-base font-bold text-[#102A43] dark:text-slate-100">
+              {t.settings.proFeatures}
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              {t.settings.proFeaturesDesc}
+            </p>
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          {!isReadOnlyPartner && (
+            <>
+              {/* Monthly Budget Goals */}
+              <button
+                type="button"
+                onClick={onOpenBudgetGoals}
+                className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
+                    <Target className="h-[18px] w-[18px]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-[#102A43] dark:text-slate-100">
+                      {t.settings.monthlyBudgetGoals}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      {budgetGoalsCount}{' '}
+                      {budgetGoalsCount === 1 ? t.common.categorySingular : t.common.categories}{' '}
+                      {t.settings.tracked}
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+              </button>
+
+              {/* Saving Goals */}
+              <button
+                type="button"
+                onClick={onOpenSavingGoals}
+                className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400">
+                    <PiggyBank className="h-[18px] w-[18px]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-[#102A43] dark:text-slate-100">
+                      {t.settings.savingGoals}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      {savingGoalsCount}{' '}
+                      {savingGoalsCount === 1 ? t.settings.goalSingular : t.settings.goalsPlural}{' '}
+                      {t.settings.tracked}
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+              </button>
+
+              {/* Recurring Bills */}
+              <button
+                type="button"
+                onClick={onOpenRecurringBills}
+                className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400">
+                    <Repeat className="h-[18px] w-[18px]" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-[#102A43] dark:text-slate-100">
+                      {t.settings.recurringBills}
+                    </div>
+                    <div className="text-xs text-slate-500 dark:text-slate-400">
+                      {recurringBillsCount}{' '}
+                      {recurringBillsCount === 1
+                        ? t.settings.billSingular
+                        : t.settings.billsPlural}{' '}
+                      {t.settings.tracked}
+                      {dueRecurringCount > 0 && (
+                        <span className="ml-1.5 font-bold text-amber-600 dark:text-amber-400">
+                          · {dueRecurringCount} {t.settings.recurringDueSuffix}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+              </button>
+            </>
+          )}
+
+          {/* Tax Year Report (July 1 – June 30) */}
+          <button
+            type="button"
+            onClick={() => setSettingsView('tax_report')}
+            className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800"
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600 dark:bg-teal-950/60 dark:text-teal-400">
+                <FileBarChart2 className="h-[18px] w-[18px]" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-bold text-[#102A43] dark:text-slate-100">
+                  {t.settings.taxYearReport}
+                </div>
+                <div className="truncate text-xs text-slate-500 dark:text-slate-400">
+                  {t.settings.taxYearReportDesc}
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   if (settingsView === 'wallets') {
     return renderReorderableList(
       'wallet',
@@ -661,7 +798,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         savingsList={savingsList}
         categoryStyles={categoryStyles}
         currency={currency}
-        onBack={() => setSettingsView('menu')}
+        onBack={() => setSettingsView('pro_features')}
+        backLabel={t.settings.backToProFeatures}
       />
     );
   }
@@ -863,126 +1001,52 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </div>
 
           {!isReadOnlyPartner && (
-            <>
-              {/* Monthly Budget Goals */}
-              <button
-                type="button"
-                onClick={onOpenBudgetGoals}
-                className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
-                    <Target className="h-[18px] w-[18px]" />
+            /* Parent menu for Wallets, Savings & Categories */
+            <button
+              type="button"
+              onClick={() => setSettingsView('accounts_categories')}
+              className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
+                  <FolderKanban className="h-[18px] w-[18px]" />
+                </div>
+                <div className="min-w-0">
+                  <div className="text-sm font-bold text-[#102A43] dark:text-slate-100">
+                    {t.settings.accountsAndCategories}
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold text-[#102A43] dark:text-slate-100">
-                      {t.settings.monthlyBudgetGoals}
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      {budgetGoalsCount}{' '}
-                      {budgetGoalsCount === 1 ? t.common.categorySingular : t.common.categories}{' '}
-                      {t.settings.tracked}
-                    </div>
+                  <div className="truncate text-xs text-slate-500 dark:text-slate-400">
+                    {t.settings.accountsAndCategoriesDesc}
                   </div>
                 </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-              </button>
-
-              {/* Saving Goals */}
-              <button
-                type="button"
-                onClick={onOpenSavingGoals}
-                className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400">
-                    <PiggyBank className="h-[18px] w-[18px]" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold text-[#102A43] dark:text-slate-100">
-                      {t.settings.savingGoals}
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      {savingGoalsCount}{' '}
-                      {savingGoalsCount === 1 ? t.settings.goalSingular : t.settings.goalsPlural}{' '}
-                      {t.settings.tracked}
-                    </div>
-                  </div>
-                </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-              </button>
-
-              {/* Recurring Bills */}
-              <button
-                type="button"
-                onClick={onOpenRecurringBills}
-                className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-950/60 dark:text-amber-400">
-                    <Repeat className="h-[18px] w-[18px]" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold text-[#102A43] dark:text-slate-100">
-                      {t.settings.recurringBills}
-                    </div>
-                    <div className="text-xs text-slate-500 dark:text-slate-400">
-                      {recurringBillsCount}{' '}
-                      {recurringBillsCount === 1
-                        ? t.settings.billSingular
-                        : t.settings.billsPlural}{' '}
-                      {t.settings.tracked}
-                      {dueRecurringCount > 0 && (
-                        <span className="ml-1.5 font-bold text-amber-600 dark:text-amber-400">
-                          · {dueRecurringCount} {t.settings.recurringDueSuffix}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-              </button>
-
-              {/* Parent menu for Wallets, Savings & Categories */}
-              <button
-                type="button"
-                onClick={() => setSettingsView('accounts_categories')}
-                className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800"
-              >
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-950/60 dark:text-indigo-400">
-                    <FolderKanban className="h-[18px] w-[18px]" />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="text-sm font-bold text-[#102A43] dark:text-slate-100">
-                      {t.settings.accountsAndCategories}
-                    </div>
-                    <div className="truncate text-xs text-slate-500 dark:text-slate-400">
-                      {t.settings.accountsAndCategoriesDesc}
-                    </div>
-                  </div>
-                </div>
-                <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-              </button>
-            </>
+              </div>
+              <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+            </button>
           )}
 
-          {/* Tax Year Report (July 1 – June 30) */}
+          {/* Parent menu for Pro Features (Budget Goals, Saving Goals, Recurring Bills, Tax Report) */}
           <button
             type="button"
-            onClick={() => setSettingsView('tax_report')}
+            onClick={() => setSettingsView('pro_features')}
             className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800"
           >
             <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-teal-50 text-teal-600 dark:bg-teal-950/60 dark:text-teal-400">
-                <FileBarChart2 className="h-[18px] w-[18px]" />
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600 dark:bg-violet-950/60 dark:text-violet-400">
+                <Sparkles className="h-[18px] w-[18px]" />
               </div>
               <div className="min-w-0">
-                <div className="text-sm font-bold text-[#102A43] dark:text-slate-100">
-                  {t.settings.taxYearReport}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-[#102A43] dark:text-slate-100">
+                    {t.settings.proFeatures}
+                  </span>
+                  {!isReadOnlyPartner && dueRecurringCount > 0 && (
+                    <span className="rounded-md bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/70 dark:text-amber-300">
+                      {dueRecurringCount} {t.settings.recurringDueSuffix}
+                    </span>
+                  )}
                 </div>
                 <div className="truncate text-xs text-slate-500 dark:text-slate-400">
-                  {t.settings.taxYearReportDesc}
+                  {t.settings.proFeaturesDesc}
                 </div>
               </div>
             </div>

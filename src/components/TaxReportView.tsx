@@ -29,6 +29,7 @@ interface TaxReportViewProps {
   categoryStyles: Record<string, CategoryStyle>;
   currency: CurrencySymbol;
   onBack: () => void;
+  backLabel?: string;
 }
 
 const INCOME_PALETTE = [
@@ -58,6 +59,7 @@ export const TaxReportView: React.FC<TaxReportViewProps> = ({
   categoryStyles,
   currency,
   onBack,
+  backLabel,
 }) => {
   const { lang, t } = useTranslation();
   const tr = t.taxReport;
@@ -145,7 +147,7 @@ export const TaxReportView: React.FC<TaxReportViewProps> = ({
           className="mb-4 inline-flex items-center gap-1.5 text-sm font-bold text-[#16845B] hover:underline dark:text-emerald-400"
         >
           <ArrowLeft className="h-4 w-4" />
-          {t.settings.backToSettings}
+          {backLabel ?? t.settings.backToSettings}
         </button>
 
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">

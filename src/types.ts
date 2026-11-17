@@ -32,6 +32,7 @@ export type ActiveTab = 'home' | 'memo' | 'transactions' | 'calculator' | 'setti
 export type SettingsView =
   | 'menu'
   | 'accounts_categories'
+  | 'pro_features'
   | 'wallets'
   | 'savings'
   | 'exp_cat'
@@ -244,6 +245,7 @@ export interface ActiveSharedWorkspace {
 
 export type FeatureTipId =
   | 'saving_goals'
+  | 'bazar_memo'
   | 'budget_goals'
   | 'recurring_bills'
   | 'category_breakdown'

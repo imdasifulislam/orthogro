@@ -35,10 +35,10 @@ import {
   getFilterName,
   getPeriodLabel,
   getShiftedCustomRange,
+  getTodayISO,
   parseLocalDate,
 } from '../utils/format';
 import { CategoryPieChart } from './CategoryPieChart';
-import { SlidableCustomBar, SlidableMonthBar, SlidableYearBar } from './SlidableMonthBar';
 import { SwipeableTransaction } from './SwipeableTransaction';
 
 const EXPENSE_CHART_COLORS = [
@@ -69,8 +69,7 @@ function computeCategoryReport(
   customOffset: number,
   customFrom: string,
   customTo: string,
-  lang: AppLanguage,
-  t: Translations
+  lang: AppLanguage
 ) {
   const now = new Date();
   const locale = lang === 'bn' ? 'bn-BD' : 'en-US';
@@ -80,53 +79,32 @@ function computeCategoryReport(
   let totalIncome = 0;
 
   let periodTitle = '';
-  let headerBadge = '';
-  let emptyPeriodLabel = '';
+  let filterButtonLabel = '';
+
+  let filteredTxs: Transaction[] = [];
 
   if (filterMode === 'monthly') {
     const targetDate = new Date(now.getFullYear(), now.getMonth() + monthOffset, 1);
     const targetMonth = targetDate.getMonth();
     const targetYear = targetDate.getFullYear();
 
-    transactions.forEach((tx) => {
-      if (!tx.rawDate) return;
+    filteredTxs = transactions.filter((tx) => {
+      if (!tx.rawDate) return false;
       const d = parseLocalDate(tx.rawDate);
-      if (d.getMonth() !== targetMonth || d.getFullYear() !== targetYear) return;
-
-      if (tx.type === 'expense') {
-        const cat = tx.category || 'Others';
-        expenseByCategory[cat] = (expenseByCategory[cat] || 0) + tx.amount;
-        totalExpense += tx.amount;
-      } else if (tx.type === 'income') {
-        const cat = tx.category || 'Others';
-        incomeByCategory[cat] = (incomeByCategory[cat] || 0) + tx.amount;
-        totalIncome += tx.amount;
-      }
+      return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
     });
 
     periodTitle = targetDate.toLocaleDateString(locale, {
       month: 'long',
       year: 'numeric',
     });
-    headerBadge = getMonthBadgeLabel(monthOffset, periodTitle, t);
-    emptyPeriodLabel = periodTitle;
+    filterButtonLabel = periodTitle;
   } else if (filterMode === 'yearly') {
     const targetYear = now.getFullYear() + yearOffset;
 
-    transactions.forEach((tx) => {
-      if (!tx.rawDate) return;
-      const d = parseLocalDate(tx.rawDate);
-      if (d.getFullYear() !== targetYear) return;
-
-      if (tx.type === 'expense') {
-        const cat = tx.category || 'Others';
-        expenseByCategory[cat] = (expenseByCategory[cat] || 0) + tx.amount;
-        totalExpense += tx.amount;
-      } else if (tx.type === 'income') {
-        const cat = tx.category || 'Others';
-        incomeByCategory[cat] = (incomeByCategory[cat] || 0) + tx.amount;
-        totalIncome += tx.amount;
-      }
+    filteredTxs = transactions.filter((tx) => {
+      if (!tx.rawDate) return false;
+      return parseLocalDate(tx.rawDate).getFullYear() === targetYear;
     });
 
     const yearDisplay = new Date(targetYear, 0, 1).toLocaleDateString(locale, {
@@ -134,57 +112,53 @@ function computeCategoryReport(
     });
     periodTitle =
       lang === 'bn' ? `জানুয়ারি – ডিসেম্বর ${yearDisplay}` : `Jan – Dec ${yearDisplay}`;
-    headerBadge = yearOffset === 0 ? t.common.thisYear : yearDisplay;
-    emptyPeriodLabel = periodTitle;
+    filterButtonLabel = yearDisplay;
   } else if (filterMode === 'custom' && customFrom && customTo) {
     const { from, to } = getShiftedCustomRange(customFrom, customTo, customOffset);
 
-    transactions.forEach((tx) => {
-      if (!tx.rawDate) return;
-      if (tx.rawDate < from || tx.rawDate > to) return;
-
-      if (tx.type === 'expense') {
-        const cat = tx.category || 'Others';
-        expenseByCategory[cat] = (expenseByCategory[cat] || 0) + tx.amount;
-        totalExpense += tx.amount;
-      } else if (tx.type === 'income') {
-        const cat = tx.category || 'Others';
-        incomeByCategory[cat] = (incomeByCategory[cat] || 0) + tx.amount;
-        totalIncome += tx.amount;
-      }
-    });
+    filteredTxs = transactions.filter(
+      (tx) => !tx.rawDate || (tx.rawDate >= from && tx.rawDate <= to)
+    );
 
     periodTitle =
       from === to
         ? formatDisplayDate(from, lang)
         : `${formatDisplayDate(from, lang)} – ${formatDisplayDate(to, lang)}`;
-    headerBadge = formatShortRangeLabel(from, to, lang);
-    emptyPeriodLabel = periodTitle;
+    filterButtonLabel = formatShortRangeLabel(from, to, lang);
   } else {
-    transactions.forEach((tx) => {
-      if (tx.type === 'expense') {
-        const cat = tx.category || 'Others';
-        expenseByCategory[cat] = (expenseByCategory[cat] || 0) + tx.amount;
-        totalExpense += tx.amount;
-      } else if (tx.type === 'income') {
-        const cat = tx.category || 'Others';
-        incomeByCategory[cat] = (incomeByCategory[cat] || 0) + tx.amount;
-        totalIncome += tx.amount;
-      }
-    });
-
-    headerBadge = getFilterName(filterMode, lang);
+    filteredTxs = filterTransactionsByPeriod(transactions, filterMode, customFrom, customTo);
+    filterButtonLabel = getFilterName(filterMode, lang);
     periodTitle = getPeriodLabel(filterMode, customFrom, customTo, lang);
-    emptyPeriodLabel = headerBadge;
+    if (filterMode === 'previous_month') {
+      periodTitle = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString(
+        locale,
+        {
+          month: 'long',
+          year: 'numeric',
+        }
+      );
+      filterButtonLabel = periodTitle;
+    }
   }
+
+  filteredTxs.forEach((tx) => {
+    if (tx.type === 'expense') {
+      const cat = tx.category || 'Others';
+      expenseByCategory[cat] = (expenseByCategory[cat] || 0) + tx.amount;
+      totalExpense += tx.amount;
+    } else if (tx.type === 'income') {
+      const cat = tx.category || 'Others';
+      incomeByCategory[cat] = (incomeByCategory[cat] || 0) + tx.amount;
+      totalIncome += tx.amount;
+    }
+  });
 
   const sortedExpenses = Object.entries(expenseByCategory).sort((a, b) => b[1] - a[1]);
   const sortedIncomes = Object.entries(incomeByCategory).sort((a, b) => b[1] - a[1]);
 
   return {
     periodTitle,
-    headerBadge,
-    emptyPeriodLabel,
+    filterButtonLabel,
     sortedExpenses,
     sortedIncomes,
     totalExpense,
@@ -372,6 +346,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 }) => {
   const { lang, t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
+  const [openTxId, setOpenTxId] = useState<string | null>(null);
   const [goalView, setGoalView] = useState<'budget' | 'saving'>(() =>
     budgetGoals.length === 0 && savingGoals.length > 0 ? 'saving' : 'budget'
   );
@@ -387,12 +362,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [goalSwipeX, setGoalSwipeX] = useState(0);
   const [isSwipingGoal, setIsSwipingGoal] = useState(false);
   const [categoryView, setCategoryView] = useState<'expense' | 'income'>('expense');
+  const [categoryListExpanded, setCategoryListExpanded] = useState(false);
   const [categoryMonthOffset, setCategoryMonthOffset] = useState(0);
   const [categoryYearOffset, setCategoryYearOffset] = useState(0);
   const [categoryCustomOffset, setCategoryCustomOffset] = useState(0);
   const [categorySwipeX, setCategorySwipeX] = useState(0);
   const [isSwipingCategory, setIsSwipingCategory] = useState(false);
   const [pieView, setPieView] = useState<'expense' | 'income'>('expense');
+  const [pieLegendExpanded, setPieLegendExpanded] = useState(false);
   const [pieMonthOffset, setPieMonthOffset] = useState(0);
   const [pieYearOffset, setPieYearOffset] = useState(0);
   const [pieCustomOffset, setPieCustomOffset] = useState(0);
@@ -442,6 +419,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const didPieSwipeRef = useRef(false);
   const didCategorySwipeRef = useRef(false);
   const didIncExpSwipeRef = useRef(false);
+  const didTxSwipeRef = useRef(false);
   const pressTimerRef = useRef<number | null>(null);
   const pressOriginRef = useRef<{ x: number; y: number } | null>(null);
   const isLongPressRef = useRef(false);
@@ -519,13 +497,23 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     setCategoryMonthOffset(0);
     setCategoryYearOffset(0);
     setCategoryCustomOffset(0);
+    setCategoryListExpanded(false);
   }, [filters.categoryReport]);
+
+  useEffect(() => {
+    setCategoryListExpanded(false);
+  }, [categoryView]);
 
   useEffect(() => {
     setPieMonthOffset(0);
     setPieYearOffset(0);
     setPieCustomOffset(0);
+    setPieLegendExpanded(false);
   }, [filters.categoryPieChart]);
+
+  useEffect(() => {
+    setPieLegendExpanded(false);
+  }, [pieView]);
 
   useEffect(() => {
     setActiveExpenseChartCategory(null);
@@ -539,16 +527,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     customDateTo,
   ]);
 
-  const cancelTxSwipe = () => {
-    if (txSwipeRef.current.dragging) {
-      txSwipeRef.current.dragging = false;
-      txSwipeRef.current.axis = null;
-      setIsSwipingTx(false);
-      setTxSwipeX(0);
-    }
-  };
-
   const handleTxSwipeStart = (clientX: number, clientY: number) => {
+    didTxSwipeRef.current = false;
     txSwipeRef.current = {
       startX: clientX,
       startY: clientY,
@@ -569,6 +549,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     }
     if (state.axis !== 'x') return;
 
+    if (Math.abs(dx) > 10) {
+      didTxSwipeRef.current = true;
+      setOpenTxId(null);
+    }
     setTxSwipeX(Math.max(-96, Math.min(96, dx * 0.45)));
   };
 
@@ -587,6 +571,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     }
     state.axis = null;
     setTxSwipeX(0);
+    if (didTxSwipeRef.current) {
+      window.setTimeout(() => {
+        didTxSwipeRef.current = false;
+      }, 120);
+    }
   };
 
   const canSwipeIncExp =
@@ -651,8 +640,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     }
   };
 
+  const canSwipeCategory =
+    filters.categoryReport === 'monthly' ||
+    filters.categoryReport === 'yearly' ||
+    (filters.categoryReport === 'custom' && Boolean(customDateFrom && customDateTo));
+
   const handleCategorySwipeStart = (clientX: number, clientY: number) => {
     didCategorySwipeRef.current = false;
+    if (!canSwipeCategory) return;
     categorySwipeRef.current = {
       startX: clientX,
       startY: clientY,
@@ -677,12 +672,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       didCategorySwipeRef.current = true;
       handlePressEnd();
     }
-
-    if (categoryView === 'expense') {
-      setCategorySwipeX(dx > 0 ? Math.min(24, dx * 0.25) : Math.max(-160, dx));
-    } else {
-      setCategorySwipeX(dx < 0 ? Math.max(-24, dx * 0.25) : Math.min(160, dx));
-    }
+    setCategorySwipeX(Math.max(-96, Math.min(96, dx * 0.45)));
   };
 
   const handleCategorySwipeEnd = () => {
@@ -692,10 +682,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     setIsSwipingCategory(false);
 
     if (state.axis === 'x') {
-      if (categoryView === 'expense' && categorySwipeX < -42) {
-        setCategoryView('income');
-      } else if (categoryView === 'income' && categorySwipeX > 42) {
-        setCategoryView('expense');
+      const step = categorySwipeX > 36 ? -1 : categorySwipeX < -36 ? 1 : 0;
+      if (step !== 0) {
+        if (filters.categoryReport === 'monthly') {
+          setCategoryMonthOffset((prev) => prev + step);
+        } else if (filters.categoryReport === 'yearly') {
+          setCategoryYearOffset((prev) => prev + step);
+        } else if (filters.categoryReport === 'custom') {
+          setCategoryCustomOffset((prev) => prev + step);
+        }
       }
     }
     state.axis = null;
@@ -707,8 +702,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     }
   };
 
+  const canSwipePie =
+    filters.categoryPieChart === 'monthly' ||
+    filters.categoryPieChart === 'yearly' ||
+    (filters.categoryPieChart === 'custom' && Boolean(customDateFrom && customDateTo));
+
   const handlePieSwipeStart = (clientX: number, clientY: number) => {
     didPieSwipeRef.current = false;
+    if (!canSwipePie) return;
     pieSwipeRef.current = {
       startX: clientX,
       startY: clientY,
@@ -733,12 +734,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       didPieSwipeRef.current = true;
       handlePressEnd();
     }
-
-    if (pieView === 'expense') {
-      setPieSwipeX(dx > 0 ? Math.min(24, dx * 0.25) : Math.max(-160, dx));
-    } else {
-      setPieSwipeX(dx < 0 ? Math.max(-24, dx * 0.25) : Math.min(160, dx));
-    }
+    setPieSwipeX(Math.max(-96, Math.min(96, dx * 0.45)));
   };
 
   const handlePieSwipeEnd = () => {
@@ -748,14 +744,17 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     setIsSwipingPie(false);
 
     if (state.axis === 'x') {
-      if (pieView === 'expense' && pieSwipeX < -42) {
-        setPieView('income');
+      const step = pieSwipeX > 36 ? -1 : pieSwipeX < -36 ? 1 : 0;
+      if (step !== 0) {
         setActiveExpenseChartCategory(null);
         setActiveIncomeChartCategory(null);
-      } else if (pieView === 'income' && pieSwipeX > 42) {
-        setPieView('expense');
-        setActiveExpenseChartCategory(null);
-        setActiveIncomeChartCategory(null);
+        if (filters.categoryPieChart === 'monthly') {
+          setPieMonthOffset((prev) => prev + step);
+        } else if (filters.categoryPieChart === 'yearly') {
+          setPieYearOffset((prev) => prev + step);
+        } else if (filters.categoryPieChart === 'custom') {
+          setPieCustomOffset((prev) => prev + step);
+        }
       }
     }
     state.axis = null;
@@ -843,27 +842,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
     const absoluteNetWorth = availableCashBalance + totalSavings + totalLendAll - totalBorrowAll;
 
-    const lbTxs = filterTransactionsByPeriod(
-      transactions,
-      filters.lendBorrow,
-      customDateFrom,
-      customDateTo
-    );
-    let dispLend = 0;
-    let dispBorrow = 0;
-    lbTxs.forEach((t) => {
-      const due = t.remainingBalance !== undefined ? t.remainingBalance : t.amount;
-      if (t.type === 'lend' && !t.resolved) dispLend += due;
-      if (t.type === 'borrow' && !t.resolved) dispBorrow += due;
-    });
-
     return {
       absoluteNetWorth,
       availableCashBalance,
-      dispLend,
-      dispBorrow,
+      dispLend: totalLendAll,
+      dispBorrow: totalBorrowAll,
     };
-  }, [transactions, wallets, savingsList, walletBalances, filters.lendBorrow, customDateFrom, customDateTo]);
+  }, [transactions, wallets, savingsList, walletBalances]);
 
   const incExpSummary = useMemo(() => {
     const now = new Date();
@@ -1027,8 +1012,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         categoryCustomOffset,
         customDateFrom,
         customDateTo,
-        lang,
-        t
+        lang
       ),
     [
       transactions,
@@ -1039,7 +1023,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       customDateFrom,
       customDateTo,
       lang,
-      t,
     ]
   );
 
@@ -1053,8 +1036,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         pieCustomOffset,
         customDateFrom,
         customDateTo,
-        lang,
-        t
+        lang
       ),
     [
       transactions,
@@ -1065,7 +1047,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       customDateFrom,
       customDateTo,
       lang,
-      t,
     ]
   );
 
@@ -1137,45 +1118,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         return (
           <div
             key="netWorth"
-            onClick={() => {
-              if (!isLongPressRef.current) {
-                onOpenDrilldown('netWorth', null, filters.netWorth);
-              }
-            }}
-            onTouchStart={(e) =>
-              handlePressStart('netWorth', e.touches[0].clientX, e.touches[0].clientY)
-            }
-            onTouchMove={(e) => handlePressMove(e.touches[0].clientX, e.touches[0].clientY)}
-            onTouchEnd={handlePressEnd}
-            onTouchCancel={handlePressEnd}
-            onMouseDown={(e) => {
-              if (e.button === 0) handlePressStart('netWorth', e.clientX, e.clientY);
-            }}
-            onMouseMove={(e) => {
-              if (e.buttons === 1) handlePressMove(e.clientX, e.clientY);
-            }}
-            onMouseUp={handlePressEnd}
-            onMouseLeave={handlePressEnd}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              handlePressEnd();
-              onOpenFilterCard('netWorth');
-            }}
+            onClick={() => onOpenDrilldown('netWorth', null, 'all')}
             className="cursor-pointer rounded-3xl bg-[#102A43] p-6 text-white shadow-sm transition-transform active:scale-[0.99] dark:border dark:border-slate-800 dark:bg-slate-900"
           >
-            <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
-              <span>{t.dashboard.netWorth}</span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOpenFilterCard('netWorth');
-                }}
-                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-slate-200 hover:bg-white/10"
-              >
-                <span>{getFilterName(filters.netWorth, lang)}</span>
-                <ChevronDown className="h-3.5 w-3.5" />
-              </button>
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold text-slate-300">{t.dashboard.netWorth}</div>
+              <div className="text-xs font-medium text-slate-400">
+                {formatDisplayDate(getTodayISO(), lang)}
+              </div>
             </div>
             <div className="font-mono-num mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">
               {formatMoney(metrics.absoluteNetWorth, currency)}
@@ -1422,6 +1372,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     <div className="h-full w-full bg-[#D94848]/85 transition-all duration-300" />
                   ) : null}
                 </div>
+
+                {canSwipeIncExp && (
+                  <p className="mt-2.5 text-[11px] text-slate-400 dark:text-slate-500">
+                    {t.dashboard.swipePrevNextPeriod}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -1432,84 +1388,26 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         return (
           <div key="lendBorrow" className="grid grid-cols-2 gap-3">
             <div
-              onClick={() => {
-                if (!isLongPressRef.current) {
-                  onOpenDrilldown('lend', null, filters.lendBorrow);
-                }
-              }}
-              onTouchStart={() => handlePressStart('lendBorrow')}
-              onTouchEnd={handlePressEnd}
-              onMouseDown={() => handlePressStart('lendBorrow')}
-              onMouseUp={handlePressEnd}
-              onMouseLeave={handlePressEnd}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                onOpenFilterCard('lendBorrow');
-              }}
-              className="flex h-full min-h-[82px] cursor-pointer flex-col justify-between rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 shadow-sm transition-transform active:scale-[0.99] dark:border-slate-800 dark:bg-slate-900"
+              onClick={() => onOpenDrilldown('lend', null, 'all')}
+              className="flex h-full cursor-pointer flex-col rounded-2xl border border-slate-200 bg-white px-3.5 py-3 shadow-sm transition-transform active:scale-[0.99] dark:border-slate-800 dark:bg-slate-900"
             >
-              <div className="flex items-center justify-between gap-1">
-                <span className="truncate text-xs font-bold text-blue-700 dark:text-blue-400">
-                  {t.dashboard.lentReceivable}
-                </span>
-                <button
-                  type="button"
-                  aria-label={t.dashboard.lentReceivable}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenFilterCard('lendBorrow');
-                  }}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div className="font-mono-num mt-1 truncate text-base font-extrabold leading-tight text-blue-700 sm:text-lg dark:text-blue-400">
+              <span className="truncate text-xs font-bold text-blue-700 dark:text-blue-400">
+                {t.dashboard.lentReceivable}
+              </span>
+              <div className="font-mono-num mt-1.5 truncate text-base font-extrabold leading-tight text-blue-700 sm:text-lg dark:text-blue-400">
                 {formatMoney(metrics.dispLend, currency)}
-              </div>
-              <div className="mt-0.5 truncate text-[11px] leading-tight text-slate-400 dark:text-slate-500">
-                {getFilterName(filters.lendBorrow, lang)}
               </div>
             </div>
 
             <div
-              onClick={() => {
-                if (!isLongPressRef.current) {
-                  onOpenDrilldown('borrow', null, filters.lendBorrow);
-                }
-              }}
-              onTouchStart={() => handlePressStart('lendBorrow')}
-              onTouchEnd={handlePressEnd}
-              onMouseDown={() => handlePressStart('lendBorrow')}
-              onMouseUp={handlePressEnd}
-              onMouseLeave={handlePressEnd}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                onOpenFilterCard('lendBorrow');
-              }}
-              className="flex h-full min-h-[82px] cursor-pointer flex-col justify-between rounded-2xl border border-slate-200 bg-white px-3.5 py-2.5 shadow-sm transition-transform active:scale-[0.99] dark:border-slate-800 dark:bg-slate-900"
+              onClick={() => onOpenDrilldown('borrow', null, 'all')}
+              className="flex h-full cursor-pointer flex-col rounded-2xl border border-slate-200 bg-white px-3.5 py-3 shadow-sm transition-transform active:scale-[0.99] dark:border-slate-800 dark:bg-slate-900"
             >
-              <div className="flex items-center justify-between gap-1">
-                <span className="truncate text-xs font-bold text-purple-700 dark:text-purple-400">
-                  {t.dashboard.borrowedPayable}
-                </span>
-                <button
-                  type="button"
-                  aria-label={t.dashboard.borrowedPayable}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onOpenFilterCard('lendBorrow');
-                  }}
-                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-                >
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </button>
-              </div>
-              <div className="font-mono-num mt-1 truncate text-base font-extrabold leading-tight text-purple-700 sm:text-lg dark:text-purple-400">
+              <span className="truncate text-xs font-bold text-purple-700 dark:text-purple-400">
+                {t.dashboard.borrowedPayable}
+              </span>
+              <div className="font-mono-num mt-1.5 truncate text-base font-extrabold leading-tight text-purple-700 sm:text-lg dark:text-purple-400">
                 {formatMoney(metrics.dispBorrow, currency)}
-              </div>
-              <div className="mt-0.5 truncate text-[11px] leading-tight text-slate-400 dark:text-slate-500">
-                {getFilterName(filters.lendBorrow, lang)}
               </div>
             </div>
           </div>
@@ -1952,7 +1850,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               handlePressEnd();
               onOpenFilterCard('categoryReport');
             }}
-            className={`select-none overflow-hidden rounded-2xl border p-5 shadow-sm transition-colors duration-200 ${
+            className={`select-none overflow-hidden rounded-2xl border shadow-sm transition-colors duration-200 ${
               isExpenseView
                 ? 'border-rose-200/75 bg-rose-50/45 dark:border-rose-900/40 dark:bg-rose-950/20'
                 : 'border-emerald-200/75 bg-emerald-50/45 dark:border-emerald-900/40 dark:bg-emerald-950/20'
@@ -1964,21 +1862,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               }}
               className={!isSwipingCategory ? 'transition-transform duration-200 ease-out' : ''}
             >
-              {/* Card Header with active view title + filter selector + icon switch */}
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-[#102A43] dark:text-slate-100">
-                  {isExpenseView ? (
-                    <TrendingDown className="h-4 w-4 shrink-0 text-slate-600 dark:text-slate-300" />
-                  ) : (
-                    <TrendingUp className="h-4 w-4 shrink-0 text-slate-600 dark:text-slate-300" />
-                  )}
-                  <span className="truncate">
-                    {isExpenseView
-                      ? t.dashboard.expenseByCategory
-                      : t.dashboard.incomeByCategory}
-                  </span>
-                </h3>
-
+              {/* Slim Period Filter Bar + Expense/Income Switch Icon */}
+              <div
+                className={`flex items-center justify-between gap-2 border-b px-3 py-1.5 sm:px-4 ${
+                  isExpenseView
+                    ? 'border-rose-200/60 dark:border-rose-900/35'
+                    : 'border-emerald-200/60 dark:border-emerald-900/35'
+                }`}
+              >
                 <button
                   type="button"
                   onTouchStart={(e) => e.stopPropagation()}
@@ -1990,53 +1881,39 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   }}
                   aria-label={t.modals.selectTimePeriod}
                   title={t.modals.selectTimePeriod}
-                  className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-900/5 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
+                  className="inline-flex min-h-[36px] min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-white/70 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-slate-100"
                 >
-                  <span className="max-w-[145px] truncate">{categoryReportData.headerBadge}</span>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{categoryReportData.filterButtonLabel}</span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+                </button>
+
+                <button
+                  type="button"
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isLongPressRef.current || didCategorySwipeRef.current) return;
+                    setCategoryView((prev) => (prev === 'expense' ? 'income' : 'expense'));
+                  }}
+                  aria-label={
+                    isExpenseView ? t.dashboard.switchToIncome : t.dashboard.switchToExpense
+                  }
+                  title={isExpenseView ? t.dashboard.switchToIncome : t.dashboard.switchToExpense}
+                  className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-slate-200/80 bg-white/75 transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] active:scale-95 dark:border-slate-700/80 dark:bg-slate-800/70 dark:hover:bg-slate-800"
+                >
+                  {isExpenseView ? (
+                    <TrendingDown className="h-4 w-4 text-[#D94848] dark:text-rose-400" />
+                  ) : (
+                    <TrendingUp className="h-4 w-4 text-[#16845B] dark:text-emerald-400" />
+                  )}
                 </button>
               </div>
 
-              {/* Slidable Period Bar */}
-              {(filters.categoryReport === 'monthly' ||
-                filters.categoryReport === 'yearly' ||
-                (filters.categoryReport === 'custom' && Boolean(customDateFrom && customDateTo))) && (
-                <div
-                  onTouchStart={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                >
-                  {filters.categoryReport === 'monthly' && (
-                    <SlidableMonthBar
-                      monthOffset={categoryMonthOffset}
-                      onSelectMonth={setCategoryMonthOffset}
-                      tone={isExpenseView ? 'expense' : 'income'}
-                    />
-                  )}
-                  {filters.categoryReport === 'yearly' && (
-                    <SlidableYearBar
-                      yearOffset={categoryYearOffset}
-                      onSelectYear={setCategoryYearOffset}
-                      tone={isExpenseView ? 'expense' : 'income'}
-                    />
-                  )}
-                  {filters.categoryReport === 'custom' && customDateFrom && customDateTo && (
-                    <SlidableCustomBar
-                      customFrom={customDateFrom}
-                      customTo={customDateTo}
-                      customOffset={categoryCustomOffset}
-                      onSelectOffset={setCategoryCustomOffset}
-                      onEditRange={() => onOpenFilterCard('categoryReport')}
-                      tone={isExpenseView ? 'expense' : 'income'}
-                    />
-                  )}
-                </div>
-              )}
-
               {/* Active Breakdown Summary & Category Rows */}
-              <div className="mt-3.5">
+              <div className="p-4 sm:p-5">
                 <div className="mb-3 flex items-center justify-between gap-2 text-xs">
                   <span className="truncate font-semibold text-slate-500 dark:text-slate-400">
-                    {categoryReportData.periodTitle} ·{' '}
                     {isExpenseView
                       ? t.dashboard.totalExpenseSuffix
                       : t.dashboard.totalIncomeSuffix}
@@ -2050,88 +1927,74 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   <p className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
                     {isExpenseView
                       ? t.dashboard.noExpensesRecorded
-                      : t.dashboard.noIncomeRecorded}{' '}
-                    {categoryReportData.emptyPeriodLabel}
+                      : t.dashboard.noIncomeRecorded}
                   </p>
                 ) : (
                   <div className="space-y-1.5">
-                    {activeItems.map(([cat, amount]) => {
-                      const pct =
-                        activeTotal > 0 ? ((amount / activeTotal) * 100).toFixed(1) : '0';
-                      const catStyle = getCategoryStyle(categoryStyles, styleKind, cat);
-                      return (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => {
-                            if (isLongPressRef.current || didCategorySwipeRef.current) return;
-                            openCategoryDrilldown('report', categoryView, cat);
-                          }}
-                          className="group w-full min-h-[44px] cursor-pointer rounded-xl px-2 py-2 text-left transition-colors hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] active:scale-[0.995] dark:hover:bg-slate-800/60"
-                        >
-                          <div className="mb-1.5 flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
-                            <span className="flex min-w-0 items-center gap-1.5 pr-2">
-                              <CategoryIconBadge style={catStyle} size="xs" />
-                              <span className="truncate group-hover:text-[#102A43] dark:group-hover:text-slate-100">
-                                {cat}
+                    {(categoryListExpanded ? activeItems : activeItems.slice(0, 6)).map(
+                      ([cat, amount]) => {
+                        const pct =
+                          activeTotal > 0 ? ((amount / activeTotal) * 100).toFixed(1) : '0';
+                        const catStyle = getCategoryStyle(categoryStyles, styleKind, cat);
+                        return (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => {
+                              if (isLongPressRef.current || didCategorySwipeRef.current) return;
+                              openCategoryDrilldown('report', categoryView, cat);
+                            }}
+                            className="group w-full min-h-[44px] cursor-pointer rounded-xl px-2 py-2 text-left transition-colors hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] active:scale-[0.995] dark:hover:bg-slate-800/60"
+                          >
+                            <div className="mb-1.5 flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
+                              <span className="flex min-w-0 items-center gap-1.5 pr-2">
+                                <CategoryIconBadge style={catStyle} size="xs" />
+                                <span className="truncate group-hover:text-[#102A43] dark:group-hover:text-slate-100">
+                                  {cat}
+                                </span>
                               </span>
-                            </span>
-                            <span className="font-mono-num shrink-0">
-                              {formatMoney(amount, currency)} ({pct}%)
-                            </span>
-                          </div>
-                          <div className="h-2 overflow-hidden rounded-full bg-white/80 dark:bg-slate-800">
-                            <div
-                              className="h-full rounded-full"
-                              style={{ width: `${pct}%`, backgroundColor: catStyle.color }}
-                            />
-                          </div>
-                        </button>
-                      );
-                    })}
+                              <span className="font-mono-num shrink-0">
+                                {formatMoney(amount, currency)} ({pct}%)
+                              </span>
+                            </div>
+                            <div className="h-2 overflow-hidden rounded-full bg-white/80 dark:bg-slate-800">
+                              <div
+                                className="h-full rounded-full"
+                                style={{ width: `${pct}%`, backgroundColor: catStyle.color }}
+                              />
+                            </div>
+                          </button>
+                        );
+                      }
+                    )}
+
+                    {activeItems.length > 6 && (
+                      <button
+                        type="button"
+                        onTouchStart={(e) => e.stopPropagation()}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setCategoryListExpanded((prev) => !prev);
+                        }}
+                        className="mt-1 flex w-full cursor-pointer items-center justify-center rounded-xl py-2 text-xs font-semibold text-slate-500 transition-colors hover:bg-white/70 hover:text-[#102A43] dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200"
+                      >
+                        {categoryListExpanded
+                          ? t.dashboard.showLessCategories
+                          : t.dashboard.showMoreCategories.replace(
+                              '{count}',
+                              String(activeItems.length - 6)
+                            )}
+                      </button>
+                    )}
                   </div>
                 )}
-              </div>
 
-              {/* Bottom slide indicator + hint */}
-              <div className="mt-4 flex items-center justify-between border-t border-slate-200/70 pt-3 text-[11px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                <span className="truncate">
-                  {isExpenseView ? t.dashboard.swipeLeftIncome : t.dashboard.swipeRightExpense}
-                </span>
-                <div
-                  onTouchStart={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  className="flex shrink-0 items-center gap-1"
-                >
-                  <button
-                    type="button"
-                    aria-label={t.dashboard.expenseByCategory}
-                    onClick={() => setCategoryView('expense')}
-                    className="flex h-7 cursor-pointer items-center px-1"
-                  >
-                    <span
-                      className={`block h-1.5 rounded-full transition-all ${
-                        isExpenseView
-                          ? 'w-5 bg-[#102A43] dark:bg-slate-100'
-                          : 'w-1.5 bg-slate-300 dark:bg-slate-700'
-                      }`}
-                    />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={t.dashboard.incomeByCategory}
-                    onClick={() => setCategoryView('income')}
-                    className="flex h-7 cursor-pointer items-center px-1"
-                  >
-                    <span
-                      className={`block h-1.5 rounded-full transition-all ${
-                        !isExpenseView
-                          ? 'w-5 bg-[#102A43] dark:bg-slate-100'
-                          : 'w-1.5 bg-slate-300 dark:bg-slate-700'
-                      }`}
-                    />
-                  </button>
-                </div>
+                {canSwipeCategory && (
+                  <p className="mt-3 border-t border-slate-200/60 pt-2.5 text-[11px] text-slate-400 dark:border-slate-800/70 dark:text-slate-500">
+                    {t.dashboard.swipePrevNextPeriod}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -2139,12 +2002,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       }
 
       case 'categoryPieChart': {
-        const selectPieView = (nextView: 'expense' | 'income') => {
-          setPieView(nextView);
-          setActiveExpenseChartCategory(null);
-          setActiveIncomeChartCategory(null);
-        };
-
         const isExpensePie = pieView === 'expense';
         const activeItems = isExpensePie
           ? pieReportData.sortedExpenses
@@ -2202,7 +2059,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               handlePressEnd();
               onOpenFilterCard('categoryPieChart');
             }}
-            className={`select-none overflow-hidden rounded-2xl border p-5 shadow-sm transition-colors duration-200 ${
+            className={`select-none overflow-hidden rounded-2xl border shadow-sm transition-colors duration-200 ${
               isExpensePie
                 ? 'border-rose-200/75 bg-rose-50/45 dark:border-rose-900/40 dark:bg-rose-950/20'
                 : 'border-emerald-200/75 bg-emerald-50/45 dark:border-emerald-900/40 dark:bg-emerald-950/20'
@@ -2214,15 +2071,14 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               }}
               className={!isSwipingPie ? 'transition-transform duration-200 ease-out' : ''}
             >
-              {/* Card Header with active view title + filter selector + icon switch */}
-              <div className="flex items-center justify-between gap-2">
-                <h3 className="flex min-w-0 items-center gap-1.5 text-sm font-bold text-[#102A43] dark:text-slate-100">
-                  <PieChart className="h-4 w-4 shrink-0 text-slate-600 dark:text-slate-300" />
-                  <span className="truncate">
-                    {isExpensePie ? t.dashboard.expensePieChart : t.dashboard.incomePieChart}
-                  </span>
-                </h3>
-
+              {/* Slim Period Filter Bar + Expense/Income Switch Icon */}
+              <div
+                className={`flex items-center justify-between gap-2 border-b px-3 py-1.5 sm:px-4 ${
+                  isExpensePie
+                    ? 'border-rose-200/60 dark:border-rose-900/35'
+                    : 'border-emerald-200/60 dark:border-emerald-900/35'
+                }`}
+              >
                 <button
                   type="button"
                   onTouchStart={(e) => e.stopPropagation()}
@@ -2234,77 +2090,56 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   }}
                   aria-label={t.modals.selectTimePeriod}
                   title={t.modals.selectTimePeriod}
-                  className="inline-flex h-8 shrink-0 cursor-pointer items-center gap-1 rounded-lg px-2 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-900/5 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
+                  className="inline-flex min-h-[36px] min-w-0 cursor-pointer items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-semibold text-slate-600 transition-colors hover:bg-white/70 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-300 dark:hover:bg-white/10 dark:hover:text-slate-100"
                 >
-                  <span className="max-w-[145px] truncate">{pieReportData.headerBadge}</span>
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{pieReportData.filterButtonLabel}</span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+                </button>
+
+                <button
+                  type="button"
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isLongPressRef.current || didPieSwipeRef.current) return;
+                    setPieView((prev) => (prev === 'expense' ? 'income' : 'expense'));
+                    setActiveExpenseChartCategory(null);
+                    setActiveIncomeChartCategory(null);
+                  }}
+                  aria-label={
+                    isExpensePie ? t.dashboard.switchToIncome : t.dashboard.switchToExpense
+                  }
+                  title={isExpensePie ? t.dashboard.switchToIncome : t.dashboard.switchToExpense}
+                  className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-slate-200/80 bg-white/75 transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] active:scale-95 dark:border-slate-700/80 dark:bg-slate-800/70 dark:hover:bg-slate-800"
+                >
+                  {isExpensePie ? (
+                    <TrendingDown className="h-4 w-4 text-[#D94848] dark:text-rose-400" />
+                  ) : (
+                    <TrendingUp className="h-4 w-4 text-[#16845B] dark:text-emerald-400" />
+                  )}
                 </button>
               </div>
 
-              {/* Slidable Period Bar */}
-              {(filters.categoryPieChart === 'monthly' ||
-                filters.categoryPieChart === 'yearly' ||
-                (filters.categoryPieChart === 'custom' &&
-                  Boolean(customDateFrom && customDateTo))) && (
-                <div
-                  onTouchStart={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                >
-                  {filters.categoryPieChart === 'monthly' && (
-                    <SlidableMonthBar
-                      monthOffset={pieMonthOffset}
-                      onSelectMonth={setPieMonthOffset}
-                      tone={isExpensePie ? 'expense' : 'income'}
-                    />
-                  )}
-                  {filters.categoryPieChart === 'yearly' && (
-                    <SlidableYearBar
-                      yearOffset={pieYearOffset}
-                      onSelectYear={setPieYearOffset}
-                      tone={isExpensePie ? 'expense' : 'income'}
-                    />
-                  )}
-                  {filters.categoryPieChart === 'custom' && customDateFrom && customDateTo && (
-                    <SlidableCustomBar
-                      customFrom={customDateFrom}
-                      customTo={customDateTo}
-                      customOffset={pieCustomOffset}
-                      onSelectOffset={setPieCustomOffset}
-                      onEditRange={() => onOpenFilterCard('categoryPieChart')}
-                      tone={isExpensePie ? 'expense' : 'income'}
-                    />
-                  )}
-                </div>
-              )}
-
               {/* Active Pie Chart + Dual-Click Legend */}
-              <div className="mt-3.5">
-                <div className="mb-3 flex items-center justify-between gap-2 text-xs">
-                  <span className="inline-flex min-w-0 items-center gap-1.5 font-semibold text-slate-500 dark:text-slate-400">
-                    {isExpensePie ? (
-                      <TrendingDown className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
-                    ) : (
-                      <TrendingUp className="h-3.5 w-3.5 shrink-0 text-slate-500 dark:text-slate-400" />
-                    )}
-                    <span className="truncate">
-                      {pieReportData.periodTitle} ·{' '}
-                      {isExpensePie
-                        ? t.dashboard.totalExpenseSuffix
-                        : t.dashboard.totalIncomeSuffix}
-                    </span>
-                  </span>
-                  <span className="font-mono-num shrink-0 font-extrabold text-[#102A43] dark:text-slate-100">
-                    {formatMoney(activeTotal, currency)}
-                  </span>
-                </div>
-
+              <div className="p-4 sm:p-5">
                 {activeItems.length === 0 ? (
-                  <p className="py-8 text-center text-xs text-slate-500 dark:text-slate-400">
-                    {isExpensePie
-                      ? t.dashboard.noExpensesRecorded
-                      : t.dashboard.noIncomeRecorded}{' '}
-                    {pieReportData.emptyPeriodLabel}
-                  </p>
+                  <div className="flex flex-col items-center justify-center py-6 text-center">
+                    <div
+                      className={`mb-2.5 flex h-11 w-11 items-center justify-center rounded-full ${
+                        isExpensePie
+                          ? 'bg-rose-100/75 text-rose-400 dark:bg-rose-950/50 dark:text-rose-400/70'
+                          : 'bg-emerald-100/75 text-emerald-500 dark:bg-emerald-950/50 dark:text-emerald-400/70'
+                      }`}
+                    >
+                      <PieChart className="h-5 w-5" />
+                    </div>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {isExpensePie
+                        ? t.dashboard.noExpensesRecorded
+                        : t.dashboard.noIncomeRecorded}
+                    </p>
+                  </div>
                 ) : (
                   <div className="flex flex-col items-center gap-4 sm:flex-row sm:items-center">
                     <CategoryPieChart
@@ -2335,83 +2170,70 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     />
 
                     <div className="w-full min-w-0 flex-1 space-y-1.5">
-                      {activeItems.map(([cat, amount]) => {
-                        const catStyle = getCategoryStyle(categoryStyles, styleKind, cat);
-                        const pct =
-                          activeTotal > 0 ? ((amount / activeTotal) * 100).toFixed(1) : '0';
-                        const isHighlighted = activeChartCategory === cat;
-                        return (
-                          <button
-                            key={cat}
-                            type="button"
-                            onMouseEnter={() => setActiveChartCategory(cat)}
-                            onMouseLeave={() => setActiveChartCategory(null)}
-                            onClick={() => {
-                              if (didPieSwipeRef.current || isLongPressRef.current) return;
-                              openCategoryDrilldown('pie', pieView, cat);
-                            }}
-                            className={`group flex min-h-[40px] w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] ${
-                              isHighlighted
-                                ? 'bg-white/85 dark:bg-slate-800'
-                                : 'hover:bg-white/60 dark:hover:bg-slate-800/50'
-                            }`}
-                          >
-                            <span className="flex min-w-0 items-center gap-2">
-                              <CategoryIconBadge style={catStyle} size="xs" />
-                              <span className="truncate font-semibold text-slate-700 dark:text-slate-200">
-                                {cat}
+                      {(pieLegendExpanded ? activeItems : activeItems.slice(0, 6)).map(
+                        ([cat, amount]) => {
+                          const catStyle = getCategoryStyle(categoryStyles, styleKind, cat);
+                          const pct =
+                            activeTotal > 0 ? ((amount / activeTotal) * 100).toFixed(1) : '0';
+                          const isHighlighted = activeChartCategory === cat;
+                          return (
+                            <button
+                              key={cat}
+                              type="button"
+                              onMouseEnter={() => setActiveChartCategory(cat)}
+                              onMouseLeave={() => setActiveChartCategory(null)}
+                              onClick={() => {
+                                if (didPieSwipeRef.current || isLongPressRef.current) return;
+                                openCategoryDrilldown('pie', pieView, cat);
+                              }}
+                              className={`group flex min-h-[40px] w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] ${
+                                isHighlighted
+                                  ? 'bg-white/85 dark:bg-slate-800'
+                                  : 'hover:bg-white/60 dark:hover:bg-slate-800/50'
+                              }`}
+                            >
+                              <span className="flex min-w-0 items-center gap-2">
+                                <CategoryIconBadge style={catStyle} size="xs" />
+                                <span className="truncate font-semibold text-slate-700 dark:text-slate-200">
+                                  {cat}
+                                </span>
                               </span>
-                            </span>
-                            <span className="font-mono-num shrink-0 font-semibold text-slate-600 dark:text-slate-300">
-                              {formatMoney(amount, currency)} ({pct}%)
-                            </span>
-                          </button>
-                        );
-                      })}
+                              <span className="font-mono-num shrink-0 font-semibold text-slate-600 dark:text-slate-300">
+                                {formatMoney(amount, currency)} ({pct}%)
+                              </span>
+                            </button>
+                          );
+                        }
+                      )}
+
+                      {activeItems.length > 6 && (
+                        <button
+                          type="button"
+                          onTouchStart={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setPieLegendExpanded((prev) => !prev);
+                          }}
+                          className="mt-1 flex w-full cursor-pointer items-center justify-center rounded-lg py-1.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-white/70 hover:text-[#102A43] dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200"
+                        >
+                          {pieLegendExpanded
+                            ? t.dashboard.showLessCategories
+                            : t.dashboard.showMoreCategories.replace(
+                                '{count}',
+                                String(activeItems.length - 6)
+                              )}
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}
-              </div>
 
-              {/* Bottom slide indicator + hint */}
-              <div className="mt-4 flex items-center justify-between border-t border-slate-200/70 pt-3 text-[11px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
-                <span className="truncate">
-                  {isExpensePie ? t.dashboard.swipeLeftIncomePie : t.dashboard.swipeRightExpensePie}
-                </span>
-                <div
-                  onTouchStart={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  className="flex shrink-0 items-center gap-1"
-                >
-                  <button
-                    type="button"
-                    aria-label={t.dashboard.expensePieChart}
-                    onClick={() => selectPieView('expense')}
-                    className="flex h-7 cursor-pointer items-center px-1"
-                  >
-                    <span
-                      className={`block h-1.5 rounded-full transition-all ${
-                        isExpensePie
-                          ? 'w-5 bg-[#102A43] dark:bg-slate-100'
-                          : 'w-1.5 bg-slate-300 dark:bg-slate-700'
-                      }`}
-                    />
-                  </button>
-                  <button
-                    type="button"
-                    aria-label={t.dashboard.incomePieChart}
-                    onClick={() => selectPieView('income')}
-                    className="flex h-7 cursor-pointer items-center px-1"
-                  >
-                    <span
-                      className={`block h-1.5 rounded-full transition-all ${
-                        !isExpensePie
-                          ? 'w-5 bg-[#102A43] dark:bg-slate-100'
-                          : 'w-1.5 bg-slate-300 dark:bg-slate-700'
-                      }`}
-                    />
-                  </button>
-                </div>
+                {canSwipePie && (
+                  <p className="mt-3 border-t border-slate-200/60 pt-2.5 text-[11px] text-slate-400 dark:border-slate-800/70 dark:text-slate-500">
+                    {t.dashboard.swipePrevNextPeriod}
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -2496,11 +2318,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                         tx={tx}
                         currency={currency}
                         categoryStyles={categoryStyles}
+                        isOpen={openTxId === tx.id}
+                        onToggleOpen={setOpenTxId}
                         onDelete={onDeleteTx}
                         onEdit={onEditTx}
                         onResolveDebt={onResolveDebt}
                         onInspectDebt={onInspectDebt}
-                        onRowSwipeClaim={cancelTxSwipe}
+                        isSwipeBlocked={() => didTxSwipeRef.current}
                       />
                     ))}
                   </div>
@@ -2514,7 +2338,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 <button
                   type="button"
                   aria-label={t.common.previousMonth}
-                  onClick={() => setTxMonthOffset((prev) => prev - 1)}
+                  onClick={() => {
+                    setOpenTxId(null);
+                    setTxMonthOffset((prev) => prev - 1);
+                  }}
                   className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200/70 hover:text-[#102A43] dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
                 >
                   <ChevronLeft className="h-4 w-4" />
@@ -2522,7 +2349,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 <button
                   type="button"
                   aria-label={t.common.nextMonth}
-                  onClick={() => setTxMonthOffset((prev) => prev + 1)}
+                  onClick={() => {
+                    setOpenTxId(null);
+                    setTxMonthOffset((prev) => prev + 1);
+                  }}
                   className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200/70 hover:text-[#102A43] dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
                 >
                   <ChevronRight className="h-4 w-4" />

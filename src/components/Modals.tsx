@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   GitMerge,
   GripVertical,
+  History,
   Info,
   Palette,
   Pencil,
@@ -217,12 +218,19 @@ export const FilterPeriodModal: React.FC<{
   if (!activeFilterCard) return null;
   const current = filters[activeFilterCard];
 
+  const isLendBorrow = activeFilterCard === 'lendBorrow';
   const usesPeriodicPresets =
     activeFilterCard === 'categoryReport' ||
     activeFilterCard === 'categoryPieChart' ||
     activeFilterCard === 'incExp';
 
-  const presets: Array<{ key: PeriodFilter; label: string }> = usesPeriodicPresets
+  const presets: Array<{ key: PeriodFilter; label: string }> = isLendBorrow
+    ? [
+        { key: 'all', label: t.common.allTime },
+        { key: 'monthly', label: t.common.thisMonth },
+        { key: 'yearly', label: t.common.thisYear },
+      ]
+    : usesPeriodicPresets
     ? [
         { key: 'monthly', label: t.common.monthlyByMonth },
         { key: 'yearly', label: t.common.yearlyByYear },
@@ -232,7 +240,7 @@ export const FilterPeriodModal: React.FC<{
         { key: 'all', label: t.common.allTime },
         { key: 'monthly', label: t.common.thisMonth },
         { key: 'previous_month', label: t.common.previousMonth },
-        { key: 'yearly', label: t.common.currentYear },
+        { key: 'yearly', label: t.common.thisYear },
       ];
 
   return (
@@ -275,55 +283,56 @@ export const FilterPeriodModal: React.FC<{
           ))}
         </div>
 
-        <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
-          <div className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
-            {t.modals.customDateRange}
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="mb-1 block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                {t.modals.startDateLabel}
-              </label>
-              <input
-                type="date"
-                value={customDateFrom}
-                onChange={(e) => setCustomDateFrom(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-              />
+        {!isLendBorrow && (
+          <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
+            <div className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+              {t.modals.customDateRange}
             </div>
-            <div>
-              <label className="mb-1 block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
-                {t.modals.endDateLabel}
-              </label>
-              <input
-                type="date"
-                value={customDateTo}
-                onChange={(e) => setCustomDateTo(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-              />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  {t.modals.startDateLabel}
+                </label>
+                <input
+                  type="date"
+                  value={customDateFrom}
+                  onChange={(e) => setCustomDateFrom(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  {t.modals.endDateLabel}
+                </label>
+                <input
+                  type="date"
+                  value={customDateTo}
+                  onChange={(e) => setCustomDateTo(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                />
+              </div>
             </div>
+            <button
+              type="button"
+              onClick={() => onApplyCustom(activeFilterCard)}
+              className="mt-2.5 min-h-[40px] w-full rounded-xl bg-[#102A43] py-2 text-xs font-bold text-white hover:bg-slate-800 dark:bg-sky-700 dark:hover:bg-sky-600"
+            >
+              {t.modals.applyCustomRange}
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => onApplyCustom(activeFilterCard)}
-            className="mt-2.5 min-h-[40px] w-full rounded-xl bg-[#102A43] py-2 text-xs font-bold text-white hover:bg-slate-800 dark:bg-sky-700 dark:hover:bg-sky-600"
-          >
-            {t.modals.applyCustomRange}
-          </button>
-        </div>
+        )}
       </div>
     </div>
   );
 };
 
-/* --- Swipeable Row for Drilldown Modal --- */
-const SwipeableDrilldownRow: React.FC<{
+/* --- Transaction Row for Drilldown Modal (Tap / Long-Press Slide Tray) --- */
+const DrilldownTxRow: React.FC<{
   tx: Transaction;
   currency: CurrencySymbol;
   isReadOnly: boolean;
-  isSwiped: boolean;
-  onSwipeOpen: (id: string) => void;
-  onSwipeClose: () => void;
+  isOpen: boolean;
+  onToggleOpen: (id: string | null) => void;
   onInspectDebt: (tx: Transaction) => void;
   onEdit: (tx: Transaction) => void;
   onDelete: (id: string) => void;
@@ -331,20 +340,16 @@ const SwipeableDrilldownRow: React.FC<{
   tx,
   currency,
   isReadOnly,
-  isSwiped,
-  onSwipeOpen,
-  onSwipeClose,
+  isOpen,
+  onToggleOpen,
   onInspectDebt,
   onEdit,
   onDelete,
 }) => {
   const { t } = useTranslation();
-  const [offsetX, setOffsetX] = useState(0);
-  const startXRef = useRef(0);
-  const startYRef = useRef(0);
-  const axisRef = useRef<'x' | 'y' | null>(null);
-  const movedRef = useRef(false);
-  const draggingRef = useRef(false);
+  const pressTimerRef = useRef<number | null>(null);
+  const pressOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const didLongPressRef = useRef(false);
 
   const isDebt = tx.type === 'lend' || tx.type === 'borrow';
   const isSystemTx =
@@ -352,9 +357,62 @@ const SwipeableDrilldownRow: React.FC<{
     tx.type === 'correction' ||
     tx.type === 'adjustment';
   const canEdit = !isReadOnly && !isSystemTx;
-  const maxRevealWidth = canEdit ? 112 : 56;
-  const snapThreshold = canEdit ? -55 : -28;
+  const hasInspectDebt = isDebt && !isReadOnly;
+  const revealWidth = isReadOnly ? 0 : hasInspectDebt && canEdit ? 144 : canEdit ? 112 : 56;
+  const trayWidthClass = hasInspectDebt && canEdit ? 'w-36' : canEdit ? 'w-28' : 'w-14';
   const due = tx.remainingBalance !== undefined ? tx.remainingBalance : tx.amount;
+
+  const clearPressTimer = () => {
+    if (pressTimerRef.current !== null) {
+      window.clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    pressOriginRef.current = null;
+  };
+
+  useEffect(() => clearPressTimer, []);
+
+  const triggerRowPressAction = () => {
+    if (isReadOnly) {
+      if (isDebt) onInspectDebt(tx);
+      return;
+    }
+    onToggleOpen(isOpen ? null : tx.id);
+  };
+
+  const startLongPress = (clientX: number, clientY: number) => {
+    if (isReadOnly && !isDebt) return;
+    clearPressTimer();
+    didLongPressRef.current = false;
+    pressOriginRef.current = { x: clientX, y: clientY };
+    pressTimerRef.current = window.setTimeout(() => {
+      pressTimerRef.current = null;
+      pressOriginRef.current = null;
+      didLongPressRef.current = true;
+      if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') {
+        navigator.vibrate(12);
+      }
+      triggerRowPressAction();
+    }, 420);
+  };
+
+  const moveLongPress = (clientX: number, clientY: number) => {
+    if (pressTimerRef.current === null || !pressOriginRef.current) return;
+    const dx = clientX - pressOriginRef.current.x;
+    const dy = clientY - pressOriginRef.current.y;
+    if (Math.hypot(dx, dy) > 8) {
+      clearPressTimer();
+    }
+  };
+
+  const endLongPress = () => {
+    clearPressTimer();
+    if (didLongPressRef.current) {
+      window.setTimeout(() => {
+        didLongPressRef.current = false;
+      }, 120);
+    }
+  };
 
   const hierarchy = getTransactionHierarchy(tx, {
     expense: t.common.expense,
@@ -369,7 +427,9 @@ const SwipeableDrilldownRow: React.FC<{
     tx.type === 'transfer'
       ? [`${tx.fromWallet} → ${tx.toWallet}`, tx.date]
       : isDebt
-      ? [tx.wallet, tx.date, t.modals.tapForHistory]
+      ? isReadOnly
+        ? [tx.wallet, tx.date, t.modals.tapForHistory]
+        : [tx.wallet, tx.date]
       : hierarchy.titleSource === 'custom'
       ? [
           hierarchy.subCategoryLabel
@@ -383,76 +443,37 @@ const SwipeableDrilldownRow: React.FC<{
       : [tx.wallet, tx.date]
   ).filter((part): part is string => Boolean(part && part.trim()));
 
-  const handleStart = (clientX: number, clientY: number) => {
-    if (isReadOnly) return;
-    startXRef.current = clientX;
-    startYRef.current = clientY;
-    axisRef.current = null;
-    movedRef.current = false;
-    draggingRef.current = true;
-  };
-
-  const handleMove = (
-    clientX: number,
-    clientY: number,
-    stopPropagation: () => void
-  ) => {
-    if (isReadOnly || !draggingRef.current) return;
-    const diffX = clientX - startXRef.current;
-    const diffY = clientY - startYRef.current;
-
-    if (!axisRef.current && (Math.abs(diffX) > 7 || Math.abs(diffY) > 7)) {
-      axisRef.current = Math.abs(diffX) > Math.abs(diffY) ? 'x' : 'y';
-    }
-    if (axisRef.current !== 'x') return;
-
-    if ((!isSwiped && diffX < -5) || (isSwiped && diffX > 5)) {
-      movedRef.current = true;
-      stopPropagation();
-      if (diffX < -5 && diffX > -(maxRevealWidth + 18)) {
-        setOffsetX(diffX);
-      } else if (diffX > 5 && isSwiped) {
-        setOffsetX(0);
-        onSwipeClose();
-      }
-    }
-  };
-
-  const handleEnd = () => {
-    if (!draggingRef.current) return;
-    draggingRef.current = false;
-    axisRef.current = null;
-    if (offsetX < snapThreshold) {
-      onSwipeOpen(tx.id);
-    }
-    setOffsetX(0);
-    if (movedRef.current) {
-      window.setTimeout(() => {
-        movedRef.current = false;
-      }, 60);
-    }
-  };
-
-  const activeTranslateX = isReadOnly
-    ? 0
-    : isSwiped
-    ? -maxRevealWidth
-    : offsetX < 0
-    ? offsetX
-    : 0;
+  const isInteractive = !isReadOnly || isDebt;
 
   return (
     <div className="relative overflow-hidden">
       {!isReadOnly && (
         <div
-          className={`absolute inset-y-0 right-0 flex ${
-            canEdit ? 'w-28' : 'w-14'
-          } bg-slate-100 dark:bg-slate-800`}
+          className={`absolute inset-y-0 right-0 flex ${trayWidthClass} bg-slate-100 dark:bg-slate-800`}
         >
+          {hasInspectDebt && (
+            <button
+              type="button"
+              onTouchStart={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleOpen(null);
+                onInspectDebt(tx);
+              }}
+              aria-label={t.txItem.viewHistoryAction}
+              className="flex flex-1 items-center justify-center text-sky-600 transition-colors hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/50"
+            >
+              <History className="h-4 w-4" />
+            </button>
+          )}
           <button
             type="button"
-            onClick={() => {
-              onSwipeClose();
+            onTouchStart={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleOpen(null);
               onDelete(tx.id);
             }}
             aria-label={t.txItem.deleteAria}
@@ -463,8 +484,11 @@ const SwipeableDrilldownRow: React.FC<{
           {canEdit && (
             <button
               type="button"
-              onClick={() => {
-                onSwipeClose();
+              onTouchStart={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleOpen(null);
                 onEdit(tx);
               }}
               aria-label={t.txItem.editAria}
@@ -477,36 +501,37 @@ const SwipeableDrilldownRow: React.FC<{
       )}
 
       <div
-        onTouchStart={(e) => handleStart(e.touches[0].clientX, e.touches[0].clientY)}
-        onTouchMove={(e) =>
-          handleMove(e.touches[0].clientX, e.touches[0].clientY, () => e.stopPropagation())
-        }
-        onTouchEnd={handleEnd}
-        onTouchCancel={handleEnd}
+        role={isInteractive ? 'button' : undefined}
+        tabIndex={isInteractive ? 0 : undefined}
+        onTouchStart={(e) => startLongPress(e.touches[0].clientX, e.touches[0].clientY)}
+        onTouchMove={(e) => moveLongPress(e.touches[0].clientX, e.touches[0].clientY)}
+        onTouchEnd={endLongPress}
+        onTouchCancel={endLongPress}
         onMouseDown={(e) => {
-          if (e.button === 0) handleStart(e.clientX, e.clientY);
+          if (e.button === 0) startLongPress(e.clientX, e.clientY);
         }}
         onMouseMove={(e) => {
-          if (e.buttons === 1) handleMove(e.clientX, e.clientY, () => e.stopPropagation());
+          if (e.buttons === 1) moveLongPress(e.clientX, e.clientY);
         }}
-        onMouseUp={handleEnd}
-        onMouseLeave={handleEnd}
+        onMouseUp={endLongPress}
+        onMouseLeave={endLongPress}
+        onContextMenu={(e) => e.preventDefault()}
         onClick={() => {
-          if (movedRef.current) return;
-          if (isSwiped) {
-            onSwipeClose();
-            return;
-          }
-          if (isDebt) {
-            onInspectDebt(tx);
+          if (didLongPressRef.current) return;
+          triggerRowPressAction();
+        }}
+        onKeyDown={(e) => {
+          if (isInteractive && (e.key === 'Enter' || e.key === ' ')) {
+            e.preventDefault();
+            triggerRowPressAction();
           }
         }}
         style={{
-          transform: `translateX(${activeTranslateX}px)`,
+          transform: `translateX(${isOpen && !isReadOnly ? -revealWidth : 0}px)`,
         }}
-        className={`relative z-10 flex min-h-[54px] touch-pan-y items-center justify-between gap-3 bg-white px-1.5 py-3 select-none dark:bg-slate-900 ${
-          isSwiped || offsetX === 0 ? 'transition-transform duration-200 ease-out' : ''
-        } ${isDebt && !isSwiped ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/40' : ''}`}
+        className={`relative z-10 flex min-h-[54px] touch-pan-y items-center justify-between gap-3 bg-white px-1.5 py-3 transition-transform duration-200 ease-out select-none dark:bg-slate-900 ${
+          isInteractive ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800' : ''
+        }`}
       >
         <div className="min-w-0 flex-1">
           <div className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
@@ -536,13 +561,18 @@ const SwipeableDrilldownRow: React.FC<{
           </div>
 
           {!isReadOnly && (
-            <div className="hidden items-center gap-0.5 sm:flex">
+            <div
+              className={`hidden items-center gap-0.5 transition-opacity sm:flex ${
+                isOpen ? 'pointer-events-none opacity-0' : ''
+              }`}
+            >
               {canEdit && (
                 <button
                   type="button"
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => {
                     e.stopPropagation();
-                    onSwipeClose();
                     onEdit(tx);
                   }}
                   aria-label={t.txItem.editAria}
@@ -553,9 +583,10 @@ const SwipeableDrilldownRow: React.FC<{
               )}
               <button
                 type="button"
+                onTouchStart={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
-                  onSwipeClose();
                   onDelete(tx.id);
                 }}
                 aria-label={t.txItem.deleteAria}
@@ -607,7 +638,7 @@ export const DrilldownModal: React.FC<{
 }) => {
   const { lang, t } = useTranslation();
   const [selectedSubCategory, setSelectedSubCategory] = useState<string | null>(null);
-  const [swipedTxId, setSwipedTxId] = useState<string | null>(null);
+  const [openTxId, setOpenTxId] = useState<string | null>(null);
   const subStripRef = useRef<HTMLDivElement>(null);
   const subStripDragRef = useRef({
     active: false,
@@ -619,7 +650,7 @@ export const DrilldownModal: React.FC<{
 
   useEffect(() => {
     setSelectedSubCategory(null);
-    setSwipedTxId(null);
+    setOpenTxId(null);
     if (subStripRef.current) {
       subStripRef.current.scrollLeft = 0;
     }
@@ -896,7 +927,7 @@ export const DrilldownModal: React.FC<{
                 onClick={() => {
                   if (!wasSubStripDraggingRef.current) {
                     setSelectedSubCategory(null);
-                    setSwipedTxId(null);
+                    setOpenTxId(null);
                   }
                 }}
                 className={`inline-flex min-h-[36px] shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] ${
@@ -923,7 +954,7 @@ export const DrilldownModal: React.FC<{
                     onClick={() => {
                       if (!wasSubStripDraggingRef.current) {
                         setSelectedSubCategory(bucket.key);
-                        setSwipedTxId(null);
+                        setOpenTxId(null);
                       }
                     }}
                     className={`inline-flex min-h-[36px] shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] ${
@@ -971,14 +1002,13 @@ export const DrilldownModal: React.FC<{
             </p>
           ) : (
             filtered.map((tx) => (
-              <SwipeableDrilldownRow
+              <DrilldownTxRow
                 key={tx.id}
                 tx={tx}
                 currency={currency}
                 isReadOnly={isReadOnly}
-                isSwiped={swipedTxId === tx.id}
-                onSwipeOpen={(id) => setSwipedTxId(id)}
-                onSwipeClose={() => setSwipedTxId(null)}
+                isOpen={openTxId === tx.id}
+                onToggleOpen={setOpenTxId}
                 onInspectDebt={(item) => {
                   onClose();
                   onInspectDebt(item);

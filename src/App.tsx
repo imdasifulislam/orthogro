@@ -291,6 +291,7 @@ const LAST_USER_HINT_STORAGE_KEY = 'orthogro_last_user_hint_v1';
 
 const ALL_FEATURE_TIP_IDS: FeatureTipId[] = [
   'saving_goals',
+  'bazar_memo',
   'budget_goals',
   'recurring_bills',
   'category_breakdown',
@@ -300,7 +301,7 @@ const ALL_FEATURE_TIP_IDS: FeatureTipId[] = [
   'shared_access',
 ];
 
-type TrackedFeatureUsageId = 'floating_assistant' | 'tax_report' | 'shared_access';
+type TrackedFeatureUsageId = 'bazar_memo' | 'floating_assistant' | 'tax_report' | 'shared_access';
 
 interface FeatureGuideState {
   dismissed: FeatureTipId[];
@@ -324,7 +325,10 @@ function readFeatureGuideState(storageKey: string): FeatureGuideState {
     const used = Array.isArray(parsed.used)
       ? parsed.used.filter(
           (id): id is TrackedFeatureUsageId =>
-            id === 'floating_assistant' || id === 'tax_report' || id === 'shared_access'
+            id === 'bazar_memo' ||
+            id === 'floating_assistant' ||
+            id === 'tax_report' ||
+            id === 'shared_access'
         )
       : [];
     return { dismissed, used };
@@ -1659,6 +1663,8 @@ function OrthoGroApp() {
           state.settingsView === 'inc_cat'
         ) {
           setSettingsView('accounts_categories');
+        } else if (state.settingsView === 'tax_report') {
+          setSettingsView('pro_features');
         } else {
           setSettingsView('menu');
         }
@@ -1886,6 +1892,14 @@ function OrthoGroApp() {
       tips.push('saving_goals');
     }
     if (
+      !dismissedSet.has('bazar_memo') &&
+      totalTxCount >= 5 &&
+      memos.length === 0 &&
+      !usedSet.has('bazar_memo')
+    ) {
+      tips.push('bazar_memo');
+    }
+    if (
       !dismissedSet.has('budget_goals') &&
       expenseTxCount >= 10 &&
       budgetGoals.length === 0 &&
@@ -1941,6 +1955,7 @@ function OrthoGroApp() {
     transactions,
     featureGuideState,
     savingGoals.length,
+    memos.length,
     budgetGoals.length,
     recurringBills.length,
     workspace.visibleGrids.budgetGoals,
@@ -5246,6 +5261,14 @@ function OrthoGroApp() {
               }
               setEditingSavingGoal(null);
               setShowSavingGoalsModal(true);
+              break;
+            case 'bazar_memo':
+              markFeatureUsed('bazar_memo');
+              setMemoNavigationRequest((prev) => ({
+                tab: 'memo',
+                seq: (prev?.seq ?? 0) + 1,
+              }));
+              setActiveTab('memo');
               break;
             case 'budget_goals':
               if (!workspace.visibleGrids.budgetGoals) {

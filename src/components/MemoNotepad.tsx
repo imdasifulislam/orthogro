@@ -58,6 +58,15 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
 }) => {
   const { t } = useTranslation();
   const [activeSubTab, setActiveSubTab] = useState<'memo' | 'notepad'>('memo');
+  const [tabSwipeX, setTabSwipeX] = useState(0);
+  const [isSwipingTab, setIsSwipingTab] = useState(false);
+  const tabSwipeRef = React.useRef<{
+    startX: number;
+    startY: number;
+    dragging: boolean;
+    axis: 'x' | 'y' | null;
+  }>({ startX: 0, startY: 0, dragging: false, axis: null });
+  const didTabSwipeRef = React.useRef(false);
 
   React.useEffect(() => {
     if (!navigationRequest) return;
@@ -247,6 +256,73 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
     setSelectedNote(null);
   };
 
+  const handleTabSwipeStart = (
+    clientX: number,
+    clientY: number,
+    target: EventTarget | null
+  ) => {
+    didTabSwipeRef.current = false;
+    const el = target instanceof HTMLElement ? target : null;
+    if (
+      isAddingNote ||
+      selectedNote ||
+      el?.closest('input, textarea, select, [contenteditable="true"]')
+    ) {
+      return;
+    }
+    tabSwipeRef.current = {
+      startX: clientX,
+      startY: clientY,
+      dragging: true,
+      axis: null,
+    };
+    setIsSwipingTab(true);
+  };
+
+  const handleTabSwipeMove = (clientX: number, clientY: number) => {
+    const state = tabSwipeRef.current;
+    if (!state.dragging) return;
+    const dx = clientX - state.startX;
+    const dy = clientY - state.startY;
+
+    if (!state.axis && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+      state.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    }
+    if (state.axis !== 'x') return;
+
+    if (Math.abs(dx) > 12) {
+      didTabSwipeRef.current = true;
+    }
+
+    if (activeSubTab === 'memo') {
+      setTabSwipeX(dx > 0 ? Math.min(24, dx * 0.25) : Math.max(-180, dx));
+    } else {
+      setTabSwipeX(dx < 0 ? Math.max(-24, dx * 0.25) : Math.min(180, dx));
+    }
+  };
+
+  const handleTabSwipeEnd = () => {
+    const state = tabSwipeRef.current;
+    if (!state.dragging) return;
+    state.dragging = false;
+    setIsSwipingTab(false);
+
+    if (state.axis === 'x') {
+      if (activeSubTab === 'memo' && tabSwipeX < -48) {
+        setActiveSubTab('notepad');
+      } else if (activeSubTab === 'notepad' && tabSwipeX > 48) {
+        setActiveSubTab('memo');
+      }
+    }
+    state.axis = null;
+    setTabSwipeX(0);
+    if (didTabSwipeRef.current) {
+      window.setTimeout(() => {
+        didTabSwipeRef.current = false;
+      }, 120);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-4xl">
       {/* Sub-tab segmented selector */}
@@ -275,8 +351,44 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
         </button>
       </div>
 
-      {activeSubTab === 'memo' ? (
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
+      {/* Swipeable Two-Pane Viewport (Bazar Memo <-> Notepad) */}
+      <div
+        onTouchStart={(e) =>
+          handleTabSwipeStart(e.touches[0].clientX, e.touches[0].clientY, e.target)
+        }
+        onTouchMove={(e) => handleTabSwipeMove(e.touches[0].clientX, e.touches[0].clientY)}
+        onTouchEnd={handleTabSwipeEnd}
+        onTouchCancel={handleTabSwipeEnd}
+        onMouseDown={(e) => {
+          if (e.button === 0) handleTabSwipeStart(e.clientX, e.clientY, e.target);
+        }}
+        onMouseMove={(e) => {
+          if (e.buttons === 1) handleTabSwipeMove(e.clientX, e.clientY);
+        }}
+        onMouseUp={handleTabSwipeEnd}
+        onMouseLeave={handleTabSwipeEnd}
+        className={`overflow-hidden ${isSwipingTab && Math.abs(tabSwipeX) > 10 ? 'select-none' : ''}`}
+      >
+        <div
+          style={{
+            transform: `translateX(calc(${
+              activeSubTab === 'memo' ? '0%' : '-50%'
+            } + ${tabSwipeX}px))`,
+          }}
+          className={`flex w-[200%] items-start ${
+            !isSwipingTab ? 'transition-transform duration-300 ease-out' : ''
+          }`}
+        >
+          {/* Pane 1: Bazar Memo */}
+          <div
+            aria-hidden={activeSubTab !== 'memo'}
+            className={`w-1/2 shrink-0 ${
+              !isSwipingTab && activeSubTab !== 'memo'
+                ? 'pointer-events-none max-h-0 overflow-hidden'
+                : ''
+            }`}
+          >
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           {/* Builder column — Unified Receipt / Ledger List */}
           <div className="lg:col-span-6">
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -577,63 +689,78 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
             )}
           </div>
         </div>
-      ) : (
-        /* Notepad */
-        <div>
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-base font-bold text-[#102A43] dark:text-slate-100">
-              {t.memo.personalNotes}
-            </h2>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedNote(null);
-                setCurrentTitle('');
-                setCurrentContent('');
-                setIsAddingNote(true);
-              }}
-              className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl bg-[#16845B] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#126B4A]"
-            >
-              <Plus className="h-4 w-4" />
-              {t.memo.newNote}
-            </button>
           </div>
 
-          {notes.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
-              {t.memo.noNotesYet}
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {notes.map((note) => (
+          {/* Pane 2: Notepad */}
+          <div
+            aria-hidden={activeSubTab !== 'notepad'}
+            className={`w-1/2 shrink-0 ${
+              !isSwipingTab && activeSubTab !== 'notepad'
+                ? 'pointer-events-none max-h-0 overflow-hidden'
+                : ''
+            }`}
+          >
+            <div>
+              <div className="mb-4 flex items-center justify-between">
+                <h2 className="text-base font-bold text-[#102A43] dark:text-slate-100">
+                  {t.memo.personalNotes} ({notes.length})
+                </h2>
                 <button
-                  key={note.id}
                   type="button"
                   onClick={() => {
-                    setSelectedNote(note);
-                    setCurrentTitle(note.title);
-                    setCurrentContent(note.content);
+                    if (didTabSwipeRef.current) return;
+                    setSelectedNote(null);
+                    setCurrentTitle('');
+                    setCurrentContent('');
+                    setIsAddingNote(true);
                   }}
-                  className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors hover:border-[#16845B]/50 dark:border-slate-800 dark:bg-slate-900"
+                  className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl bg-[#16845B] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#126B4A]"
                 >
-                  <div>
-                    <h4 className="line-clamp-1 text-sm font-bold text-[#102A43] dark:text-slate-100">
-                      {note.title}
-                    </h4>
-                    <p className="mt-1.5 line-clamp-4 whitespace-pre-line text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                      {note.content || t.memo.emptyNote}
-                    </p>
-                  </div>
-                  <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-2.5 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
-                    <span>{note.date}</span>
-                    <span>{t.memo.tapToOpen}</span>
-                  </div>
+                  <Plus className="h-4 w-4" />
+                  {t.memo.newNote}
                 </button>
-              ))}
-            </div>
-          )}
+              </div>
 
-          {(isAddingNote || selectedNote) && (
+              {notes.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
+                  {t.memo.noNotesYet}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {notes.map((note) => (
+                    <button
+                      key={note.id}
+                      type="button"
+                      onClick={() => {
+                        if (didTabSwipeRef.current) return;
+                        setSelectedNote(note);
+                        setCurrentTitle(note.title);
+                        setCurrentContent(note.content);
+                      }}
+                      className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors hover:border-[#16845B]/50 dark:border-slate-800 dark:bg-slate-900"
+                    >
+                      <div>
+                        <h4 className="line-clamp-1 text-sm font-bold text-[#102A43] dark:text-slate-100">
+                          {note.title}
+                        </h4>
+                        <p className="mt-1.5 line-clamp-4 whitespace-pre-line text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                          {note.content || t.memo.emptyNote}
+                        </p>
+                      </div>
+                      <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-2.5 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
+                        <span>{note.date}</span>
+                        <span>{t.memo.tapToOpen}</span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {(isAddingNote || selectedNote) && (
             <div
               className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
               onClick={() => {
@@ -729,8 +856,6 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                 </div>
               </div>
             </div>
-          )}
-        </div>
       )}
     </div>
   );
