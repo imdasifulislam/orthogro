@@ -1,6 +1,5 @@
 import React from 'react';
 import {
-  BarChart3,
   Bell,
   CalendarClock,
   FileSpreadsheet,
@@ -60,12 +59,6 @@ const TIP_META: Record<
     iconBgClass: 'bg-amber-50 dark:bg-amber-950/60',
     iconTextClass: 'text-amber-600 dark:text-amber-400',
     btnClass: 'bg-amber-600 text-white hover:bg-amber-700',
-  },
-  category_breakdown: {
-    icon: BarChart3,
-    iconBgClass: 'bg-rose-50 dark:bg-rose-950/60',
-    iconTextClass: 'text-rose-600 dark:text-rose-400',
-    btnClass: 'bg-[#102A43] text-white hover:bg-slate-800 dark:bg-slate-100 dark:text-slate-900 dark:hover:bg-white',
   },
   floating_assistant: {
     icon: Sparkles,

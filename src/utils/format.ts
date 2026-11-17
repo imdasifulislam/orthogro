@@ -28,7 +28,14 @@ export function formatDisplayDate(isoDate: string, lang: AppLanguage = 'en'): st
   });
 }
 
-export function formatMoney(amount: number, currency: CurrencySymbol): string {
+export function formatMoney(
+  amount: number,
+  currency: CurrencySymbol,
+  hidden = false
+): string {
+  if (hidden) {
+    return `${currency} ••••`;
+  }
   const absFormatted = Math.abs(amount).toLocaleString(undefined, {
     maximumFractionDigits: 2,
   });

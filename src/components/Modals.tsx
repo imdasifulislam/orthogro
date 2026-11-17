@@ -1,8 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
+  ArrowDownLeft,
+  ArrowUpRight,
   Check,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   GitMerge,
   GripVertical,
   History,
@@ -12,8 +16,10 @@ import {
   PiggyBank,
   Plus,
   Repeat,
+  Search,
   Target,
   Trash2,
+  Wallet,
   X,
 } from 'lucide-react';
 import { useTranslation } from '../i18n';
@@ -39,11 +45,13 @@ import {
   CATEGORY_COLORS,
   CATEGORY_ICONS,
   CategoryIconBadge,
+  formatCategoryStyleTargetLabel,
   getCategoryStyle,
 } from '../utils/categoryVisuals';
 import {
   computeSavingGoalProgress,
   filterTransactionsByPeriod,
+  formatDisplayDate,
   formatMoney,
   getPeriodLabel,
   getShiftedCustomRange,
@@ -61,12 +69,12 @@ export const ToastContainer: React.FC<{
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed top-4 right-4 z-[70] flex w-full max-w-xs flex-col gap-2 px-4 sm:px-0">
+    <div className="pointer-events-none fixed top-[62%] left-1/2 z-[70] flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 flex-col items-stretch gap-2">
       {toasts.map((t) => (
         <div
           key={t.id}
           role="status"
-          className={`flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-xs font-semibold shadow-lg backdrop-blur-md ${
+          className={`pointer-events-auto flex items-start gap-2.5 rounded-xl border px-3.5 py-3 text-xs font-semibold ring-1 ring-black/5 shadow-[0_16px_36px_-6px_rgba(15,23,42,0.28),0_8px_16px_-4px_rgba(15,23,42,0.14)] backdrop-blur-md dark:ring-white/10 dark:shadow-[0_18px_42px_-6px_rgba(0,0,0,0.7),0_8px_18px_-4px_rgba(0,0,0,0.45)] ${
             t.type === 'error'
               ? 'border-rose-200 bg-rose-50/95 text-rose-900 dark:border-rose-900 dark:bg-rose-950/95 dark:text-rose-200'
               : t.type === 'info'
@@ -546,6 +554,11 @@ const DrilldownTxRow: React.FC<{
               </React.Fragment>
             ))}
           </div>
+          {hierarchy.extraNote && (
+            <p className="mt-1 line-clamp-2 text-xs text-slate-500 dark:text-slate-400">
+              {hierarchy.extraNote}
+            </p>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-1.5">
@@ -610,6 +623,10 @@ export const DrilldownModal: React.FC<{
   drilldownPeriodContext?: DrilldownPeriodContext | null;
   setDrilldownFilter: (f: PeriodFilter) => void;
   transactions: Transaction[];
+  wallets?: string[];
+  savingsList?: string[];
+  walletBalances?: Record<string, number>;
+  categoryStyles?: Record<string, CategoryStyle>;
   currency: CurrencySymbol;
   customDateFrom: string;
   customDateTo: string;
@@ -617,6 +634,7 @@ export const DrilldownModal: React.FC<{
   onInspectDebt: (tx: Transaction) => void;
   onEditTransaction: (tx: Transaction) => void;
   onDeleteTransaction: (id: string) => void;
+  onSelectDrilldown?: (type: DrilldownType, key?: string | null) => void;
   isReadOnly?: boolean;
   onClose: () => void;
 }> = ({
@@ -626,6 +644,10 @@ export const DrilldownModal: React.FC<{
   drilldownPeriodContext,
   setDrilldownFilter,
   transactions,
+  wallets = [],
+  savingsList = [],
+  walletBalances = {},
+  categoryStyles = {},
   currency,
   customDateFrom,
   customDateTo,
@@ -633,12 +655,16 @@ export const DrilldownModal: React.FC<{
   onInspectDebt,
   onEditTransaction,
   onDeleteTransaction,
+  onSelectDrilldown,
   isReadOnly = false,
   onClose,
 }) => {
   const { lang, t } = useTranslation();
   const [selectedSubCategory, setSelectedSubCategory] = useState<string | null>(null);
   const [openTxId, setOpenTxId] = useState<string | null>(null);
+  const [netWorthView, setNetWorthView] = useState<'summary' | 'transactions'>('summary');
+  const [walletsExpanded, setWalletsExpanded] = useState(false);
+  const [savingsExpanded, setSavingsExpanded] = useState(false);
   const subStripRef = useRef<HTMLDivElement>(null);
   const subStripDragRef = useRef({
     active: false,
@@ -651,6 +677,9 @@ export const DrilldownModal: React.FC<{
   useEffect(() => {
     setSelectedSubCategory(null);
     setOpenTxId(null);
+    setNetWorthView('summary');
+    setWalletsExpanded(false);
+    setSavingsExpanded(false);
     if (subStripRef.current) {
       subStripRef.current.scrollLeft = 0;
     }
@@ -863,162 +892,485 @@ export const DrilldownModal: React.FC<{
       ? String(now.getFullYear() + drilldownPeriodContext.yearOffset)
       : t.common.thisYear;
 
+  const isNetWorthDrilldown = drilldownType === 'netWorth';
+  const showNetWorthSummary = isNetWorthDrilldown && netWorthView === 'summary';
+
+  const netWorthSummary = isNetWorthDrilldown
+    ? (() => {
+        let availableCashBalance = 0;
+        wallets.forEach((w) => {
+          availableCashBalance += walletBalances[w] || 0;
+        });
+
+        let totalSavings = 0;
+        savingsList.forEach((s) => {
+          totalSavings += walletBalances[s] || 0;
+        });
+
+        let totalLend = 0;
+        let totalBorrow = 0;
+        let lendCount = 0;
+        let borrowCount = 0;
+        transactions.forEach((tx) => {
+          const due = tx.remainingBalance !== undefined ? tx.remainingBalance : tx.amount;
+          if (tx.type === 'lend' && !tx.resolved) {
+            totalLend += due;
+            lendCount += 1;
+          }
+          if (tx.type === 'borrow' && !tx.resolved) {
+            totalBorrow += due;
+            borrowCount += 1;
+          }
+        });
+
+        const totalAssets = availableCashBalance + totalSavings + totalLend;
+        const netWorth = totalAssets - totalBorrow;
+
+        return {
+          availableCashBalance,
+          totalSavings,
+          totalLend,
+          totalBorrow,
+          lendCount,
+          borrowCount,
+          totalAssets,
+          netWorth,
+        };
+      })()
+    : null;
+
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className="flex h-[min(82vh,620px)] w-full max-w-md flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
+        className="flex h-[min(84vh,640px)] w-full max-w-md flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex shrink-0 items-start justify-between gap-2">
           <div className="min-w-0">
             <h3
               className={`truncate text-base font-bold ${
-                isExpenseStyle
+                isNetWorthDrilldown
+                  ? 'text-[#102A43] dark:text-slate-100'
+                  : isExpenseStyle
                   ? 'text-[#D94848] dark:text-rose-400'
                   : 'text-[#16845B] dark:text-emerald-400'
               }`}
             >
-              {headerTitle}
+              {isNetWorthDrilldown ? t.modals.financialSummaryTitle : headerTitle}
             </h3>
-            {(isCategoryDrilldown ||
-              drilldownType === 'income' ||
-              drilldownType === 'expense') && (
+            {isNetWorthDrilldown ? (
               <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
-                {isCategoryDrilldown ? `${typeTitle} · ` : ''}
-                {activePeriodLabel} ·{' '}
-                <span className="font-mono-num font-semibold text-[#102A43] dark:text-slate-200">
-                  {formatMoney(displayedTotal, currency)}
-                </span>
+                {formatDisplayDate(getTodayISO(), lang)}
               </p>
+            ) : (
+              (isCategoryDrilldown ||
+                drilldownType === 'income' ||
+                drilldownType === 'expense') && (
+                <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                  {isCategoryDrilldown ? `${typeTitle} · ` : ''}
+                  {activePeriodLabel} ·{' '}
+                  <span className="font-mono-num font-semibold text-[#102A43] dark:text-slate-200">
+                    {formatMoney(displayedTotal, currency)}
+                  </span>
+                </p>
+              )
             )}
           </div>
-          <select
-            value={drilldownFilter}
-            onChange={(e) => setDrilldownFilter(e.target.value as PeriodFilter)}
-            className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-          >
-            <option value="all">{t.common.allTime}</option>
-            <option value="monthly">{monthlyOptionLabel}</option>
-            <option value="previous_month">{t.common.prevMonthShort}</option>
-            <option value="yearly">{yearlyOptionLabel}</option>
-            {(drilldownFilter === 'custom' || (Boolean(customDateFrom) && Boolean(customDateTo))) && (
-              <option value="custom">{t.common.custom}</option>
-            )}
-          </select>
+          {!showNetWorthSummary ? (
+            <select
+              value={drilldownFilter}
+              onChange={(e) => setDrilldownFilter(e.target.value as PeriodFilter)}
+              className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            >
+              <option value="all">{t.common.allTime}</option>
+              <option value="monthly">{monthlyOptionLabel}</option>
+              <option value="previous_month">{t.common.prevMonthShort}</option>
+              <option value="yearly">{yearlyOptionLabel}</option>
+              {(drilldownFilter === 'custom' || (Boolean(customDateFrom) && Boolean(customDateTo))) && (
+                <option value="custom">{t.common.custom}</option>
+              )}
+            </select>
+          ) : (
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label={t.common.close}
+              className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
 
-        {hasSubCategoryStrip && (
-          <div className="relative mb-2 shrink-0 border-b border-slate-100 pb-3 dark:border-slate-800">
-            <div
-              ref={subStripRef}
-              onDragStart={(e) => e.preventDefault()}
-              onMouseDown={handleSubStripMouseDown}
-              onMouseMove={handleSubStripMouseMove}
-              onMouseUp={handleSubStripMouseEnd}
-              onMouseLeave={handleSubStripMouseEnd}
-              className="no-scrollbar flex cursor-grab touch-pan-x select-none items-center gap-1.5 overflow-x-auto overflow-y-hidden overscroll-x-contain px-2 active:cursor-grabbing"
+        {isNetWorthDrilldown && (
+          <div className="mb-3 grid shrink-0 grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800/80">
+            <button
+              type="button"
+              onClick={() => setNetWorthView('summary')}
+              className={`min-h-[34px] cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                netWorthView === 'summary'
+                  ? 'bg-white text-[#102A43] shadow-xs dark:bg-slate-900 dark:text-slate-100'
+                  : 'text-slate-500 hover:text-[#102A43] dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
             >
+              {t.modals.summaryTab}
+            </button>
+            <button
+              type="button"
+              onClick={() => setNetWorthView('transactions')}
+              className={`min-h-[34px] cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                netWorthView === 'transactions'
+                  ? 'bg-white text-[#102A43] shadow-xs dark:bg-slate-900 dark:text-slate-100'
+                  : 'text-slate-500 hover:text-[#102A43] dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              {t.modals.transactionsTab}
+            </button>
+          </div>
+        )}
+
+        {showNetWorthSummary && netWorthSummary ? (
+          <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto pr-0.5">
+            {/* Hero Net Worth & Available Balance Card */}
+            <div className="rounded-2xl bg-[#102A43] p-4 text-white dark:border dark:border-slate-800 dark:bg-slate-950">
+              <div className="flex items-center justify-between gap-2 text-xs font-medium text-slate-300">
+                <span>{t.dashboard.netWorth}</span>
+                <span>{formatDisplayDate(getTodayISO(), lang)}</span>
+              </div>
+              <div className="font-mono-num mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">
+                {formatMoney(netWorthSummary.netWorth, currency)}
+              </div>
+              <div className="mt-3 border-t border-white/10 pt-2.5 text-xs text-slate-300">
+                <span>
+                  {t.dashboard.availableCash}:{' '}
+                  <strong className="font-mono-num font-bold text-white">
+                    {formatMoney(netWorthSummary.availableCashBalance, currency)}
+                  </strong>
+                </span>
+              </div>
+            </div>
+
+            {/* Collapsible At-a-Glance Balance Breakdown */}
+            <div className="mt-3 divide-y divide-slate-100 border-t border-slate-100 dark:divide-slate-800/80 dark:border-slate-800">
+              {/* Wallets Row (Minimized by default, tap to expand) */}
+              <div>
+                <button
+                  type="button"
+                  aria-expanded={walletsExpanded}
+                  onClick={() => setWalletsExpanded((prev) => !prev)}
+                  className="flex min-h-[46px] w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
+                      <Wallet className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="min-w-0 truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                      {t.dashboard.wallets}{' '}
+                      <span className="font-medium text-slate-400 dark:text-slate-500">
+                        ({wallets.length})
+                      </span>
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <span className="font-mono-num text-xs font-extrabold text-[#102A43] dark:text-slate-100">
+                      +{formatMoney(netWorthSummary.availableCashBalance, currency)}
+                    </span>
+                    <ChevronDown
+                      className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${
+                        walletsExpanded ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </span>
+                </button>
+                {walletsExpanded && (
+                  <div className="divide-y divide-slate-100 pb-1.5 pl-8 dark:divide-slate-800/70">
+                    {wallets.map((w) => {
+                      const style = getCategoryStyle(categoryStyles, 'wal', w);
+                      const bal = walletBalances[w] || 0;
+                      return (
+                        <button
+                          key={w}
+                          type="button"
+                          onClick={() => onSelectDrilldown?.('wallet', w)}
+                          className="flex min-h-[40px] w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                        >
+                          <span className="flex min-w-0 items-center gap-2">
+                            <CategoryIconBadge style={style} size="xs" />
+                            <span className="truncate text-xs font-medium text-slate-700 dark:text-slate-200">
+                              {w}
+                            </span>
+                          </span>
+                          <span className="flex shrink-0 items-center gap-1">
+                            <span
+                              className={`font-mono-num text-xs font-bold ${
+                                bal < 0
+                                  ? 'text-[#D94848] dark:text-rose-400'
+                                  : 'text-[#102A43] dark:text-slate-100'
+                              }`}
+                            >
+                              {formatMoney(bal, currency)}
+                            </span>
+                            <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Savings & Investments Row (Minimized by default, tap to expand) */}
+              <div>
+                <button
+                  type="button"
+                  aria-expanded={savingsExpanded}
+                  onClick={() => setSavingsExpanded((prev) => !prev)}
+                  className="flex min-h-[46px] w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                >
+                  <span className="flex min-w-0 items-center gap-2.5">
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
+                      <PiggyBank className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="min-w-0 truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                      {t.dashboard.savingsInvestments}{' '}
+                      <span className="font-medium text-slate-400 dark:text-slate-500">
+                        ({savingsList.length})
+                      </span>
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1.5">
+                    <span className="font-mono-num text-xs font-extrabold text-[#16845B] dark:text-emerald-400">
+                      +{formatMoney(netWorthSummary.totalSavings, currency)}
+                    </span>
+                    <ChevronDown
+                      className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${
+                        savingsExpanded ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </span>
+                </button>
+                {savingsExpanded && (
+                  <div className="pb-1.5 pl-8">
+                    {savingsList.length === 0 ? (
+                      <p className="px-1.5 py-2 text-xs text-slate-500 dark:text-slate-400">
+                        {t.modals.noSavingsAccounts}
+                      </p>
+                    ) : (
+                      <div className="divide-y divide-slate-100 dark:divide-slate-800/70">
+                        {savingsList.map((s) => {
+                          const style = getCategoryStyle(categoryStyles, 'sav', s);
+                          const bal = walletBalances[s] || 0;
+                          return (
+                            <button
+                              key={s}
+                              type="button"
+                              onClick={() => onSelectDrilldown?.('savings', s)}
+                              className="flex min-h-[40px] w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                            >
+                              <span className="flex min-w-0 items-center gap-2">
+                                <CategoryIconBadge style={style} size="xs" />
+                                <span className="truncate text-xs font-medium text-slate-700 dark:text-slate-200">
+                                  {s}
+                                </span>
+                              </span>
+                              <span className="flex shrink-0 items-center gap-1">
+                                <span className="font-mono-num text-xs font-bold text-[#16845B] dark:text-emerald-400">
+                                  {formatMoney(bal, currency)}
+                                </span>
+                                <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Lent (Receivable) Row */}
               <button
                 type="button"
-                aria-pressed={activeSubKey === null}
-                onClick={() => {
-                  if (!wasSubStripDraggingRef.current) {
-                    setSelectedSubCategory(null);
-                    setOpenTxId(null);
-                  }
-                }}
-                className={`inline-flex min-h-[36px] shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] ${
-                  activeSubKey === null
-                    ? isExpenseStyle
-                      ? 'bg-[#D94848] text-white shadow-sm dark:bg-rose-600'
-                      : 'bg-[#16845B] text-white shadow-sm dark:bg-emerald-600'
-                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100 dark:bg-slate-800/70 dark:text-slate-300 dark:hover:bg-slate-800'
-                }`}
+                onClick={() => onSelectDrilldown?.('lend', null)}
+                className="flex min-h-[46px] w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
               >
-                <span>{t.common.all}</span>
-                <span aria-hidden="true" className="opacity-70">
-                  ·
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400">
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                      {t.dashboard.lentReceivable}
+                    </span>
+                    {netWorthSummary.lendCount > 0 && (
+                      <span className="block text-[11px] text-slate-400 dark:text-slate-500">
+                        {netWorthSummary.lendCount} {t.modals.activeRecordsSuffix}
+                      </span>
+                    )}
+                  </span>
                 </span>
-                <span className="font-mono-num">{formatMoney(categoryTotal, currency)}</span>
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <span className="font-mono-num text-xs font-extrabold text-blue-700 dark:text-blue-400">
+                    +{formatMoney(netWorthSummary.totalLend, currency)}
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-slate-400" />
+                </span>
               </button>
-              {subCategoryBuckets.map((bucket) => {
-                const isSelected = activeSubKey === bucket.key;
-                return (
+
+              {/* Borrowed (Payable) Row */}
+              <button
+                type="button"
+                onClick={() => onSelectDrilldown?.('borrow', null)}
+                className="flex min-h-[46px] w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+              >
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400">
+                    <ArrowDownLeft className="h-3.5 w-3.5" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                      {t.dashboard.borrowedPayable}
+                    </span>
+                    {netWorthSummary.borrowCount > 0 && (
+                      <span className="block text-[11px] text-slate-400 dark:text-slate-500">
+                        {netWorthSummary.borrowCount} {t.modals.activeRecordsSuffix}
+                      </span>
+                    )}
+                  </span>
+                </span>
+                <span className="flex shrink-0 items-center gap-1.5">
+                  <span className="font-mono-num text-xs font-extrabold text-[#D94848] dark:text-rose-400">
+                    −{formatMoney(netWorthSummary.totalBorrow, currency)}
+                  </span>
+                  <ChevronRight className="h-4 w-4 text-slate-400" />
+                </span>
+              </button>
+            </div>
+
+            {/* Net Worth Summary Total */}
+            <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-200 pt-3 text-xs font-bold text-[#102A43] dark:border-slate-800 dark:text-slate-100">
+              <span>{t.dashboard.netWorth}</span>
+              <span className="font-mono-num text-sm">
+                {formatMoney(netWorthSummary.netWorth, currency)}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <>
+            {hasSubCategoryStrip && (
+              <div className="relative mb-2 shrink-0 border-b border-slate-100 pb-3 dark:border-slate-800">
+                <div
+                  ref={subStripRef}
+                  onDragStart={(e) => e.preventDefault()}
+                  onMouseDown={handleSubStripMouseDown}
+                  onMouseMove={handleSubStripMouseMove}
+                  onMouseUp={handleSubStripMouseEnd}
+                  onMouseLeave={handleSubStripMouseEnd}
+                  className="no-scrollbar flex cursor-grab touch-pan-x select-none items-center gap-1.5 overflow-x-auto overflow-y-hidden overscroll-x-contain px-2 active:cursor-grabbing"
+                >
                   <button
-                    key={bucket.key}
                     type="button"
-                    aria-pressed={isSelected}
+                    aria-pressed={activeSubKey === null}
                     onClick={() => {
                       if (!wasSubStripDraggingRef.current) {
-                        setSelectedSubCategory(bucket.key);
+                        setSelectedSubCategory(null);
                         setOpenTxId(null);
                       }
                     }}
                     className={`inline-flex min-h-[36px] shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] ${
-                      isSelected
+                      activeSubKey === null
                         ? isExpenseStyle
                           ? 'bg-[#D94848] text-white shadow-sm dark:bg-rose-600'
                           : 'bg-[#16845B] text-white shadow-sm dark:bg-emerald-600'
                         : 'bg-slate-50 text-slate-600 hover:bg-slate-100 dark:bg-slate-800/70 dark:text-slate-300 dark:hover:bg-slate-800'
                     }`}
                   >
-                    <span className="max-w-[140px] truncate">{bucket.label}</span>
+                    <span>{t.common.all}</span>
                     <span aria-hidden="true" className="opacity-70">
                       ·
                     </span>
-                    <span className="font-mono-num">{formatMoney(bucket.total, currency)}</span>
+                    <span className="font-mono-num">{formatMoney(categoryTotal, currency)}</span>
                   </button>
-                );
-              })}
+                  {subCategoryBuckets.map((bucket) => {
+                    const isSelected = activeSubKey === bucket.key;
+                    return (
+                      <button
+                        key={bucket.key}
+                        type="button"
+                        aria-pressed={isSelected}
+                        onClick={() => {
+                          if (!wasSubStripDraggingRef.current) {
+                            setSelectedSubCategory(bucket.key);
+                            setOpenTxId(null);
+                          }
+                        }}
+                        className={`inline-flex min-h-[36px] shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] ${
+                          isSelected
+                            ? isExpenseStyle
+                              ? 'bg-[#D94848] text-white shadow-sm dark:bg-rose-600'
+                              : 'bg-[#16845B] text-white shadow-sm dark:bg-emerald-600'
+                            : 'bg-slate-50 text-slate-600 hover:bg-slate-100 dark:bg-slate-800/70 dark:text-slate-300 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <span className="max-w-[140px] truncate">{bucket.label}</span>
+                        <span aria-hidden="true" className="opacity-70">
+                          ·
+                        </span>
+                        <span className="font-mono-num">{formatMoney(bucket.total, currency)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-0 left-0 bottom-3 w-4 bg-gradient-to-r from-white to-transparent dark:from-slate-900"
+                />
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-0 right-0 bottom-3 w-4 bg-gradient-to-l from-white to-transparent dark:from-slate-900"
+                />
+              </div>
+            )}
+
+            {(drilldownType === 'wallet' || drilldownType === 'savings') && drilldownKey && (
+              <button
+                type="button"
+                onClick={() => onStartBalanceCorrection(drilldownKey)}
+                className="mb-3 min-h-[40px] w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 py-2 text-xs font-bold text-[#102A43] hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
+              >
+                {t.modals.correctAccountBalance}
+              </button>
+            )}
+
+            <div className="no-scrollbar min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
+              {filtered.length === 0 ? (
+                <p className="py-10 text-center text-xs text-slate-500 dark:text-slate-400">
+                  {t.modals.noTxForFilter}
+                </p>
+              ) : (
+                filtered.map((tx) => (
+                  <DrilldownTxRow
+                    key={tx.id}
+                    tx={tx}
+                    currency={currency}
+                    isReadOnly={isReadOnly}
+                    isOpen={openTxId === tx.id}
+                    onToggleOpen={setOpenTxId}
+                    onInspectDebt={(item) => {
+                      onClose();
+                      onInspectDebt(item);
+                    }}
+                    onEdit={onEditTransaction}
+                    onDelete={onDeleteTransaction}
+                  />
+                ))
+              )}
             </div>
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 left-0 bottom-3 w-4 bg-gradient-to-r from-white to-transparent dark:from-slate-900"
-            />
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 right-0 bottom-3 w-4 bg-gradient-to-l from-white to-transparent dark:from-slate-900"
-            />
-          </div>
+          </>
         )}
-
-        {(drilldownType === 'wallet' || drilldownType === 'savings') && drilldownKey && (
-          <button
-            type="button"
-            onClick={() => onStartBalanceCorrection(drilldownKey)}
-            className="mb-3 min-h-[40px] w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 py-2 text-xs font-bold text-[#102A43] hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-          >
-            {t.modals.correctAccountBalance}
-          </button>
-        )}
-
-        <div className="no-scrollbar min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
-          {filtered.length === 0 ? (
-            <p className="py-10 text-center text-xs text-slate-500 dark:text-slate-400">
-              {t.modals.noTxForFilter}
-            </p>
-          ) : (
-            filtered.map((tx) => (
-              <DrilldownTxRow
-                key={tx.id}
-                tx={tx}
-                currency={currency}
-                isReadOnly={isReadOnly}
-                isOpen={openTxId === tx.id}
-                onToggleOpen={setOpenTxId}
-                onInspectDebt={(item) => {
-                  onClose();
-                  onInspectDebt(item);
-                }}
-                onEdit={onEditTransaction}
-                onDelete={onDeleteTransaction}
-              />
-            ))
-          )}
-        </div>
 
         <button
           type="button"
@@ -2477,11 +2829,13 @@ export const CategoryStyleModal: React.FC<{
   const { t } = useTranslation();
   const [selectedIcon, setSelectedIcon] = useState(initialStyle.icon);
   const [selectedColor, setSelectedColor] = useState(initialStyle.color);
+  const [iconSearch, setIconSearch] = useState('');
 
   useEffect(() => {
     if (target) {
       setSelectedIcon(initialStyle.icon);
       setSelectedColor(initialStyle.color);
+      setIconSearch('');
     }
   }, [target, initialStyle.icon, initialStyle.color]);
 
@@ -2491,6 +2845,20 @@ export const CategoryStyleModal: React.FC<{
     icon: selectedIcon,
     color: selectedColor,
   };
+
+  const searchNeedle = iconSearch.trim().toLowerCase();
+  const filteredIcons = searchNeedle
+    ? CATEGORY_ICONS.filter(
+        (opt) =>
+          opt.label.toLowerCase().includes(searchNeedle) ||
+          opt.key.toLowerCase().includes(searchNeedle)
+      )
+    : CATEGORY_ICONS;
+
+  const targetDisplayLabel = formatCategoryStyleTargetLabel(target.kind, target.name);
+  const isPresetColor = CATEGORY_COLORS.some(
+    (hex) => hex.toLowerCase() === selectedColor.toLowerCase()
+  );
 
   return (
     <div
@@ -2526,48 +2894,81 @@ export const CategoryStyleModal: React.FC<{
               {t.modals.previewLabel}
             </div>
             <div className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
-              {target.name}
+              {targetDisplayLabel}
             </div>
           </div>
         </div>
 
         <div className="flex-1 space-y-4 overflow-y-auto pr-1">
-          {/* Icon Picker */}
+          {/* Icon Picker with Search */}
           <div>
-            <div className="mb-2 text-xs font-bold text-slate-600 dark:text-slate-300">
-              {t.modals.chooseIcon}
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <span className="text-xs font-bold text-slate-600 dark:text-slate-300">
+                {t.modals.chooseIcon}
+              </span>
+              <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                {filteredIcons.length} / {CATEGORY_ICONS.length}
+              </span>
             </div>
-            <div className="grid grid-cols-7 gap-2">
-              {CATEGORY_ICONS.map((opt) => {
-                const Icon = opt.icon;
-                const isSelected = selectedIcon === opt.key;
-                return (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    aria-label={opt.label}
-                    aria-pressed={isSelected}
-                    title={opt.label}
-                    onClick={() => setSelectedIcon(opt.key)}
-                    className={`flex h-10 items-center justify-center rounded-xl border transition-all ${
-                      isSelected
-                        ? 'border-[#16845B] bg-emerald-50 text-[#16845B] ring-2 ring-[#16845B]/30 dark:border-emerald-400 dark:bg-emerald-950/40 dark:text-emerald-300'
-                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300 dark:hover:bg-slate-800'
-                    }`}
-                  >
-                    <Icon className="h-4 w-4" />
-                  </button>
-                );
-              })}
+
+            <div className="relative mb-2.5">
+              <Search className="pointer-events-none absolute top-1/2 left-3 h-3.5 w-3.5 -translate-y-1/2 text-slate-400 dark:text-slate-500" />
+              <input
+                type="text"
+                value={iconSearch}
+                onChange={(e) => setIconSearch(e.target.value)}
+                placeholder={t.modals.searchIconsPlaceholder}
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pr-8 pl-8 text-xs text-[#102A43] placeholder:text-slate-400 focus:border-[#16845B] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder:text-slate-500"
+              />
+              {iconSearch && (
+                <button
+                  type="button"
+                  onClick={() => setIconSearch('')}
+                  aria-label={t.common.close}
+                  className="absolute top-1/2 right-2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
             </div>
+
+            {filteredIcons.length === 0 ? (
+              <div className="rounded-xl border border-dashed border-slate-200 py-5 text-center text-xs text-slate-400 dark:border-slate-800 dark:text-slate-500">
+                {t.modals.noIconsMatch}
+              </div>
+            ) : (
+              <div className="grid max-h-52 grid-cols-7 gap-2 overflow-y-auto p-0.5">
+                {filteredIcons.map((opt) => {
+                  const Icon = opt.icon;
+                  const isSelected = selectedIcon === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      aria-label={opt.label}
+                      aria-pressed={isSelected}
+                      title={opt.label}
+                      onClick={() => setSelectedIcon(opt.key)}
+                      className={`flex h-10 items-center justify-center rounded-xl border transition-all ${
+                        isSelected
+                          ? 'border-[#16845B] bg-emerald-50 text-[#16845B] ring-2 ring-[#16845B]/30 dark:border-emerald-400 dark:bg-emerald-950/40 dark:text-emerald-300'
+                          : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50 dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-300 dark:hover:bg-slate-800'
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
-          {/* Color Swatch Picker */}
+          {/* Color Swatch Picker + Custom Color */}
           <div>
             <div className="mb-2 text-xs font-bold text-slate-600 dark:text-slate-300">
               {t.modals.chooseColor}
             </div>
-            <div className="grid grid-cols-6 gap-2.5">
+            <div className="grid grid-cols-6 gap-2 sm:grid-cols-8">
               {CATEGORY_COLORS.map((hex) => {
                 const isSelected = selectedColor.toLowerCase() === hex.toLowerCase();
                 return (
@@ -2578,7 +2979,7 @@ export const CategoryStyleModal: React.FC<{
                     aria-pressed={isSelected}
                     onClick={() => setSelectedColor(hex)}
                     style={{ backgroundColor: hex }}
-                    className={`flex h-10 items-center justify-center rounded-xl transition-transform active:scale-95 ${
+                    className={`flex h-9 items-center justify-center rounded-xl transition-transform active:scale-95 ${
                       isSelected
                         ? 'ring-2 ring-[#102A43] ring-offset-2 dark:ring-slate-100 dark:ring-offset-slate-900'
                         : 'opacity-90 hover:opacity-100'
@@ -2589,6 +2990,37 @@ export const CategoryStyleModal: React.FC<{
                 );
               })}
             </div>
+
+            {/* Custom Color Input */}
+            <label className="mt-3 flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800/80">
+              <div className="flex min-w-0 items-center gap-2.5">
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-black/10 dark:border-white/15 ${
+                    !isPresetColor
+                      ? 'ring-2 ring-[#102A43] ring-offset-1 dark:ring-slate-100 dark:ring-offset-slate-900'
+                      : ''
+                  }`}
+                  style={{ backgroundColor: selectedColor }}
+                >
+                  {!isPresetColor && <Check className="h-3.5 w-3.5 text-white drop-shadow" />}
+                </span>
+                <span className="truncate text-xs font-semibold text-[#102A43] dark:text-slate-200">
+                  {t.modals.customColorLabel}
+                </span>
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                <span className="font-mono text-[11px] font-semibold uppercase text-slate-500 dark:text-slate-400">
+                  {selectedColor}
+                </span>
+                <input
+                  type="color"
+                  aria-label={t.modals.customColorLabel}
+                  value={/^#[0-9a-fA-F]{6}$/.test(selectedColor) ? selectedColor : '#16845B'}
+                  onChange={(e) => setSelectedColor(e.target.value)}
+                  className="h-6 w-8 cursor-pointer overflow-hidden rounded border-0 bg-transparent p-0"
+                />
+              </div>
+            </label>
           </div>
         </div>
 
@@ -2621,9 +3053,21 @@ export const RecurringBillsModal: React.FC<{
   incomeCategories: string[];
   expenseSubCategories?: Record<string, string[]>;
   allAccountOptions: string[];
+  wallets?: string[];
+  savingsList?: string[];
   categoryStyles?: Record<string, CategoryStyle>;
   currency: CurrencySymbol;
   isReadOnly?: boolean;
+  onAddListItem?: (
+    type: 'wallet' | 'savings' | 'exp_cat' | 'inc_cat',
+    name: string,
+    style?: CategoryStyle
+  ) => Promise<boolean>;
+  onAddSubCategory?: (
+    parentCat: string,
+    subName: string,
+    style?: CategoryStyle
+  ) => Promise<boolean>;
   onSaveBill: (payload: RecurringBillSavePayload, editId?: string) => Promise<boolean>;
   onDeleteBill: (id: string) => Promise<void>;
   onOneTapLog: (bill: RecurringBill) => Promise<void>;
@@ -2636,9 +3080,13 @@ export const RecurringBillsModal: React.FC<{
   incomeCategories,
   expenseSubCategories,
   allAccountOptions,
+  wallets = [],
+  savingsList = [],
   categoryStyles,
   currency,
   isReadOnly = false,
+  onAddListItem,
+  onAddSubCategory,
   onSaveBill,
   onDeleteBill,
   onOneTapLog,
@@ -2687,10 +3135,14 @@ export const RecurringBillsModal: React.FC<{
             incomeCategories={incomeCategories}
             expenseSubCategories={expenseSubCategories}
             allAccountOptions={allAccountOptions}
+            wallets={wallets}
+            savingsList={savingsList}
             categoryStyles={categoryStyles}
             currency={currency}
             isReadOnly={isReadOnly}
             resetTrigger={resetTick}
+            onAddListItem={onAddListItem}
+            onAddSubCategory={onAddSubCategory}
             onSaveBill={onSaveBill}
             onDeleteBill={onDeleteBill}
             onOneTapLog={onOneTapLog}

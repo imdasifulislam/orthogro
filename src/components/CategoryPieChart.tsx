@@ -14,6 +14,7 @@ interface CategoryPieChartProps {
   onSelectCategory: (category: string | null) => void;
   onCategoryClick?: (category: string) => void;
   didSwipeRef: React.MutableRefObject<boolean>;
+  hideBalances?: boolean;
 }
 
 function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
@@ -58,6 +59,7 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
   onSelectCategory,
   onCategoryClick,
   didSwipeRef,
+  hideBalances = false,
 }) => {
   const { t } = useTranslation();
   const nonZeroItems = items.filter(([, amt]) => amt > 0);
@@ -192,7 +194,7 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
               {activeEntry[0]}
             </span>
             <span className="font-mono-num mt-0.5 text-xs font-extrabold text-[#102A43] dark:text-slate-100">
-              {formatMoney(activeEntry[1], currency)}
+              {formatMoney(activeEntry[1], currency, hideBalances)}
             </span>
             <span className="font-mono-num text-[10px] font-semibold text-slate-500 dark:text-slate-400">
               {activePct}%
@@ -204,7 +206,7 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
               {totalLabel}
             </span>
             <span className="font-mono-num mt-0.5 text-xs font-extrabold text-[#102A43] dark:text-slate-100">
-              {formatMoney(total, currency)}
+              {formatMoney(total, currency, hideBalances)}
             </span>
             <span className="text-[10px] text-slate-400 dark:text-slate-500">
               {nonZeroItems.length}{' '}
