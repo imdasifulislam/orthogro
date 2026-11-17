@@ -6,6 +6,7 @@ import {
   FileSpreadsheet,
   PieChart,
   PiggyBank,
+  ShoppingBag,
   Sparkles,
   Target,
   Users,
@@ -41,6 +42,12 @@ const TIP_META: Record<
     iconBgClass: 'bg-sky-50 dark:bg-sky-950/60',
     iconTextClass: 'text-sky-600 dark:text-sky-400',
     btnClass: 'bg-sky-600 text-white hover:bg-sky-700',
+  },
+  bazar_memo: {
+    icon: ShoppingBag,
+    iconBgClass: 'bg-emerald-50 dark:bg-emerald-950/60',
+    iconTextClass: 'text-[#16845B] dark:text-emerald-400',
+    btnClass: 'bg-[#16845B] text-white hover:bg-[#126B4A]',
   },
   budget_goals: {
     icon: Target,
