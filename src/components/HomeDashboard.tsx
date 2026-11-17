@@ -529,6 +529,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [isSwipingCategory, setIsSwipingCategory] = useState(false);
   const [pieView, setPieView] = useState<'expense' | 'income'>('expense');
   const [pieLegendExpanded, setPieLegendExpanded] = useState(false);
+  const [pieRevealed, setPieRevealed] = useState(false);
   const [pieMonthOffset, setPieMonthOffset] = useState(0);
   const [pieYearOffset, setPieYearOffset] = useState(0);
   const [pieCustomOffset, setPieCustomOffset] = useState(0);
@@ -1296,11 +1297,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             <div className="mt-2 text-xs font-medium text-slate-300">
               {t.dashboard.availableCash}:{' '}
               <span className="font-mono-num font-bold tabular-nums text-white">
-                <AnimatedMoneyValue
-                  value={metrics.availableCashBalance}
-                  currency={currency}
-                  durationMs={640}
-                />
+                {formatMoney(metrics.availableCashBalance, currency)}
               </span>
             </div>
           </div>
@@ -2350,6 +2347,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                         openCategoryDrilldown('pie', pieView, cat);
                       }}
                       didSwipeRef={didPieSwipeRef}
+                      onEnteredView={() => setPieRevealed(true)}
                     />
 
                     <div className="w-full min-w-0 flex-1 space-y-1.5">
@@ -2391,12 +2389,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                               </div>
                               <div className="h-1 w-full overflow-hidden rounded-full bg-slate-200/70 dark:bg-slate-800/80">
                                 <div
-                                  key={`${pieView}-${pieMonthOffset}-${pieYearOffset}-${pieCustomOffset}-${cat}`}
-                                  className="animate-share-bar h-full rounded-full transition-all duration-300"
+                                  key={`${pieView}-${pieMonthOffset}-${pieYearOffset}-${pieCustomOffset}-${cat}-${pieRevealed ? '1' : '0'}`}
+                                  className={`h-full rounded-full transition-all duration-300 ${
+                                    pieRevealed ? 'animate-share-bar' : 'origin-left scale-x-0'
+                                  }`}
                                   style={{
                                     width: `${Math.max(3, Math.min(100, pctNum))}%`,
                                     backgroundColor: catStyle.color,
-                                    animationDelay: `${Math.min(idx, 5) * 45}ms`,
+                                    animationDelay: pieRevealed
+                                      ? `${Math.min(idx, 5) * 55}ms`
+                                      : undefined,
                                   }}
                                 />
                               </div>

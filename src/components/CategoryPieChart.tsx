@@ -15,6 +15,7 @@ interface CategoryPieChartProps {
   onCategoryClick?: (category: string) => void;
   didSwipeRef: React.MutableRefObject<boolean>;
   hideBalances?: boolean;
+  onEnteredView?: () => void;
 }
 
 function polarToCartesian(cx: number, cy: number, r: number, angleDeg: number) {
@@ -73,6 +74,7 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
   onCategoryClick,
   didSwipeRef,
   hideBalances = false,
+  onEnteredView,
 }) => {
   const { t } = useTranslation();
   const rawUid = useId();
@@ -83,6 +85,8 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
     () => typeof window === 'undefined' || !('IntersectionObserver' in window)
   );
   const [animCycle, setAnimCycle] = useState(0);
+  const onEnteredViewRef = useRef(onEnteredView);
+  onEnteredViewRef.current = onEnteredView;
 
   const nonZeroItems = useMemo(() => items.filter(([, amt]) => amt > 0), [items]);
   const dataSignature = useMemo(
@@ -93,25 +97,42 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
   const prevSigRef = useRef(dataSignature);
 
   useEffect(() => {
-    if (hasEnteredView) return;
+    if (hasEnteredView) {
+      onEnteredViewRef.current?.();
+      return;
+    }
     const node = containerRef.current;
     if (!node || typeof IntersectionObserver === 'undefined') {
       setHasEnteredView(true);
+      onEnteredViewRef.current?.();
       return;
     }
 
+    let dwellTimer: number | null = null;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          setHasEnteredView(true);
-          setAnimCycle((c) => c + 1);
-          observer.disconnect();
+        const isVisible = entries.some((entry) => entry.isIntersecting);
+        if (isVisible) {
+          if (dwellTimer === null) {
+            dwellTimer = window.setTimeout(() => {
+              setHasEnteredView(true);
+              setAnimCycle((c) => c + 1);
+              onEnteredViewRef.current?.();
+              observer.disconnect();
+            }, 220);
+          }
+        } else if (dwellTimer !== null) {
+          window.clearTimeout(dwellTimer);
+          dwellTimer = null;
         }
       },
-      { threshold: 0.25 }
+      { threshold: 0.45, rootMargin: '0px 0px -72px 0px' }
     );
     observer.observe(node);
-    return () => observer.disconnect();
+    return () => {
+      if (dwellTimer !== null) window.clearTimeout(dwellTimer);
+      observer.disconnect();
+    };
   }, [hasEnteredView]);
 
   useEffect(() => {
