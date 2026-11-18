@@ -148,15 +148,143 @@ input[type='number'] {
   animation: drawerSlideUp 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+@keyframes onboardBarBreathe {
+  0%,
+  100% {
+    transform: scaleY(0.58);
+    opacity: 0.72;
+  }
+  50% {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@keyframes onboardBarPulseX {
+  0%,
+  100% {
+    transform: scaleX(0.76);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
+@keyframes onboardPieSpin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes onboardFloatGentle {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes onboardVoiceRing {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.65;
+  }
+  100% {
+    transform: scale(1.65);
+    opacity: 0;
+  }
+}
+
+@keyframes onboardLineDraw {
+  0% {
+    stroke-dashoffset: 180;
+    opacity: 0.4;
+  }
+  45%,
+  85% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0.9;
+  }
+}
+
+@keyframes onboardSyncPulse {
+  0% {
+    transform: translateX(-18px);
+    opacity: 0;
+  }
+  30%,
+  70% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(18px);
+    opacity: 0;
+  }
+}
+
+.animate-onboard-bar {
+  transform-origin: bottom;
+  animation: onboardBarBreathe 2.4s ease-in-out infinite;
+}
+
+.animate-onboard-bar-x {
+  transform-origin: left center;
+  animation: onboardBarPulseX 2.6s ease-in-out infinite;
+}
+
+.animate-onboard-pie-spin {
+  transform-origin: center;
+  animation: onboardPieSpin 14s linear infinite;
+}
+
+.animate-onboard-float {
+  animation: onboardFloatGentle 3.4s ease-in-out infinite;
+}
+
+.animate-onboard-voice-ring {
+  animation: onboardVoiceRing 2.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.animate-onboard-line-draw {
+  stroke-dasharray: 180;
+  animation: onboardLineDraw 3.6s cubic-bezier(0.22, 1, 0.36, 1) infinite;
+}
+
+.animate-onboard-sync-pulse {
+  animation: onboardSyncPulse 2.2s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-pie-sweep,
   .animate-pie-center,
   .animate-share-bar,
-  .animate-drawer-up {
+  .animate-drawer-up,
+  .animate-onboard-bar,
+  .animate-onboard-bar-x,
+  .animate-onboard-pie-spin,
+  .animate-onboard-float,
+  .animate-onboard-line-draw,
+  .animate-onboard-sync-pulse {
     animation: none !important;
     transform: none !important;
     opacity: 1 !important;
     stroke-dashoffset: 0 !important;
+  }
+
+  .animate-onboard-voice-ring {
+    animation: none !important;
+    opacity: 0 !important;
   }
 
   .animate-neon-lifecycle,

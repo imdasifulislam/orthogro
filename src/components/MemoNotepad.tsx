@@ -148,6 +148,8 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
   const [activeMemoPicker, setActiveMemoPicker] = useState<
     'category' | 'subCategory' | 'wallet' | null
   >(null);
+  const [showMemoDetails, setShowMemoDetails] = useState(false);
+  const [loggingMemoId, setLoggingMemoId] = useState<string | null>(null);
 
   React.useEffect(() => {
     onNoteModalOpenChange?.(Boolean(isAddingNote || selectedNote || activeMemoPicker));
@@ -179,6 +181,7 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
     setMemoSubCategory('');
     setMemoWallet(pickDefaultMemoWallet(allAccountOptions));
     setEditingMemoId(null);
+    setShowMemoDetails(false);
   };
 
   const handleRowChange = (idx: number, field: 'name' | 'price', value: string) => {
@@ -275,6 +278,28 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
       note: itemsDescription,
     });
     resetMemoForm();
+  };
+
+  const handleQuickLogSavedMemo = async (memo: BazarMemo) => {
+    if (isReadOnly || loggingMemoId || memo.total <= 0) return;
+    const itemsDescription = memo.items
+      .map((i) => (i.price > 0 ? `${i.name}: ${formatMoney(i.price, currency)}` : i.name))
+      .join(', ');
+    const title = memo.note?.trim() || `${t.memo.bazarMemoPrefix} (${memo.date})`;
+    setLoggingMemoId(memo.id);
+    try {
+      await onAddMemoAsExpense({
+        title,
+        amount: memo.total,
+        category: memo.category,
+        ...(memo.subCategory ? { subCategory: memo.subCategory } : {}),
+        wallet: memo.wallet,
+        rawDate: memo.date,
+        note: itemsDescription,
+      });
+    } finally {
+      setLoggingMemoId(null);
+    }
   };
 
   const handleSaveNoteClick = async () => {
@@ -428,16 +453,16 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
             }`}
           >
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          {/* Builder column — Unified Receipt / Ledger List */}
+          {/* Builder column — Clutter-free Open Note Canvas */}
           <div className="lg:col-span-6">
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              {/* Receipt Header */}
-              <div className="border-b border-slate-100 px-5 pt-4 pb-3.5 dark:border-slate-800">
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-slate-400 dark:text-slate-500">
-                    {editingMemoId ? t.memo.editMemo : t.memo.newMemo}
-                  </span>
-                  {editingMemoId && (
+              {/* Minimal Note Title & Collapsible Metadata */}
+              <div className="px-5 pt-4 pb-1">
+                {editingMemoId && (
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-[#16845B] dark:text-emerald-400">
+                      {t.memo.editMemo}
+                    </span>
                     <button
                       type="button"
                       onClick={resetMemoForm}
@@ -445,8 +470,8 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                     >
                       {t.memo.cancelEdit}
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
 
                 {/* Borderless Memo Title / Note */}
                 <input
@@ -456,120 +481,146 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                   placeholder={t.memo.memoNotePlaceholder}
                   value={memoNoteText}
                   onChange={(e) => setMemoNoteText(e.target.value)}
-                  className="w-full bg-transparent text-base font-bold text-[#102A43] placeholder:font-medium placeholder:text-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
+                  className="w-full bg-transparent text-base font-bold text-[#102A43] placeholder:font-medium placeholder:text-slate-400 focus:outline-none sm:text-lg dark:text-slate-100 dark:placeholder:text-slate-500"
                 />
 
-                {/* Transaction-style Metadata Pickers (Date + Category, Sub-category + Wallet) */}
-                <div className="mt-3 space-y-2">
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="date"
-                      aria-label={t.memo.dateLabel}
-                      value={memoDate}
-                      onChange={(e) => setMemoDate(e.target.value)}
-                      className="min-h-[44px] shrink-0 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-xs font-bold text-[#102A43] transition-colors hover:border-slate-300 focus:border-[#16845B] focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100 dark:hover:border-slate-700 dark:focus:border-emerald-400 dark:focus:bg-slate-900"
+                {/* Collapsible Details Summary Strip */}
+                <button
+                  type="button"
+                  onClick={() => setShowMemoDetails((prev) => !prev)}
+                  aria-expanded={showMemoDetails}
+                  className="mt-1.5 flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl px-1.5 py-1.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                >
+                  <span className="flex min-w-0 items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                    <CategoryIconBadge
+                      style={getExpenseOrSubCategoryStyle(
+                        categoryStyles,
+                        memoCategory,
+                        memoSubCategory
+                      )}
+                      size="sm"
                     />
+                    <span className="truncate font-medium">
+                      {memoDate === getTodayISO() ? t.memo.todayLabel : memoDate}
+                      {' · '}
+                      {memoCategory}
+                      {memoSubCategory ? ` / ${memoSubCategory}` : ''}
+                      {' · '}
+                      {memoWallet}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-semibold text-[#16845B] dark:text-emerald-400">
+                    <span>{showMemoDetails ? t.memo.hideDetails : t.memo.editDetails}</span>
+                    <ChevronDown
+                      className={`h-3.5 w-3.5 transition-transform duration-200 ${
+                        showMemoDetails ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </span>
+                </button>
 
-                    <button
-                      type="button"
-                      aria-label={t.memo.categoryLabel}
-                      onClick={() => setActiveMemoPicker('category')}
-                      className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <CategoryIconBadge
-                          style={getCategoryStyle(categoryStyles, 'exp', memoCategory)}
-                          size="sm"
-                        />
-                        <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
-                          {memoCategory}
+                {/* Expandable Date / Category / Sub-category / Wallet Pickers */}
+                {showMemoDetails && (
+                  <div className="mt-2 space-y-2 pb-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        aria-label={t.memo.dateLabel}
+                        value={memoDate}
+                        onChange={(e) => setMemoDate(e.target.value)}
+                        className="min-h-[44px] shrink-0 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-xs font-bold text-[#102A43] transition-colors hover:border-slate-300 focus:border-[#16845B] focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100 dark:hover:border-slate-700 dark:focus:border-emerald-400 dark:focus:bg-slate-900"
+                      />
+
+                      <button
+                        type="button"
+                        aria-label={t.memo.categoryLabel}
+                        onClick={() => setActiveMemoPicker('category')}
+                        className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <CategoryIconBadge
+                            style={getCategoryStyle(categoryStyles, 'exp', memoCategory)}
+                            size="sm"
+                          />
+                          <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                            {memoCategory}
+                          </span>
                         </span>
-                      </span>
-                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                    </button>
+                        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        aria-label={t.txForm.subCategoryLabel}
+                        onClick={() => setActiveMemoPicker('subCategory')}
+                        className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <CategoryIconBadge
+                            style={getExpenseOrSubCategoryStyle(
+                              categoryStyles,
+                              memoCategory,
+                              memoSubCategory
+                            )}
+                            size="sm"
+                          />
+                          <span
+                            className={`truncate text-xs ${
+                              memoSubCategory
+                                ? 'font-bold text-[#102A43] dark:text-slate-100'
+                                : 'font-semibold text-slate-500 dark:text-slate-400'
+                            }`}
+                          >
+                            {memoSubCategory || t.txForm.subCategoryChipPlaceholder}
+                          </span>
+                        </span>
+                        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      </button>
+
+                      <button
+                        type="button"
+                        aria-label={t.memo.walletLabel}
+                        onClick={() => setActiveMemoPicker('wallet')}
+                        className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <CategoryIconBadge
+                            style={getCategoryStyle(
+                              categoryStyles,
+                              savingsList.includes(memoWallet) ? 'sav' : 'wal',
+                              memoWallet
+                            )}
+                            size="sm"
+                          />
+                          <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                            {memoWallet}
+                          </span>
+                        </span>
+                        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                      </button>
+                    </div>
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      aria-label={t.txForm.subCategoryLabel}
-                      onClick={() => setActiveMemoPicker('subCategory')}
-                      className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <CategoryIconBadge
-                          style={getExpenseOrSubCategoryStyle(
-                            categoryStyles,
-                            memoCategory,
-                            memoSubCategory
-                          )}
-                          size="sm"
-                        />
-                        <span
-                          className={`truncate text-xs ${
-                            memoSubCategory
-                              ? 'font-bold text-[#102A43] dark:text-slate-100'
-                              : 'font-semibold text-slate-500 dark:text-slate-400'
-                          }`}
-                        >
-                          {memoSubCategory || t.txForm.subCategoryChipPlaceholder}
-                        </span>
-                      </span>
-                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                    </button>
-
-                    <button
-                      type="button"
-                      aria-label={t.memo.walletLabel}
-                      onClick={() => setActiveMemoPicker('wallet')}
-                      className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <CategoryIconBadge
-                          style={getCategoryStyle(
-                            categoryStyles,
-                            savingsList.includes(memoWallet) ? 'sav' : 'wal',
-                            memoWallet
-                          )}
-                          size="sm"
-                        />
-                        <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
-                          {memoWallet}
-                        </span>
-                      </span>
-                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                    </button>
-                  </div>
-                </div>
+                )}
               </div>
 
-              {/* Ledger Column Labels */}
-              <div className="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-5 py-2 pr-14 text-[11px] font-semibold text-slate-400 dark:border-slate-800 dark:bg-slate-950/40 dark:text-slate-500">
-                <span>{t.memo.itemPlaceholder}</span>
-                <span>
-                  {t.memo.pricePlaceholder} ({currency})
-                </span>
-              </div>
-
-              {/* Unified Receipt Rows */}
-              <div className="divide-y divide-slate-100 dark:divide-slate-800/80">
+              {/* Open Canvas Item + Inline Price Rows (Zero lines, zero columns) */}
+              <div className="px-5 pt-2 pb-3 space-y-0.5">
                 {memoRows.map((row, idx) => {
                   const canRemove =
                     memoRows.length > 1 || row.name.trim() !== '' || row.price.trim() !== '';
                   return (
                     <div
                       key={idx}
-                      className="flex min-h-[46px] items-center gap-2 px-5 py-1 transition-colors focus-within:bg-emerald-50/40 dark:focus-within:bg-emerald-950/20"
+                      className="group flex min-h-[44px] items-center gap-2 rounded-xl px-1.5 transition-colors focus-within:bg-emerald-50/35 dark:focus-within:bg-emerald-950/20"
                     >
-                      <span className="w-5 shrink-0 select-none text-xs tabular-nums text-slate-300 dark:text-slate-600">
-                        {idx + 1}.
-                      </span>
                       <input
                         ref={(el) => {
                           itemInputRefs.current[idx] = el;
                         }}
                         type="text"
-                        placeholder={t.memo.itemPlaceholder}
+                        placeholder={t.memo.addItemPlaceholder}
                         value={row.name}
                         onChange={(e) => handleRowChange(idx, 'name', e.target.value)}
                         onKeyDown={(e) => {
@@ -578,10 +629,16 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                             priceInputRefs.current[idx]?.focus();
                           }
                         }}
-                        className="min-w-0 flex-1 bg-transparent py-2 text-sm text-[#102A43] placeholder:text-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
+                        className="min-w-0 flex-1 bg-transparent py-2 text-sm leading-relaxed text-[#102A43] placeholder:text-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
                       />
-                      <div className="flex shrink-0 items-center border-l border-slate-100 pl-2.5 dark:border-slate-800">
-                        <span className="select-none text-xs text-slate-400 dark:text-slate-500">
+                      <div className="flex shrink-0 items-center gap-1">
+                        <span
+                          className={`select-none text-xs transition-colors ${
+                            row.price.trim() !== ''
+                              ? 'text-slate-500 dark:text-slate-400'
+                              : 'text-slate-300 group-focus-within:text-slate-400 dark:text-slate-600 dark:group-focus-within:text-slate-500'
+                          }`}
+                        >
                           {currency}
                         </span>
                         <input
@@ -605,45 +662,44 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                               }
                             }
                           }}
-                          className="no-spinner w-20 bg-transparent py-2 text-right text-sm font-semibold tabular-nums text-[#102A43] placeholder:font-normal placeholder:text-slate-300 focus:outline-none sm:w-24 dark:text-slate-100 dark:placeholder:text-slate-600"
+                          className="no-spinner w-20 bg-transparent py-2 text-right font-mono-num text-sm font-semibold tabular-nums text-[#102A43] placeholder:font-normal placeholder:text-slate-300 focus:outline-none sm:w-24 dark:text-slate-100 dark:placeholder:text-slate-600"
                         />
+                        {canRemove ? (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveRow(idx)}
+                            aria-label={t.common.delete}
+                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-slate-100 hover:text-rose-500 dark:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-rose-400"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        ) : (
+                          <span className="h-8 w-8 shrink-0" aria-hidden="true" />
+                        )}
                       </div>
-                      {canRemove ? (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveRow(idx)}
-                          aria-label={t.common.delete}
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-slate-100 hover:text-rose-500 dark:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-rose-400"
-                        >
-                          <X className="h-3.5 w-3.5" />
-                        </button>
-                      ) : (
-                        <span className="h-8 w-8 shrink-0" aria-hidden="true" />
-                      )}
                     </div>
                   );
                 })}
+
+                <div className="pt-1">
+                  <button
+                    type="button"
+                    onClick={appendAndFocusRow}
+                    className="inline-flex min-h-[44px] items-center gap-1.5 px-1.5 text-xs font-bold text-[#16845B] hover:underline dark:text-emerald-400"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {t.memo.addItemBtn}
+                  </button>
+                </div>
               </div>
 
-              {/* Add Item Line */}
-              <div className="border-t border-slate-100 px-5 py-2 dark:border-slate-800/80">
-                <button
-                  type="button"
-                  onClick={appendAndFocusRow}
-                  className="inline-flex min-h-[36px] items-center gap-1.5 text-xs font-bold text-[#16845B] hover:underline dark:text-emerald-400"
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  {t.memo.addRow}
-                </button>
-              </div>
-
-              {/* Receipt Total & Actions */}
-              <div className="border-t border-dashed border-slate-200 bg-slate-50/60 px-5 pt-3.5 pb-4 dark:border-slate-800 dark:bg-slate-950/40">
+              {/* Quiet Total & Actions Footer */}
+              <div className="border-t border-dashed border-slate-200/90 bg-slate-50/50 px-5 pt-3.5 pb-4 dark:border-slate-800 dark:bg-slate-950/40">
                 <div className="mb-3.5 flex items-baseline justify-between">
-                  <span className="text-xs font-bold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                  <span className="text-xs font-bold tracking-wide text-slate-500 dark:text-slate-400">
                     {t.common.total}
                   </span>
-                  <span className="text-lg font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
+                  <span className="font-mono-num text-lg font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
                     {formatMoney(memoTotal, currency)}
                   </span>
                 </div>
@@ -651,15 +707,17 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                 <div className="grid grid-cols-2 gap-2.5">
                   <button
                     type="button"
+                    disabled={isReadOnly}
                     onClick={handleSaveMemoClick}
-                    className="min-h-[44px] rounded-xl bg-[#16845B] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#126B4A]"
+                    className="min-h-[44px] rounded-xl bg-[#16845B] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#126B4A] disabled:opacity-50"
                   >
                     {editingMemoId ? t.memo.updateMemo : t.memo.saveMemo}
                   </button>
                   <button
                     type="button"
+                    disabled={isReadOnly}
                     onClick={handleAddAsExpenseClick}
-                    className="min-h-[44px] rounded-xl bg-[#102A43] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-slate-800 dark:bg-sky-700 dark:hover:bg-sky-600"
+                    className="min-h-[44px] rounded-xl bg-[#102A43] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-slate-800 disabled:opacity-50 dark:bg-sky-700 dark:hover:bg-sky-600"
                   >
                     {t.memo.addAsExpense}
                   </button>
@@ -668,7 +726,7 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
             </div>
           </div>
 
-          {/* Saved memos list column */}
+          {/* Saved memos list column — Clean Borderless Note Cards with Quick Log */}
           <div id="saved-memos-section" className="space-y-3 lg:col-span-6 scroll-mt-20">
             <h3 className="text-sm font-bold text-[#102A43] dark:text-slate-200">
               {t.memo.savedMemos} ({memos.length})
@@ -684,65 +742,87 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                   className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
                 >
                   <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h4 className="text-sm font-bold text-[#102A43] dark:text-slate-100">
+                    <div className="min-w-0">
+                      <h4 className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
                         {memo.note ? memo.note : `${t.memo.bazarMemoPrefix} (${memo.date})`}
                       </h4>
-                      <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                      <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
                         {memo.date} · {memo.category}
                         {memo.subCategory ? ` / ${memo.subCategory}` : ''} · {memo.wallet}
                       </p>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        aria-label={t.common.edit}
-                        onClick={() => {
-                          setEditingMemoId(memo.id);
-                          setMemoDate(memo.date);
-                          setMemoCategory(memo.category);
-                          setMemoSubCategory(memo.subCategory || '');
-                          setMemoWallet(memo.wallet);
-                          setMemoNoteText(memo.note || '');
-                          const loadedRows = memo.items.map((it) => ({
-                            name: it.name,
-                            price: it.price > 0 ? String(it.price) : '',
-                          }));
-                          loadedRows.push({ name: '', price: '' });
-                          setMemoRows(loadedRows);
-                          window.scrollTo({ top: 0, behavior: 'smooth' });
-                        }}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={t.common.delete}
-                        onClick={() => onDeleteMemo(memo.id)}
-                        className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 text-rose-600 hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
+                    {!isReadOnly && (
+                      <div className="flex shrink-0 items-center gap-1.5">
+                        <button
+                          type="button"
+                          aria-label={t.common.edit}
+                          onClick={() => {
+                            setEditingMemoId(memo.id);
+                            setMemoDate(memo.date);
+                            setMemoCategory(memo.category);
+                            setMemoSubCategory(memo.subCategory || '');
+                            setMemoWallet(memo.wallet);
+                            setMemoNoteText(memo.note || '');
+                            const loadedRows = memo.items.map((it) => ({
+                              name: it.name,
+                              price: it.price > 0 ? String(it.price) : '',
+                            }));
+                            loadedRows.push({ name: '', price: '' });
+                            setMemoRows(loadedRows);
+                            setShowMemoDetails(false);
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                          }}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={t.common.delete}
+                          onClick={() => onDeleteMemo(memo.id)}
+                          className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-950"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
-                  <div className="mt-3 divide-y divide-slate-100 text-xs dark:divide-slate-800">
+                  {/* Borderless Item List */}
+                  <div className="mt-3 space-y-1.5 text-xs">
                     {memo.items.map((item, i) => (
-                      <div key={i} className="flex justify-between py-1.5 text-slate-600 dark:text-slate-300">
-                        <span>{item.name}</span>
-                        <span className="font-mono-num font-semibold">
+                      <div
+                        key={i}
+                        className="flex items-baseline justify-between gap-3 text-slate-700 dark:text-slate-300"
+                      >
+                        <span className="min-w-0 truncate">{item.name}</span>
+                        <span className="font-mono-num shrink-0 font-semibold tabular-nums text-[#102A43] dark:text-slate-200">
                           {item.price > 0 ? formatMoney(item.price, currency) : '—'}
                         </span>
                       </div>
                     ))}
                   </div>
 
-                  <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2.5 text-sm font-bold text-[#16845B] dark:border-slate-800 dark:text-emerald-400">
-                    <span>{t.common.total}</span>
-                    <span className="font-mono-num">
-                      {memo.total > 0 ? formatMoney(memo.total, currency) : t.memo.plannedNoPrice}
-                    </span>
+                  <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 pt-2">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        {t.common.total}
+                      </span>
+                      <span className="font-mono-num text-sm font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
+                        {memo.total > 0 ? formatMoney(memo.total, currency) : t.memo.plannedNoPrice}
+                      </span>
+                    </div>
+
+                    {memo.total > 0 && !isReadOnly && (
+                      <button
+                        type="button"
+                        disabled={loggingMemoId === memo.id}
+                        onClick={() => void handleQuickLogSavedMemo(memo)}
+                        className="min-h-[40px] shrink-0 whitespace-nowrap rounded-xl bg-[#102A43] px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-slate-800 disabled:opacity-50 dark:bg-sky-700 dark:hover:bg-sky-600"
+                      >
+                        {loggingMemoId === memo.id ? t.memo.loggingExpense : t.memo.logAsExpense}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))
