@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Check, Landmark, Plus, Search, Sparkles, Wallet, X } from 'lucide-react';
+import { createPortal } from 'react-dom';
+import { Check, Landmark, PiggyBank, Plus, Search, Sparkles, Wallet, X } from 'lucide-react';
 import { useTranslation } from '../i18n';
 import type { CategoryKind, CategoryStyle } from '../types';
 import {
@@ -14,7 +15,8 @@ export type TransactionPickerMode =
   | 'exp_cat'
   | 'inc_cat'
   | 'sub_cat'
-  | 'account';
+  | 'account'
+  | 'sav_account';
 
 export type AddableItemKind = 'exp_cat' | 'inc_cat' | 'sub_cat' | 'wallet' | 'savings';
 
@@ -32,6 +34,7 @@ interface TransactionPickerDrawerProps {
   allAccountOptions: string[];
   categoryStyles?: Record<string, CategoryStyle>;
   isReadOnly?: boolean;
+  canCreate?: boolean;
   onSelect: (value: string) => void;
   onCreateItem: (
     kind: AddableItemKind,
@@ -115,6 +118,7 @@ export const TransactionPickerDrawer: React.FC<TransactionPickerDrawerProps> = (
   allAccountOptions,
   categoryStyles,
   isReadOnly = false,
+  canCreate = true,
   onSelect,
   onCreateItem,
   onClose,
@@ -154,6 +158,17 @@ export const TransactionPickerDrawer: React.FC<TransactionPickerDrawerProps> = (
     [allAccountOptions, walletSet, savingsSet]
   );
 
+  const savAccountOptions = useMemo(
+    () =>
+      Array.from(
+        new Set([
+          ...savingsList,
+          ...(mode === 'sav_account' && selectedValue ? [selectedValue] : []),
+        ])
+      ).filter(Boolean),
+    [savingsList, mode, selectedValue]
+  );
+
   const totalItemCount =
     mode === 'exp_cat'
       ? expenseCategories.length
@@ -161,6 +176,8 @@ export const TransactionPickerDrawer: React.FC<TransactionPickerDrawerProps> = (
       ? incomeCategories.length
       : mode === 'sub_cat'
       ? subCategories.length
+      : mode === 'sav_account'
+      ? savAccountOptions.length
       : wallets.length + savingsList.length + extraAccounts.length;
 
   const needle = searchQuery.trim().toLowerCase();
@@ -268,7 +285,7 @@ export const TransactionPickerDrawer: React.FC<TransactionPickerDrawerProps> = (
   };
 
   const renderAddTile = (kind: AddableItemKind) => {
-    if (isReadOnly) return null;
+    if (isReadOnly || !canCreate) return null;
     return (
       <button
         type="button"
@@ -285,16 +302,19 @@ export const TransactionPickerDrawer: React.FC<TransactionPickerDrawerProps> = (
     ? CATEGORY_ICONS.filter((opt) => QUICK_ICON_KEYS[creatingKind].includes(opt.key))
     : [];
 
-  return (
+  const drawerContent = (
     <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-950/60 backdrop-blur-xs sm:items-center sm:p-4"
-      onClick={onClose}
+      className="fixed inset-0 z-[65] flex items-end justify-center bg-slate-950/60 backdrop-blur-xs sm:items-center sm:p-4"
+      onClick={(e) => {
+        e.stopPropagation();
+        onClose();
+      }}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="flex max-h-[84vh] w-full max-w-lg flex-col rounded-t-3xl border border-slate-200 bg-white shadow-2xl sm:rounded-2xl dark:border-slate-800 dark:bg-slate-900"
+        className="animate-drawer-up flex max-h-[84vh] w-full max-w-lg flex-col rounded-t-3xl border border-slate-200 bg-white shadow-2xl sm:rounded-2xl dark:border-slate-800 dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Mobile Handle */}
@@ -513,6 +533,44 @@ export const TransactionPickerDrawer: React.FC<TransactionPickerDrawerProps> = (
                 {renderAddTile('sub_cat')}
               </div>
             </div>
+          ) : mode === 'sav_account' ? (
+            <div className="space-y-3">
+              <button
+                type="button"
+                onClick={() => {
+                  onSelect('');
+                  onClose();
+                }}
+                className={`flex min-h-[48px] w-full items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left transition-all active:scale-[0.98] ${
+                  selectedValue === ''
+                    ? 'border-[#16845B] bg-emerald-50/80 ring-1 ring-[#16845B]/30 dark:border-emerald-400 dark:bg-emerald-950/40'
+                    : 'border-slate-200 bg-slate-50/70 hover:border-slate-300 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80'
+                }`}
+              >
+                <span className="flex min-w-0 items-center gap-2.5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400">
+                    <PiggyBank className="h-4 w-4" />
+                  </span>
+                  <span
+                    className={`truncate text-xs font-bold ${
+                      selectedValue === ''
+                        ? 'text-[#16845B] dark:text-emerald-300'
+                        : 'text-[#102A43] dark:text-slate-100'
+                    }`}
+                  >
+                    {t.modals.allSavingsOption}
+                  </span>
+                </span>
+                {selectedValue === '' && (
+                  <Check className="h-4 w-4 shrink-0 text-[#16845B] dark:text-emerald-400" />
+                )}
+              </button>
+
+              <div className="grid grid-cols-2 gap-2">
+                {filterList(savAccountOptions).map((sav) => renderTile(sav, 'sav', sav, 'sav'))}
+                {renderAddTile('savings')}
+              </div>
+            </div>
           ) : (
             <div className="grid grid-cols-2 gap-2">
               {filterList(mode === 'exp_cat' ? expenseCategories : incomeCategories).map((cat) =>
@@ -525,4 +583,6 @@ export const TransactionPickerDrawer: React.FC<TransactionPickerDrawerProps> = (
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(drawerContent, document.body) : drawerContent;
 };

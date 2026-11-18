@@ -73,57 +73,94 @@ input[type='number'] {
   animation: shareBarGrow 760ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-@keyframes addBtnLaunchPop {
-  0% {
-    opacity: 1;
-    transform: scale(1) rotate(0deg);
+@keyframes neonBorderSpin {
+  from {
+    transform: rotate(0deg);
   }
-  22% {
-    opacity: 0.92;
-    transform: scale(0.84) rotate(-20deg);
-  }
-  68% {
-    opacity: 1;
-    transform: scale(1.14) rotate(8deg);
-  }
-  100% {
-    opacity: 1;
-    transform: scale(1) rotate(0deg);
+  to {
+    transform: rotate(360deg);
   }
 }
 
-@keyframes addBtnLaunchRipple {
+@keyframes neonBorderLifecycle {
   0% {
-    opacity: 0.65;
-    transform: scale(0.92);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
   }
   100% {
     opacity: 0;
-    transform: scale(1.78);
   }
 }
 
-.animate-add-launch {
-  animation: addBtnLaunchPop 760ms cubic-bezier(0.16, 1, 0.3, 1) 1920ms both;
+.animate-neon-lifecycle {
+  animation: neonBorderLifecycle 5000ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  will-change: opacity;
 }
 
-.animate-add-ripple {
-  opacity: 0;
-  animation: addBtnLaunchRipple 920ms cubic-bezier(0.16, 1, 0.3, 1) 1980ms forwards;
+.animate-neon-spin {
+  animation: neonBorderSpin 2400ms linear infinite;
+  backface-visibility: hidden;
+  will-change: transform;
+}
+
+.neon-conic-border {
+  background: conic-gradient(
+    from 0deg,
+    #10b981 0deg,
+    #00f5a0 60deg,
+    #22d3ee 120deg,
+    #34d399 180deg,
+    #00f5a0 240deg,
+    #22d3ee 300deg,
+    #10b981 360deg
+  );
+}
+
+.neon-ring-mask {
+  padding: 2px;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask-composite: exclude;
+}
+
+@keyframes drawerSlideUp {
+  from {
+    opacity: 0;
+    transform: translateY(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-drawer-up {
+  animation: drawerSlideUp 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-pie-sweep,
   .animate-pie-center,
   .animate-share-bar,
-  .animate-add-launch {
+  .animate-drawer-up {
     animation: none !important;
     transform: none !important;
     opacity: 1 !important;
     stroke-dashoffset: 0 !important;
   }
 
-  .animate-add-ripple {
+  .animate-neon-lifecycle,
+  .animate-neon-spin {
     animation: none !important;
     opacity: 0 !important;
   }

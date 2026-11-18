@@ -618,9 +618,7 @@ export const RecurringBillsPanel: React.FC<RecurringBillsPanelProps> = ({
                           </span>
                         </div>
                         <div className="mt-0.5 truncate text-xs text-slate-400 dark:text-slate-500">
-                          {bill.category}
-                          {bill.subCategory ? ` · ${bill.subCategory}` : ''} · {bill.wallet} ·{' '}
-                          {formatDueDayLabel(bill.dueDay, lang)}
+                          {bill.wallet} · {formatDueDayLabel(bill.dueDay, lang)}
                         </div>
                       </div>
                     </div>

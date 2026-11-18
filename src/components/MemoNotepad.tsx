@@ -1,8 +1,18 @@
 import React, { useState } from 'react';
-import { Pencil, Plus, Trash2, X } from 'lucide-react';
+import { ChevronDown, Pencil, Plus, Trash2, X } from 'lucide-react';
 import { useTranslation } from '../i18n';
-import type { BazarMemo, CurrencySymbol, UserNote } from '../types';
+import type { BazarMemo, CategoryStyle, CurrencySymbol, UserNote } from '../types';
+import {
+  CategoryIconBadge,
+  getCategoryStyle,
+  getExpenseOrSubCategoryStyle,
+} from '../utils/categoryVisuals';
 import { formatMoney, getTodayISO } from '../utils/format';
+import {
+  type AddableItemKind,
+  TransactionPickerDrawer,
+  type TransactionPickerMode,
+} from './TransactionPickerDrawer';
 
 interface MemoNotepadProps {
   memos: BazarMemo[];
@@ -10,7 +20,21 @@ interface MemoNotepadProps {
   expenseCategories: string[];
   expenseSubCategories?: Record<string, string[]>;
   allAccountOptions: string[];
+  wallets?: string[];
+  savingsList?: string[];
+  categoryStyles?: Record<string, CategoryStyle>;
   currency: CurrencySymbol;
+  isReadOnly?: boolean;
+  onAddListItem?: (
+    type: 'wallet' | 'savings' | 'exp_cat' | 'inc_cat',
+    name: string,
+    style?: CategoryStyle
+  ) => Promise<boolean>;
+  onAddSubCategory?: (
+    parentCat: string,
+    subName: string,
+    style?: CategoryStyle
+  ) => Promise<boolean>;
   onSaveMemo: (
     memo: Omit<BazarMemo, 'id' | 'ownerId' | 'createdAt' | 'updatedAt'>,
     editId?: string
@@ -45,7 +69,13 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
   expenseCategories,
   expenseSubCategories,
   allAccountOptions,
+  wallets = [],
+  savingsList = [],
+  categoryStyles,
   currency,
+  isReadOnly = false,
+  onAddListItem,
+  onAddSubCategory,
   onSaveMemo,
   onDeleteMemo,
   onAddMemoAsExpense,
@@ -110,15 +140,18 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
     }
   }, [allAccountOptions, memoWallet]);
 
-  // Notepad modal state
+  // Notepad modal & picker drawer state
   const [isAddingNote, setIsAddingNote] = useState(false);
   const [selectedNote, setSelectedNote] = useState<UserNote | null>(null);
   const [currentTitle, setCurrentTitle] = useState('');
   const [currentContent, setCurrentContent] = useState('');
+  const [activeMemoPicker, setActiveMemoPicker] = useState<
+    'category' | 'subCategory' | 'wallet' | null
+  >(null);
 
   React.useEffect(() => {
-    onNoteModalOpenChange?.(Boolean(isAddingNote || selectedNote));
-  }, [isAddingNote, selectedNote, onNoteModalOpenChange]);
+    onNoteModalOpenChange?.(Boolean(isAddingNote || selectedNote || activeMemoPicker));
+  }, [isAddingNote, selectedNote, activeMemoPicker, onNoteModalOpenChange]);
 
   React.useEffect(() => {
     return () => {
@@ -128,9 +161,14 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
 
   React.useEffect(() => {
     if (closeNoteModalSeq > 0) {
+      if (activeMemoPicker) {
+        setActiveMemoPicker(null);
+        return;
+      }
       setIsAddingNote(false);
       setSelectedNote(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closeNoteModalSeq]);
 
   const memoTotal = memoRows.reduce((sum, r) => sum + (parseFloat(r.price) || 0), 0);
@@ -266,6 +304,7 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
     if (
       isAddingNote ||
       selectedNote ||
+      activeMemoPicker ||
       el?.closest('input, textarea, select, [contenteditable="true"]')
     ) {
       return;
@@ -420,66 +459,87 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                   className="w-full bg-transparent text-base font-bold text-[#102A43] placeholder:font-medium placeholder:text-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
                 />
 
-                {/* Compact Inline Metadata Selectors */}
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <input
-                    type="date"
-                    aria-label={t.memo.dateLabel}
-                    value={memoDate}
-                    onChange={(e) => setMemoDate(e.target.value)}
-                    className="min-h-[36px] rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-[#102A43] transition-colors focus:bg-slate-200/70 focus:outline-none dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-700"
-                  />
-                  <select
-                    aria-label={t.memo.categoryLabel}
-                    value={memoCategory}
-                    onChange={(e) => {
-                      const nextCat = e.target.value;
-                      setMemoCategory(nextCat);
-                      if (!(expenseSubCategories?.[nextCat] || []).includes(memoSubCategory)) {
-                        setMemoSubCategory('');
-                      }
-                    }}
-                    className="min-h-[36px] max-w-[140px] truncate rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-[#102A43] transition-colors focus:bg-slate-200/70 focus:outline-none dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-700"
-                  >
-                    {expenseCategories.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ))}
-                  </select>
-                  {((expenseSubCategories?.[memoCategory] || []).length > 0 ||
-                    memoSubCategory) && (
-                    <select
-                      aria-label={t.txForm.subCategoryLabel}
-                      value={memoSubCategory}
-                      onChange={(e) => setMemoSubCategory(e.target.value)}
-                      className="min-h-[36px] max-w-[150px] truncate rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-[#102A43] transition-colors focus:bg-slate-200/70 focus:outline-none dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-700"
+                {/* Transaction-style Metadata Pickers (Date + Category, Sub-category + Wallet) */}
+                <div className="mt-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="date"
+                      aria-label={t.memo.dateLabel}
+                      value={memoDate}
+                      onChange={(e) => setMemoDate(e.target.value)}
+                      className="min-h-[44px] shrink-0 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-xs font-bold text-[#102A43] transition-colors hover:border-slate-300 focus:border-[#16845B] focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100 dark:hover:border-slate-700 dark:focus:border-emerald-400 dark:focus:bg-slate-900"
+                    />
+
+                    <button
+                      type="button"
+                      aria-label={t.memo.categoryLabel}
+                      onClick={() => setActiveMemoPicker('category')}
+                      className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
                     >
-                      <option value="">{t.txForm.subCategoryOptional}</option>
-                      {Array.from(
-                        new Set([
-                          ...(expenseSubCategories?.[memoCategory] || []),
-                          ...(memoSubCategory ? [memoSubCategory] : []),
-                        ])
-                      ).map((sub) => (
-                        <option key={sub} value={sub}>
-                          {sub}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  <select
-                    aria-label={t.memo.walletLabel}
-                    value={memoWallet}
-                    onChange={(e) => setMemoWallet(e.target.value)}
-                    className="min-h-[36px] max-w-[140px] truncate rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-medium text-[#102A43] transition-colors focus:bg-slate-200/70 focus:outline-none dark:bg-slate-800 dark:text-slate-200 dark:focus:bg-slate-700"
-                  >
-                    {allAccountOptions.map((acc) => (
-                      <option key={acc} value={acc}>
-                        {acc}
-                      </option>
-                    ))}
-                  </select>
+                      <span className="flex min-w-0 items-center gap-2">
+                        <CategoryIconBadge
+                          style={getCategoryStyle(categoryStyles, 'exp', memoCategory)}
+                          size="sm"
+                        />
+                        <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                          {memoCategory}
+                        </span>
+                      </span>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      aria-label={t.txForm.subCategoryLabel}
+                      onClick={() => setActiveMemoPicker('subCategory')}
+                      className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <CategoryIconBadge
+                          style={getExpenseOrSubCategoryStyle(
+                            categoryStyles,
+                            memoCategory,
+                            memoSubCategory
+                          )}
+                          size="sm"
+                        />
+                        <span
+                          className={`truncate text-xs ${
+                            memoSubCategory
+                              ? 'font-bold text-[#102A43] dark:text-slate-100'
+                              : 'font-semibold text-slate-500 dark:text-slate-400'
+                          }`}
+                        >
+                          {memoSubCategory || t.txForm.subCategoryChipPlaceholder}
+                        </span>
+                      </span>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    </button>
+
+                    <button
+                      type="button"
+                      aria-label={t.memo.walletLabel}
+                      onClick={() => setActiveMemoPicker('wallet')}
+                      className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <CategoryIconBadge
+                          style={getCategoryStyle(
+                            categoryStyles,
+                            savingsList.includes(memoWallet) ? 'sav' : 'wal',
+                            memoWallet
+                          )}
+                          size="sm"
+                        />
+                        <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                          {memoWallet}
+                        </span>
+                      </span>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -857,6 +917,81 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
               </div>
             </div>
       )}
+      {activeMemoPicker && (() => {
+        const pickerMode: TransactionPickerMode =
+          activeMemoPicker === 'category'
+            ? 'exp_cat'
+            : activeMemoPicker === 'subCategory'
+            ? 'sub_cat'
+            : 'account';
+
+        const pickerTitle =
+          pickerMode === 'exp_cat'
+            ? t.txForm.drawerChooseExpCategory
+            : pickerMode === 'sub_cat'
+            ? `${t.txForm.drawerChooseSubCategory} · ${memoCategory}`
+            : t.txForm.drawerChooseAccount;
+
+        const selectedValue =
+          activeMemoPicker === 'category'
+            ? memoCategory
+            : activeMemoPicker === 'subCategory'
+            ? memoSubCategory
+            : memoWallet;
+
+        const pickerSubs = Array.from(
+          new Set([
+            ...(expenseSubCategories?.[memoCategory] || []),
+            ...(memoSubCategory ? [memoSubCategory] : []),
+          ])
+        );
+
+        const handleCreateFromDrawer = async (
+          kind: AddableItemKind,
+          name: string,
+          parentCat?: string,
+          style?: CategoryStyle
+        ): Promise<boolean> => {
+          if (kind === 'sub_cat') {
+            if (!onAddSubCategory || !parentCat) return false;
+            return onAddSubCategory(parentCat, name, style);
+          }
+          if (!onAddListItem) return false;
+          return onAddListItem(kind, name, style);
+        };
+
+        return (
+          <TransactionPickerDrawer
+            open={true}
+            mode={pickerMode}
+            title={pickerTitle}
+            selectedValue={selectedValue}
+            parentCategory={memoCategory}
+            expenseCategories={expenseCategories}
+            incomeCategories={[]}
+            subCategories={pickerSubs}
+            wallets={wallets}
+            savingsList={savingsList}
+            allAccountOptions={allAccountOptions}
+            categoryStyles={categoryStyles}
+            isReadOnly={isReadOnly}
+            onSelect={(val) => {
+              if (activeMemoPicker === 'category') {
+                setMemoCategory(val);
+                if (!(expenseSubCategories?.[val] || []).includes(memoSubCategory)) {
+                  setMemoSubCategory('');
+                }
+              } else if (activeMemoPicker === 'subCategory') {
+                setMemoSubCategory(val);
+              } else {
+                setMemoWallet(val);
+              }
+            }}
+            onCreateItem={handleCreateFromDrawer}
+            onClose={() => setActiveMemoPicker(null)}
+          />
+        );
+      })()}
     </div>
   );
 };

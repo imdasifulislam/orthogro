@@ -132,7 +132,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             alt="OrthoGro"
             className="h-9 w-9 rounded-xl border border-slate-200/80 bg-white object-contain p-0.5 shadow-xs dark:border-slate-700"
           />
-          <span className="text-base font-extrabold tracking-tight text-[#102A43] sm:text-lg dark:text-slate-100">
+          <span className="text-base font-extrabold tracking-tight text-[#0E6042] sm:text-lg dark:text-emerald-200">
             OrthoGro
           </span>
         </div>
@@ -257,7 +257,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             {/* Below Floating Grid: App Title & Subtitle + Google & Guest Login Options */}
             <section className="rounded-2xl border border-slate-200/90 bg-white p-4 shadow-lg shadow-slate-900/[0.06] sm:rounded-3xl sm:p-6 dark:border-slate-800 dark:bg-slate-900 dark:shadow-black/35">
               <div className="text-center">
-                <h1 className="text-xl font-extrabold tracking-tight text-[#102A43] sm:text-2xl dark:text-slate-100">
+                <h1 className="text-xl font-extrabold tracking-tight text-[#0E6042] sm:text-2xl dark:text-emerald-200">
                   OrthoGro
                 </h1>
                 <p className="mt-0.5 text-xs font-medium text-slate-600 sm:text-sm dark:text-slate-300">

@@ -16,10 +16,8 @@ interface AppPinSetupModalProps {
   pinRecord: AppPinRecord | null;
   onClose: () => void;
   onVerifyPin: (candidate: string) => Promise<boolean>;
-  onSaveNewPin: (pin: string, lockOnBackground: boolean) => Promise<void>;
+  onSaveNewPin: (pin: string) => Promise<void>;
   onDisablePin: () => void;
-  onToggleLockOnBackground: (enabled: boolean) => void;
-  onLockNow: () => void;
 }
 
 export const AppPinSetupModal: React.FC<AppPinSetupModalProps> = ({
@@ -29,15 +27,12 @@ export const AppPinSetupModal: React.FC<AppPinSetupModalProps> = ({
   onVerifyPin,
   onSaveNewPin,
   onDisablePin,
-  onToggleLockOnBackground,
-  onLockNow,
 }) => {
   const { t } = useTranslation();
   const al = t.appLock;
 
   const [step, setStep] = useState<SetupFlowStep>('overview');
   const [pinLength, setPinLength] = useState<PinLength>(4);
-  const [lockOnBg, setLockOnBg] = useState<boolean>(false);
   const [draftPin, setDraftPin] = useState('');
   const [firstPin, setFirstPin] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -52,11 +47,9 @@ export const AppPinSetupModal: React.FC<AppPinSetupModalProps> = ({
     if (pinRecord) {
       setStep('overview');
       setPinLength(pinRecord.length);
-      setLockOnBg(pinRecord.lockOnBackground);
     } else {
       setStep('create');
       setPinLength(4);
-      setLockOnBg(false);
     }
   }, [open, pinRecord]);
 
@@ -112,7 +105,7 @@ export const AppPinSetupModal: React.FC<AppPinSetupModalProps> = ({
       }
       setIsBusy(true);
       try {
-        await onSaveNewPin(next, lockOnBg);
+        await onSaveNewPin(next);
         onClose();
       } finally {
         setIsBusy(false);
@@ -174,47 +167,17 @@ export const AppPinSetupModal: React.FC<AppPinSetupModalProps> = ({
         {step === 'overview' && pinRecord ? (
           <div className="space-y-4">
             {/* Active Status Box */}
-            <div className="flex items-center justify-between rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 dark:border-emerald-900/50 dark:bg-emerald-950/25">
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 px-4 py-3 dark:border-emerald-900/50 dark:bg-emerald-950/25">
               <div className="flex items-center gap-2.5">
                 <ShieldCheck className="h-4 w-4 shrink-0 text-[#16845B] dark:text-emerald-400" />
                 <span className="text-xs font-bold text-[#102A43] dark:text-slate-100">
                   {pinRecord.length === 6 ? al.statusOn6 : al.statusOn4}
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  onClose();
-                  onLockNow();
-                }}
-                className="inline-flex items-center gap-1.5 rounded-lg bg-[#16845B] px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-[#126B4A]"
-              >
-                <Lock className="h-3.5 w-3.5" />
-                <span>{al.lockNowBtn}</span>
-              </button>
+              <p className="mt-1 pl-[26px] text-[11px] text-slate-600 dark:text-slate-300">
+                {al.autoLockDesc}
+              </p>
             </div>
-
-            {/* Auto-lock background toggle */}
-            <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 dark:border-slate-800 dark:bg-slate-950/50">
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-[#102A43] dark:text-slate-100">
-                  {al.autoLockLabel}
-                </div>
-                <div className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400">
-                  {al.autoLockDesc}
-                </div>
-              </div>
-              <input
-                type="checkbox"
-                checked={lockOnBg}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  setLockOnBg(checked);
-                  onToggleLockOnBackground(checked);
-                }}
-                className="h-5 w-5 shrink-0 accent-[#16845B]"
-              />
-            </label>
 
             {/* Change / Disable actions */}
             <div className="grid grid-cols-2 gap-2.5 pt-1">
@@ -294,21 +257,6 @@ export const AppPinSetupModal: React.FC<AppPinSetupModalProps> = ({
                   ))}
                 </div>
               </div>
-            )}
-
-            {/* Optional Auto-lock toggle shown during initial setup too */}
-            {!pinRecord && step === 'create' && (
-              <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50/70 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-950/50">
-                <span className="text-xs font-semibold text-slate-600 dark:text-slate-300">
-                  {al.autoLockLabel}
-                </span>
-                <input
-                  type="checkbox"
-                  checked={lockOnBg}
-                  onChange={(e) => setLockOnBg(e.target.checked)}
-                  className="h-4 w-4 shrink-0 accent-[#16845B]"
-                />
-              </label>
             )}
 
             {/* Step Title */}
