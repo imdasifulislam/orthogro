@@ -141,8 +141,14 @@ export const ShareAppModal: React.FC<ShareAppModalProps> = ({ open, onNotify, on
     }
   };
 
+  const isAndroid =
+    typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
   const encodedMessage = encodeURIComponent(trimmed);
   const encodedUrl = encodeURIComponent(appUrl);
+  const whatsappWebUrl = `https://wa.me/?text=${encodedMessage}`;
+  const whatsappHref = isAndroid
+    ? `intent://send?text=${encodedMessage}#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url=${encodeURIComponent(whatsappWebUrl)};end`
+    : whatsappWebUrl;
 
   return (
     <div
@@ -268,9 +274,9 @@ export const ShareAppModal: React.FC<ShareAppModalProps> = ({ open, onNotify, on
 
             {/* WhatsApp */}
             <a
-              href={`https://wa.me/?text=${encodedMessage}`}
-              target="_blank"
-              rel="noopener noreferrer"
+              href={whatsappHref}
+              target={isAndroid ? undefined : '_blank'}
+              rel={isAndroid ? undefined : 'noopener noreferrer'}
               onClick={handleExternalShareClick}
               className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-1.5 py-2.5 text-center transition-colors hover:border-[#25D366]/50 hover:bg-[#25D366]/[0.06] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-[#25D366]/50 dark:hover:bg-[#25D366]/10"
             >

@@ -1182,7 +1182,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <div className="grid grid-cols-2 gap-2 sm:gap-2.5">
           <a
-            href="https://www.facebook.com"
+            href="https://www.facebook.com/OrthoGro"
             target="_blank"
             rel="noopener noreferrer"
             className="flex min-h-[48px] min-w-0 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition-colors hover:border-[#1877F2]/40 hover:bg-[#1877F2]/[0.05] sm:gap-3 sm:px-4 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-[#1877F2]/50 dark:hover:bg-[#1877F2]/10"
@@ -1205,7 +1205,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </a>
 
           <a
-            href="https://www.instagram.com"
+            href="https://www.instagram.com/orthogro/"
             target="_blank"
             rel="noopener noreferrer"
             className="flex min-h-[48px] min-w-0 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-left transition-colors hover:border-pink-400/50 hover:bg-pink-500/[0.05] sm:gap-3 sm:px-4 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-pink-500/40 dark:hover:bg-pink-500/10"
