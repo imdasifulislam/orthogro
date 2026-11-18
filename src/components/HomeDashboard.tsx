@@ -1279,10 +1279,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           <div
             key="netWorth"
             onClick={() => onOpenDrilldown('netWorth', null, 'all')}
-            className="cursor-pointer rounded-3xl bg-[#102A43] p-6 text-white shadow-sm transition-transform active:scale-[0.99] dark:border dark:border-slate-800 dark:bg-slate-900"
+            className="cursor-pointer rounded-3xl bg-[#102A43] p-6 text-white shadow-sm transition-transform active:scale-[0.99] dark:border dark:border-slate-700/60 dark:bg-[#0D2238]"
           >
             <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-semibold text-slate-300">{t.dashboard.netWorth}</div>
+              <div className="text-xs font-semibold text-slate-300">
+                {t.dashboard.netWorth}
+              </div>
               <div className="text-xs font-medium text-slate-400">
                 {formatDisplayDate(getTodayISO(), lang)}
               </div>
@@ -2341,10 +2343,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       activeCategory={activeChartCategory}
                       onSelectCategory={(cat) => {
                         if (!isLongPressRef.current) setActiveChartCategory(cat);
-                      }}
-                      onCategoryClick={(cat) => {
-                        if (didPieSwipeRef.current || isLongPressRef.current) return;
-                        openCategoryDrilldown('pie', pieView, cat);
                       }}
                       didSwipeRef={didPieSwipeRef}
                       onEnteredView={() => setPieRevealed(true)}

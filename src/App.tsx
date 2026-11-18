@@ -68,11 +68,14 @@ import {
   type TransactionPageSubTab,
 } from './components/TransactionForm';
 import {
+  TransactionTypeDrawer,
+  type SelectableTransactionType,
+} from './components/TransactionTypeDrawer';
+import {
   clearAppPin,
   getPinAccountKey,
   readAppPinRecord,
   saveAppPin,
-  updateAppPinSettings,
   verifyAppPin,
 } from './utils/appPin';
 import {
@@ -503,6 +506,8 @@ function OrthoGroApp() {
   const [pinRecordVersion, setPinRecordVersion] = useState(0);
   const [showAppLockModal, setShowAppLockModal] = useState(false);
   const [showShareAppModal, setShowShareAppModal] = useState(false);
+  const [showTxTypeDrawer, setShowTxTypeDrawer] = useState(false);
+  const [showTxFormDrawer, setShowTxFormDrawer] = useState(false);
   const backgroundHiddenAtRef = useRef<number | null>(null);
   const [isReturningUser, setIsReturningUser] = useState<boolean>(() => {
     try {
@@ -552,24 +557,39 @@ function OrthoGroApp() {
   );
 
   useEffect(() => {
-    if (!pinAccountKey || !pinRecord?.lockOnBackground) {
+    if (!pinAccountKey || !pinRecord || isAppLocked) {
       backgroundHiddenAtRef.current = null;
       return;
     }
+    let bgTimer: number | null = null;
+    const clearBgTimer = () => {
+      if (bgTimer !== null) {
+        window.clearTimeout(bgTimer);
+        bgTimer = null;
+      }
+    };
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         backgroundHiddenAtRef.current = Date.now();
+        clearBgTimer();
+        bgTimer = window.setTimeout(() => {
+          setUnlockedAccountKey(null);
+        }, 30_000);
       } else if (document.visibilityState === 'visible') {
+        clearBgTimer();
         const hiddenAt = backgroundHiddenAtRef.current;
         backgroundHiddenAtRef.current = null;
-        if (hiddenAt && Date.now() - hiddenAt >= 60_000) {
+        if (hiddenAt && Date.now() - hiddenAt >= 30_000) {
           setUnlockedAccountKey(null);
         }
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [pinAccountKey, pinRecord]);
+    return () => {
+      clearBgTimer();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [pinAccountKey, pinRecord, isAppLocked]);
 
   // Navigation & UI state
   const [activeTab, setActiveTab] = useState<ActiveTab>('home');
@@ -1240,8 +1260,12 @@ function OrthoGroApp() {
   }, [acceptedSharedWorkspaces, activeSharedWorkspace]);
 
   useEffect(() => {
-    if (isReadOnlyPartner && activeTab === 'transactions') {
-      setActiveTab('home');
+    if (isReadOnlyPartner) {
+      setShowTxTypeDrawer(false);
+      setShowTxFormDrawer(false);
+      if (activeTab === 'transactions') {
+        setActiveTab('home');
+      }
     }
   }, [isReadOnlyPartner, activeTab]);
 
@@ -1530,7 +1554,7 @@ function OrthoGroApp() {
 
   useEffect(() => {
     if (!showAddLaunchCue) return;
-    const timer = window.setTimeout(() => setShowAddLaunchCue(false), 3300);
+    const timer = window.setTimeout(() => setShowAddLaunchCue(false), 5000);
     return () => window.clearTimeout(timer);
   }, [showAddLaunchCue]);
   const hasOpenOverlay = Boolean(
@@ -1540,6 +1564,8 @@ function OrthoGroApp() {
       showNotificationsModal ||
       showAppLockModal ||
       showShareAppModal ||
+      showTxTypeDrawer ||
+      showTxFormDrawer ||
       showRecurringBillsModal ||
       showSavingGoalsModal ||
       showBudgetGoalsModal ||
@@ -1569,6 +1595,8 @@ function OrthoGroApp() {
     showNotificationsModal,
     showAppLockModal,
     showShareAppModal,
+    showTxTypeDrawer,
+    showTxFormDrawer,
     showRecurringBillsModal,
     showSavingGoalsModal,
     showBudgetGoalsModal,
@@ -1595,6 +1623,8 @@ function OrthoGroApp() {
     showNotificationsModal,
     showAppLockModal,
     showShareAppModal,
+    showTxTypeDrawer,
+    showTxFormDrawer,
     showRecurringBillsModal,
     showSavingGoalsModal,
     showBudgetGoalsModal,
@@ -1634,6 +1664,8 @@ function OrthoGroApp() {
     showNotificationsModal,
     showAppLockModal,
     showShareAppModal,
+    showTxTypeDrawer,
+    showTxFormDrawer,
     showRecurringBillsModal,
     showSavingGoalsModal,
     showBudgetGoalsModal,
@@ -1689,6 +1721,16 @@ function OrthoGroApp() {
       }
       if (state.showShareAppModal) {
         setShowShareAppModal(false);
+        return;
+      }
+      if (state.showTxTypeDrawer) {
+        setShowTxTypeDrawer(false);
+        return;
+      }
+      if (state.showTxFormDrawer) {
+        setShowTxFormDrawer(false);
+        setEntries([state.defaultEntry]);
+        setPendingRecurringBillId(null);
         return;
       }
       if (state.showRecurringBillsModal) {
@@ -2729,8 +2771,11 @@ function OrthoGroApp() {
     }
 
     if (navigateHome) {
+      setShowTxFormDrawer(false);
       setEntries([defaultEntry]);
-      setActiveTab('home');
+      if (activeTab === 'transactions') {
+        setActiveTab('home');
+      }
     }
     return true;
   };
@@ -2842,7 +2887,8 @@ function OrthoGroApp() {
       },
     ]);
     setTxSubTab('new');
-    setActiveTab('transactions');
+    setShowTxTypeDrawer(false);
+    setShowTxFormDrawer(true);
   };
 
   const handleConfirmPartialPayment = async () => {
@@ -4537,7 +4583,8 @@ function OrthoGroApp() {
       },
     ]);
     setTxSubTab('new');
-    setActiveTab('transactions');
+    setShowTxTypeDrawer(false);
+    setShowTxFormDrawer(true);
   };
 
   const openRecurringBillsPage = () => {
@@ -4546,28 +4593,8 @@ function OrthoGroApp() {
       return;
     }
     setTxSubTab('recurring');
-    setActiveTab('transactions');
-  };
-
-  const handleExportBackup = () => {
-    const bundle = {
-      exportedAt: new Date().toISOString(),
-      workspace,
-      transactions,
-      memos,
-      notes,
-      budgetGoals,
-      savingGoals,
-      recurringBills,
-    };
-    const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `orthogro-backup-${getTodayISO()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    notify('success', t.toasts.backupDownloaded);
+    setShowTxTypeDrawer(false);
+    setShowTxFormDrawer(true);
   };
 
   const executeResetAllData = async () => {
@@ -4656,7 +4683,7 @@ function OrthoGroApp() {
     return (
       <LanguageProvider lang={currentLanguage} setLanguage={(l) => void handleLanguageChange(l, false)}>
         <div className="flex min-h-screen flex-col items-center justify-center bg-[#F6F8F7] p-6 text-center dark:bg-slate-950">
-          <div className="text-3xl font-extrabold tracking-tight text-[#102A43] dark:text-slate-100">
+          <div className="text-3xl font-extrabold tracking-tight text-[#0E6042] dark:text-emerald-200">
             OrthoGro
           </div>
           <div className="mt-1 text-xs font-bold uppercase tracking-widest text-[#16845B] dark:text-emerald-400">
@@ -4747,7 +4774,7 @@ function OrthoGroApp() {
           <div>
             <div className="px-2 pb-6">
               <div className="inline-flex w-fit flex-col items-stretch">
-                <div className="text-[26px] font-extrabold leading-none tracking-tight text-[#102A43] dark:text-slate-100">
+                <div className="text-[26px] font-extrabold leading-none tracking-tight text-[#0E6042] dark:text-emerald-200">
                   OrthoGro
                 </div>
                 <p
@@ -4772,31 +4799,32 @@ function OrthoGroApp() {
                     key={item.key}
                     type="button"
                       onClick={() => {
-                        if (item.key === 'transactions' && isReadOnlyPartner) {
-                          notify('info', t.sharing.readOnlyToast);
+                        if (item.key === 'transactions') {
+                          if (isReadOnlyPartner) {
+                            notify('info', t.sharing.readOnlyToast);
+                            return;
+                          }
+                          setShowTxTypeDrawer(true);
                           return;
                         }
                         setActiveTab(item.key);
-                        if (item.key === 'transactions') {
-                          setPendingRecurringBillId(null);
-                          setEntries([defaultEntry]);
-                          setTxSubTab('new');
-                        }
                         if (item.key === 'settings') setSettingsView('menu');
                       }}
-                    className={`flex min-h-[44px] w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-colors whitespace-nowrap ${
+                    className={`relative flex min-h-[44px] w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-colors whitespace-nowrap ${
                       isActive
                         ? 'bg-[#16845B] text-white'
                         : 'text-slate-600 hover:bg-slate-100 hover:text-[#102A43] dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white'
                     }`}
                   >
-                    <Icon
-                      className={`h-4 w-4 shrink-0 ${
-                        item.key === 'transactions' && showAddLaunchCue && !isReadOnlyPartner
-                          ? 'animate-add-launch'
-                          : ''
-                      }`}
-                    />
+                    {item.key === 'transactions' && showAddLaunchCue && !isReadOnlyPartner && (
+                      <span
+                        aria-hidden="true"
+                        className="animate-neon-lifecycle neon-ring-mask pointer-events-none absolute -inset-[1px] overflow-hidden rounded-[13px]"
+                      >
+                        <span className="neon-conic-border animate-neon-spin absolute top-1/2 left-1/2 h-[260px] w-[260px] -translate-x-1/2 -translate-y-1/2" />
+                      </span>
+                    )}
+                    <Icon className="h-4 w-4 shrink-0" />
                     <span>{item.key === 'transactions' ? t.app.navNewEntry : item.label}</span>
                   </button>
                 );
@@ -4815,7 +4843,7 @@ function OrthoGroApp() {
           <header className="sticky top-0 z-30 flex min-h-14 items-center justify-between border-b border-slate-200 bg-[#F6F8F7]/90 px-4 py-1.5 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/90 lg:px-8">
             <div className="flex items-center gap-3">
               <div className="inline-flex w-fit flex-col items-stretch lg:hidden">
-                <div className="text-[22px] font-extrabold leading-none tracking-tight text-[#102A43] dark:text-slate-100">
+                <div className="text-[22px] font-extrabold leading-none tracking-tight text-[#0E6042] dark:text-emerald-200">
                   OrthoGro
                 </div>
                 <p
@@ -4996,10 +5024,7 @@ function OrthoGroApp() {
                   notify('info', t.sharing.readOnlyToast);
                   return;
                 }
-                setPendingRecurringBillId(null);
-                setEntries([defaultEntry]);
-                setTxSubTab('new');
-                setActiveTab('transactions');
+                setShowTxTypeDrawer(true);
               }}
             />
           )}
@@ -5011,7 +5036,13 @@ function OrthoGroApp() {
               expenseCategories={workspace.expenseCategories}
               expenseSubCategories={normalizeExpenseSubCategories(workspace.expenseSubCategories)}
               allAccountOptions={allAccountOptions}
+              wallets={workspace.wallets}
+              savingsList={workspace.savingsList}
+              categoryStyles={normalizeCategoryStyles(workspace.categoryStyles)}
               currency={workspace.currency}
+              isReadOnly={isReadOnlyPartner}
+              onAddListItem={handleAddListItem}
+              onAddSubCategory={handleAddSubCategory}
               onSaveMemo={handleSaveMemo}
               onDeleteMemo={handleDeleteMemo}
               onAddMemoAsExpense={handleAddMemoAsExpense}
@@ -5021,40 +5052,6 @@ function OrthoGroApp() {
               navigationRequest={memoNavigationRequest}
               onNoteModalOpenChange={setIsNoteModalOpen}
               closeNoteModalSeq={closeNoteModalSeq}
-            />
-          )}
-
-          {activeTab === 'transactions' && (
-            <TransactionForm
-              entries={entries}
-              setEntries={setEntries}
-              defaultEntry={defaultEntry}
-              allAccountOptions={allAccountOptions}
-              wallets={workspace.wallets}
-              savingsList={workspace.savingsList}
-              expenseCategories={workspace.expenseCategories}
-              incomeCategories={workspace.incomeCategories}
-              expenseSubCategories={normalizeExpenseSubCategories(workspace.expenseSubCategories)}
-              categoryStyles={normalizeCategoryStyles(workspace.categoryStyles)}
-              currency={workspace.currency}
-              activeSubTab={txSubTab}
-              onSubTabChange={setTxSubTab}
-              recurringBills={recurringBills}
-              dueRecurringCount={dueRecurringCount}
-              isReadOnly={isReadOnlyPartner}
-              onAddListItem={handleAddListItem}
-              onAddSubCategory={handleAddSubCategory}
-              onSaveRecurringBill={handleSaveRecurringBill}
-              onDeleteRecurringBill={handleDeleteRecurringBill}
-              onOneTapLogRecurringBill={handleOneTapLogRecurringBill}
-              onAdjustAndLogRecurringBill={handleAdjustAndLogRecurringBill}
-              onSubmit={handleSubmitTransactions}
-              onCancel={() => {
-                setPendingRecurringBillId(null);
-                setEntries([defaultEntry]);
-                setTxSubTab('new');
-                setActiveTab('home');
-              }}
             />
           )}
 
@@ -5114,7 +5111,6 @@ function OrthoGroApp() {
               appPinEnabled={Boolean(pinRecord)}
               appPinLength={pinRecord?.length}
               onOpenAppLock={() => setShowAppLockModal(true)}
-              onExportBackup={handleExportBackup}
               onResetAllData={handleResetAllData}
               activeSharedWorkspace={activeSharedWorkspace}
               isReadOnlyPartner={isReadOnlyPartner}
@@ -5165,10 +5161,7 @@ function OrthoGroApp() {
                     notify('info', t.sharing.readOnlyToast);
                     return;
                   }
-                  setPendingRecurringBillId(null);
-                  setEntries([defaultEntry]);
-                  setTxSubTab('new');
-                  setActiveTab('transactions');
+                  setShowTxTypeDrawer(true);
                 }}
                 className="flex h-full items-center justify-center"
               >
@@ -5176,16 +5169,19 @@ function OrthoGroApp() {
                   {showAddLaunchCue && !isReadOnlyPartner && (
                     <span
                       aria-hidden="true"
-                      className="animate-add-ripple pointer-events-none absolute inset-0 rounded-full bg-[#16845B]/45 dark:bg-emerald-400/45"
-                    />
+                      className="animate-neon-lifecycle pointer-events-none absolute inset-0"
+                    >
+                      <span className="absolute -inset-[5px] overflow-hidden rounded-full opacity-75 blur-[5px]">
+                        <span className="neon-conic-border animate-neon-spin absolute inset-0 rounded-full" />
+                      </span>
+                      <span className="absolute -inset-[2.5px] overflow-hidden rounded-full">
+                        <span className="neon-conic-border animate-neon-spin absolute inset-0 rounded-full" />
+                      </span>
+                    </span>
                   )}
                   <span
-                    className={`relative flex h-11 w-11 items-center justify-center rounded-full bg-[#16845B] text-white shadow-md transition-transform active:scale-95 ${
-                      isReadOnlyPartner
-                        ? 'opacity-50'
-                        : showAddLaunchCue
-                        ? 'animate-add-launch'
-                        : ''
+                    className={`relative z-10 flex h-11 w-11 items-center justify-center rounded-full bg-[#16845B] text-white shadow-md transition-transform active:scale-95 ${
+                      isReadOnlyPartner ? 'opacity-50' : ''
                     }`}
                   >
                     <Plus className="h-5 w-5" />
@@ -5478,8 +5474,10 @@ function OrthoGroApp() {
         initialGoal={editingBudgetGoal}
         budgetGoals={budgetGoals}
         expenseCategories={workspace.expenseCategories}
+        categoryStyles={normalizeCategoryStyles(workspace.categoryStyles)}
         monthlySpentByCategory={monthlySpentByCategory}
         currency={workspace.currency}
+        onAddListItem={handleAddListItem}
         onSaveGoal={handleSaveBudgetGoal}
         onDeleteGoal={handleDeleteBudgetGoal}
         onClose={() => {
@@ -5493,8 +5491,10 @@ function OrthoGroApp() {
         initialGoal={editingSavingGoal}
         savingGoals={savingGoals}
         savingsList={workspace.savingsList}
+        categoryStyles={normalizeCategoryStyles(workspace.categoryStyles)}
         transactions={transactions}
         currency={workspace.currency}
+        onAddListItem={handleAddListItem}
         onSaveGoal={handleSaveSavingGoal}
         onDeleteGoal={handleDeleteSavingGoal}
         onClose={() => {
@@ -5546,10 +5546,10 @@ function OrthoGroApp() {
         onVerifyPin={(candidate) =>
           pinAccountKey ? verifyAppPin(pinAccountKey, candidate) : Promise.resolve(false)
         }
-        onSaveNewPin={async (pin, lockOnBg) => {
+        onSaveNewPin={async (pin) => {
           if (!pinAccountKey) return;
           const hadPin = Boolean(pinRecord);
-          await saveAppPin(pinAccountKey, pin, lockOnBg);
+          await saveAppPin(pinAccountKey, pin, true);
           setUnlockedAccountKey(pinAccountKey);
           setPinRecordVersion((v) => v + 1);
           notify('success', hadPin ? t.appLock.changedToast : t.appLock.enabledToast);
@@ -5559,15 +5559,6 @@ function OrthoGroApp() {
           clearAppPin(pinAccountKey);
           setPinRecordVersion((v) => v + 1);
           notify('info', t.appLock.disabledToast);
-        }}
-        onToggleLockOnBackground={(enabled) => {
-          if (!pinAccountKey) return;
-          updateAppPinSettings(pinAccountKey, { lockOnBackground: enabled });
-          setPinRecordVersion((v) => v + 1);
-        }}
-        onLockNow={() => {
-          setUnlockedAccountKey(null);
-          notify('info', t.appLock.lockedToast);
         }}
       />
 
@@ -5672,6 +5663,77 @@ function OrthoGroApp() {
 
       <ConfirmModal dialog={confirmDialog} onClose={() => setConfirmDialog(null)} />
 
+      <TransactionTypeDrawer
+        open={showTxTypeDrawer}
+        dueRecurringCount={dueRecurringCount}
+        onSelectType={(selectedType: SelectableTransactionType) => {
+          setPendingRecurringBillId(null);
+          setEntries([
+            {
+              ...defaultEntry,
+              type: selectedType,
+              category:
+                selectedType === 'income'
+                  ? workspace.incomeCategories[0] || 'Others'
+                  : workspace.expenseCategories[0] || 'Personal',
+              subCategory: '',
+              title: '',
+            },
+          ]);
+          setTxSubTab('new');
+          setShowTxTypeDrawer(false);
+          setShowTxFormDrawer(true);
+        }}
+        onOpenRecurring={() => {
+          setPendingRecurringBillId(null);
+          setEntries([defaultEntry]);
+          setTxSubTab('recurring');
+          setShowTxTypeDrawer(false);
+          setShowTxFormDrawer(true);
+        }}
+        onClose={() => setShowTxTypeDrawer(false)}
+      />
+
+      <TransactionForm
+        open={showTxFormDrawer}
+        entries={entries}
+        setEntries={setEntries}
+        defaultEntry={defaultEntry}
+        allAccountOptions={allAccountOptions}
+        wallets={workspace.wallets}
+        savingsList={workspace.savingsList}
+        expenseCategories={workspace.expenseCategories}
+        incomeCategories={workspace.incomeCategories}
+        expenseSubCategories={normalizeExpenseSubCategories(workspace.expenseSubCategories)}
+        categoryStyles={normalizeCategoryStyles(workspace.categoryStyles)}
+        currency={workspace.currency}
+        activeSubTab={txSubTab}
+        onSubTabChange={setTxSubTab}
+        recurringBills={recurringBills}
+        dueRecurringCount={dueRecurringCount}
+        isReadOnly={isReadOnlyPartner}
+        onAddListItem={handleAddListItem}
+        onAddSubCategory={handleAddSubCategory}
+        onSaveRecurringBill={handleSaveRecurringBill}
+        onDeleteRecurringBill={handleDeleteRecurringBill}
+        onOneTapLogRecurringBill={handleOneTapLogRecurringBill}
+        onAdjustAndLogRecurringBill={handleAdjustAndLogRecurringBill}
+        onOpenTypeDrawer={() => {
+          setShowTxFormDrawer(false);
+          setShowTxTypeDrawer(true);
+        }}
+        onSubmit={handleSubmitTransactions}
+        onCancel={() => {
+          setPendingRecurringBillId(null);
+          setEntries([defaultEntry]);
+          setTxSubTab('new');
+          setShowTxFormDrawer(false);
+          if (activeTab === 'transactions') {
+            setActiveTab('home');
+          }
+        }}
+      />
+
       <AssistantDrawer
         isOpen={isAssistantOpen}
         onOpenChange={setIsAssistantOpen}
@@ -5692,6 +5754,8 @@ function OrthoGroApp() {
           !showNotificationsModal &&
           !showAppLockModal &&
           !showShareAppModal &&
+          !showTxTypeDrawer &&
+          !showTxFormDrawer &&
           !activeMilestone &&
           !editingStyleTarget &&
           !confirmDialog
@@ -5711,7 +5775,7 @@ function OrthoGroApp() {
         onOpenTransactionsInForm={(drafts) => {
           setEntries(drafts);
           setTxSubTab('new');
-          setActiveTab('transactions');
+          setShowTxFormDrawer(true);
         }}
         onSaveMemo={(memoData) => handleSaveMemo(memoData)}
         onAddMemoAsExpense={handleAddMemoAsExpense}

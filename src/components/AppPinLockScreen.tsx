@@ -219,7 +219,7 @@ export const AppPinLockScreen: React.FC<AppPinLockScreenProps> = ({
             <Lock className="h-6 w-6" />
           </div>
 
-          <h1 className="mt-3 text-xl font-extrabold tracking-tight text-[#102A43] dark:text-slate-100">
+          <h1 className="mt-3 text-xl font-extrabold tracking-tight text-[#0E6042] dark:text-emerald-200">
             OrthoGro
           </h1>
           <p className="mt-0.5 max-w-full truncate text-xs font-medium text-slate-500 dark:text-slate-400">

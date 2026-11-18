@@ -85,6 +85,7 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
     () => typeof window === 'undefined' || !('IntersectionObserver' in window)
   );
   const [animCycle, setAnimCycle] = useState(0);
+  const [pinnedCategory, setPinnedCategory] = useState<string | null>(null);
   const onEnteredViewRef = useRef(onEnteredView);
   onEnteredViewRef.current = onEnteredView;
 
@@ -136,8 +137,15 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
   }, [hasEnteredView]);
 
   useEffect(() => {
+    if (activeCategory === null) {
+      setPinnedCategory(null);
+    }
+  }, [activeCategory]);
+
+  useEffect(() => {
     if (prevSigRef.current === dataSignature) return;
     prevSigRef.current = dataSignature;
+    setPinnedCategory(null);
     if (hasEnteredView) {
       setAnimCycle((c) => c + 1);
     }
@@ -160,8 +168,18 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
     if (onCategoryClick) {
       onCategoryClick(cat);
     } else {
-      onSelectCategory(activeCategory === cat ? null : cat);
+      const next = pinnedCategory === cat ? null : cat;
+      setPinnedCategory(next);
+      onSelectCategory(next);
     }
+  };
+
+  const handleSliceMouseEnter = (cat: string) => {
+    onSelectCategory(cat);
+  };
+
+  const handleSliceMouseLeave = () => {
+    onSelectCategory(pinnedCategory);
   };
 
   const sheenId = `pie-sheen-${uid}`;
@@ -228,8 +246,8 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
                   role="button"
                   tabIndex={0}
                   aria-label={singleCat}
-                  onMouseEnter={() => onSelectCategory(singleCat)}
-                  onMouseLeave={() => onSelectCategory(null)}
+                  onMouseEnter={() => handleSliceMouseEnter(singleCat)}
+                  onMouseLeave={handleSliceMouseLeave}
                   onClick={() => handleSliceActivate(singleCat)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
@@ -295,8 +313,8 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
                     role="button"
                     tabIndex={0}
                     aria-label={cat}
-                    onMouseEnter={() => onSelectCategory(cat)}
-                    onMouseLeave={() => onSelectCategory(null)}
+                    onMouseEnter={() => handleSliceMouseEnter(cat)}
+                    onMouseLeave={handleSliceMouseLeave}
                     onClick={() => handleSliceActivate(cat)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' || e.key === ' ') {
@@ -328,8 +346,8 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
                   role="button"
                   tabIndex={0}
                   aria-label={cat}
-                  onMouseEnter={() => onSelectCategory(cat)}
-                  onMouseLeave={() => onSelectCategory(null)}
+                  onMouseEnter={() => handleSliceMouseEnter(cat)}
+                  onMouseLeave={handleSliceMouseLeave}
                   onClick={() => handleSliceActivate(cat)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
@@ -372,9 +390,34 @@ export const CategoryPieChart: React.FC<CategoryPieChartProps> = ({
       {/* Center Elevated Readout Disc */}
       <div
         key={hasEnteredView ? `center-${animCycle}` : 'center-init'}
-        className={`pointer-events-none absolute flex h-[96px] w-[96px] flex-col items-center justify-center rounded-full border border-slate-200/80 bg-white/95 px-2.5 text-center shadow-sm backdrop-blur-xs sm:h-[104px] sm:w-[104px] dark:border-slate-700/80 dark:bg-slate-900/95 ${
-          hasEnteredView ? 'animate-pie-center' : 'opacity-0'
-        }`}
+        role={activeEntry ? 'button' : undefined}
+        tabIndex={activeEntry ? 0 : undefined}
+        aria-label={activeEntry ? `${activeEntry[0]} — ${totalLabel}` : undefined}
+        onClick={
+          activeEntry
+            ? (e) => {
+                e.stopPropagation();
+                if (didSwipeRef.current) return;
+                setPinnedCategory(null);
+                onSelectCategory(null);
+              }
+            : undefined
+        }
+        onKeyDown={
+          activeEntry
+            ? (e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setPinnedCategory(null);
+                  onSelectCategory(null);
+                }
+              }
+            : undefined
+        }
+        className={`absolute flex h-[96px] w-[96px] flex-col items-center justify-center rounded-full border border-slate-200/80 bg-white/95 px-2.5 text-center shadow-sm backdrop-blur-xs sm:h-[104px] sm:w-[104px] dark:border-slate-700/80 dark:bg-slate-900/95 ${
+          activeEntry ? 'cursor-pointer pointer-events-auto focus:outline-none' : 'pointer-events-none'
+        } ${hasEnteredView ? 'animate-pie-center' : 'opacity-0'}`}
       >
         {activeEntry ? (
           <>

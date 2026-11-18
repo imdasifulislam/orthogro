@@ -142,7 +142,7 @@ export function readAppPinRecord(accountKey: string): AppPinRecord | null {
 export async function saveAppPin(
   accountKey: string,
   pin: string,
-  lockOnBackground = false
+  lockOnBackground = true
 ): Promise<AppPinRecord> {
   const length: PinLength = pin.length === 6 ? 6 : 4;
   const salt = generateSaltHex(16);

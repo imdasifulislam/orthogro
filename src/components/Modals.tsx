@@ -59,6 +59,7 @@ import {
   parseLocalDate,
 } from '../utils/format';
 import { RecurringBillsPanel, type RecurringBillSavePayload } from './RecurringBillsPanel';
+import { type AddableItemKind, TransactionPickerDrawer } from './TransactionPickerDrawer';
 import { getTransactionHierarchy } from '../utils/transactionDisplay';
 
 /* --- Toast Container --- */
@@ -69,7 +70,7 @@ export const ToastContainer: React.FC<{
   if (toasts.length === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed top-[62%] left-1/2 z-[70] flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 -translate-y-1/2 flex-col items-stretch gap-2">
+    <div className="pointer-events-none fixed top-[max(1rem,env(safe-area-inset-top))] left-1/2 z-[80] flex w-[calc(100%-2rem)] max-w-sm -translate-x-1/2 flex-col items-stretch gap-2">
       {toasts.map((t) => (
         <div
           key={t.id}
@@ -2143,8 +2144,14 @@ export const BudgetGoalsModal: React.FC<{
   initialGoal: BudgetGoal | null;
   budgetGoals: BudgetGoal[];
   expenseCategories: string[];
+  categoryStyles?: Record<string, CategoryStyle>;
   monthlySpentByCategory: Record<string, number>;
   currency: CurrencySymbol;
+  onAddListItem?: (
+    type: 'wallet' | 'savings' | 'exp_cat' | 'inc_cat',
+    name: string,
+    style?: CategoryStyle
+  ) => Promise<boolean>;
   onSaveGoal: (category: string, monthlyLimit: number, editId?: string) => Promise<boolean>;
   onDeleteGoal: (id: string) => Promise<void>;
   onClose: () => void;
@@ -2153,8 +2160,10 @@ export const BudgetGoalsModal: React.FC<{
   initialGoal,
   budgetGoals,
   expenseCategories,
+  categoryStyles,
   monthlySpentByCategory,
   currency,
+  onAddListItem,
   onSaveGoal,
   onDeleteGoal,
   onClose,
@@ -2164,10 +2173,14 @@ export const BudgetGoalsModal: React.FC<{
   const [limitInput, setLimitInput] = useState('');
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [categoryPickerOpen, setCategoryPickerOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setCategoryPickerOpen(false);
+      return;
+    }
     if (initialGoal) {
       setSelectedCategory(initialGoal.category);
       setLimitInput(String(initialGoal.monthlyLimit));
@@ -2276,17 +2289,26 @@ export const BudgetGoalsModal: React.FC<{
             <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
               {t.modals.expenseCategory}
             </label>
-            <select
-              value={selectedCategory}
-              onChange={(e) => handleCategoryChange(e.target.value)}
-              className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm font-medium text-[#102A43] focus:border-[#16845B] focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+            <button
+              type="button"
+              onClick={() => setCategoryPickerOpen(true)}
+              className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-left transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-[0.99] dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600 dark:hover:bg-slate-800/80"
             >
-              {categoryOptions.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
+              <span className="flex min-w-0 items-center gap-2.5">
+                <CategoryIconBadge
+                  style={getCategoryStyle(
+                    categoryStyles,
+                    'exp',
+                    selectedCategory || categoryOptions[0] || 'Others'
+                  )}
+                  size="sm"
+                />
+                <span className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
+                  {selectedCategory}
+                </span>
+              </span>
+              <ChevronDown className="h-4 w-4 shrink-0 text-slate-400" />
+            </button>
           </div>
 
           <div>
@@ -2354,15 +2376,21 @@ export const BudgetGoalsModal: React.FC<{
                     key={goal.id}
                     className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-950/60"
                   >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
-                        {goal.category}
-                      </div>
-                      <div className="font-mono-num mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                        {t.modals.limitPrefix}: {formatMoney(goal.monthlyLimit, currency)} ·{' '}
-                        <span className={`font-semibold ${statusColor}`}>
-                          {pct}% ({statusText})
-                        </span>
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <CategoryIconBadge
+                        style={getCategoryStyle(categoryStyles, 'exp', goal.category)}
+                        size="sm"
+                      />
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
+                          {goal.category}
+                        </div>
+                        <div className="font-mono-num mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                          {t.modals.limitPrefix}: {formatMoney(goal.monthlyLimit, currency)} ·{' '}
+                          <span className={`font-semibold ${statusColor}`}>
+                            {pct}% ({statusText})
+                          </span>
+                        </div>
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
@@ -2410,6 +2438,29 @@ export const BudgetGoalsModal: React.FC<{
           {t.common.close}
         </button>
       </div>
+
+      {categoryPickerOpen && (
+        <TransactionPickerDrawer
+          open={true}
+          mode="exp_cat"
+          title={t.txForm.drawerChooseExpCategory}
+          selectedValue={selectedCategory}
+          expenseCategories={categoryOptions}
+          incomeCategories={[]}
+          subCategories={[]}
+          wallets={[]}
+          savingsList={[]}
+          allAccountOptions={[]}
+          categoryStyles={categoryStyles}
+          canCreate={Boolean(onAddListItem)}
+          onSelect={(val) => handleCategoryChange(val)}
+          onCreateItem={async (kind: AddableItemKind, name, _parent, style) => {
+            if (!onAddListItem || kind !== 'exp_cat') return false;
+            return onAddListItem('exp_cat', name, style);
+          }}
+          onClose={() => setCategoryPickerOpen(false)}
+        />
+      )}
     </div>
   );
 };
@@ -2420,8 +2471,14 @@ export const SavingGoalsModal: React.FC<{
   initialGoal: SavingGoal | null;
   savingGoals: SavingGoal[];
   savingsList: string[];
+  categoryStyles?: Record<string, CategoryStyle>;
   transactions: Transaction[];
   currency: CurrencySymbol;
+  onAddListItem?: (
+    type: 'wallet' | 'savings' | 'exp_cat' | 'inc_cat',
+    name: string,
+    style?: CategoryStyle
+  ) => Promise<boolean>;
   onSaveGoal: (
     payload: {
       title: string;
@@ -2440,8 +2497,10 @@ export const SavingGoalsModal: React.FC<{
   initialGoal,
   savingGoals,
   savingsList,
+  categoryStyles,
   transactions,
   currency,
+  onAddListItem,
   onSaveGoal,
   onDeleteGoal,
   onClose,
@@ -2455,6 +2514,7 @@ export const SavingGoalsModal: React.FC<{
   const [endDate, setEndDate] = useState('');
   const [editingGoalId, setEditingGoalId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [accountPickerOpen, setAccountPickerOpen] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const getDefaultEndDate = () => {
@@ -2467,7 +2527,10 @@ export const SavingGoalsModal: React.FC<{
   };
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setAccountPickerOpen(false);
+      return;
+    }
     if (initialGoal) {
       setTitleInput(initialGoal.title);
       setPeriodType(initialGoal.periodType);
@@ -2633,18 +2696,28 @@ export const SavingGoalsModal: React.FC<{
               <label className="mb-1 block text-xs font-semibold text-slate-600 dark:text-slate-300">
                 {t.modals.linkedAccountLabel}
               </label>
-              <select
-                value={selectedAccount}
-                onChange={(e) => setSelectedAccount(e.target.value)}
-                className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs font-medium text-[#102A43] focus:border-sky-600 focus:outline-none dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+              <button
+                type="button"
+                onClick={() => setAccountPickerOpen(true)}
+                className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-50 active:scale-[0.99] dark:border-slate-700 dark:bg-slate-900 dark:hover:border-slate-600 dark:hover:bg-slate-800/80"
               >
-                <option value="">{t.modals.allSavingsOption}</option>
-                {accountOptions.map((acc) => (
-                  <option key={acc} value={acc}>
-                    {acc}
-                  </option>
-                ))}
-              </select>
+                <span className="flex min-w-0 items-center gap-2">
+                  {selectedAccount ? (
+                    <CategoryIconBadge
+                      style={getCategoryStyle(categoryStyles, 'sav', selectedAccount)}
+                      size="xs"
+                    />
+                  ) : (
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400">
+                      <PiggyBank className="h-3.5 w-3.5" />
+                    </span>
+                  )}
+                  <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                    {selectedAccount || t.modals.allSavingsOption}
+                  </span>
+                </span>
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+              </button>
             </div>
           </div>
 
@@ -2752,19 +2825,31 @@ export const SavingGoalsModal: React.FC<{
                     key={goal.id}
                     className="flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 dark:border-slate-800 dark:bg-slate-950/60"
                   >
-                    <div className="min-w-0">
-                      <div className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
-                        {goal.title}
-                      </div>
-                      <div className="font-mono-num mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                        {t.modals.targetPrefix}: {formatMoney(goal.targetAmount, currency)} ·{' '}
-                        <span className={`font-semibold ${statusColor}`}>{roundedPct}%</span>
-                      </div>
-                      <div className="mt-0.5 truncate text-[11px] text-slate-400 dark:text-slate-500">
-                        {goal.periodType === 'monthly'
-                          ? t.modals.monthlyPeriodBtn
-                          : progress.periodLabel}{' '}
-                        · {goal.account || t.dashboard.allSavingsLabel}
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      {goal.account ? (
+                        <CategoryIconBadge
+                          style={getCategoryStyle(categoryStyles, 'sav', goal.account)}
+                          size="sm"
+                        />
+                      ) : (
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-sky-100 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400">
+                          <PiggyBank className="h-4 w-4" />
+                        </span>
+                      )}
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
+                          {goal.title}
+                        </div>
+                        <div className="font-mono-num mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                          {t.modals.targetPrefix}: {formatMoney(goal.targetAmount, currency)} ·{' '}
+                          <span className={`font-semibold ${statusColor}`}>{roundedPct}%</span>
+                        </div>
+                        <div className="mt-0.5 truncate text-[11px] text-slate-400 dark:text-slate-500">
+                          {goal.periodType === 'monthly'
+                            ? t.modals.monthlyPeriodBtn
+                            : progress.periodLabel}{' '}
+                          · {goal.account || t.dashboard.allSavingsLabel}
+                        </div>
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-1">
@@ -2815,6 +2900,29 @@ export const SavingGoalsModal: React.FC<{
           {t.common.close}
         </button>
       </div>
+
+      {accountPickerOpen && (
+        <TransactionPickerDrawer
+          open={true}
+          mode="sav_account"
+          title={t.modals.linkedAccountLabel}
+          selectedValue={selectedAccount}
+          expenseCategories={[]}
+          incomeCategories={[]}
+          subCategories={[]}
+          wallets={[]}
+          savingsList={accountOptions}
+          allAccountOptions={accountOptions}
+          categoryStyles={categoryStyles}
+          canCreate={Boolean(onAddListItem)}
+          onSelect={(val) => setSelectedAccount(val)}
+          onCreateItem={async (kind: AddableItemKind, name, _parent, style) => {
+            if (!onAddListItem || kind !== 'savings') return false;
+            return onAddListItem('savings', name, style);
+          }}
+          onClose={() => setAccountPickerOpen(false)}
+        />
+      )}
     </div>
   );
 };

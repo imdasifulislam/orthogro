@@ -7,7 +7,6 @@ import {
   Cloud,
   Coins,
   CornerDownRight,
-  Download,
   ExternalLink,
   FileBarChart2,
   FolderKanban,
@@ -101,7 +100,6 @@ interface SettingsViewProps {
   appPinEnabled: boolean;
   appPinLength?: PinLength;
   onOpenAppLock: () => void;
-  onExportBackup: () => void;
   onResetAllData: () => void;
   activeSharedWorkspace: ActiveSharedWorkspace | null;
   isReadOnlyPartner: boolean;
@@ -163,7 +161,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   appPinEnabled,
   appPinLength,
   onOpenAppLock,
-  onExportBackup,
   onResetAllData,
   activeSharedWorkspace,
   isReadOnlyPartner,
@@ -1151,27 +1148,19 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           </button>
         </div>
 
-        {/* Backup & Reset */}
-        <div className="mt-6 flex flex-col gap-2.5 border-t border-slate-200 pt-5 sm:flex-row dark:border-slate-800">
-          <button
-            type="button"
-            onClick={onExportBackup}
-            className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-bold text-[#102A43] hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
-          >
-            <Download className="h-4 w-4 text-[#16845B]" />
-            {t.settings.exportBackup}
-          </button>
-          {!activeSharedWorkspace && (
+        {/* Data Reset */}
+        {!activeSharedWorkspace && (
+          <div className="mt-6 border-t border-slate-200 pt-5 dark:border-slate-800">
             <button
               type="button"
               onClick={onResetAllData}
-              className="flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-rose-700"
+              className="flex min-h-[44px] w-full items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-rose-700"
             >
               <RotateCcw className="h-4 w-4" />
               {t.settings.resetAllData}
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* Social Media */}
