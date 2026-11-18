@@ -14,9 +14,9 @@ export default defineConfig(() => {
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png', 'orthogro-mark.png'],
         manifest: {
           id: '/',
-          name: 'OrthoGro — Personal Finance',
+          name: 'OrthoGro - Money Manager',
           short_name: 'OrthoGro',
-          description: 'Personal finance, multi-wallet ledger, debt tracker, bazar memo, and wealth management app.',
+          description: 'Personal Finance & wealth management. Easily track income, expense, budget, loan & savings. Try Now!',
           theme_color: '#16845B',
           background_color: '#FFFFFF',
           display: 'standalone',
