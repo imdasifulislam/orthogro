@@ -520,13 +520,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   }, [budgetGoals.length, savingGoals.length]);
   const [goalSwipeX, setGoalSwipeX] = useState(0);
   const [isSwipingGoal, setIsSwipingGoal] = useState(false);
-  const [categoryView, setCategoryView] = useState<'expense' | 'income'>('expense');
-  const [categoryListExpanded, setCategoryListExpanded] = useState(false);
-  const [categoryMonthOffset, setCategoryMonthOffset] = useState(0);
-  const [categoryYearOffset, setCategoryYearOffset] = useState(0);
-  const [categoryCustomOffset, setCategoryCustomOffset] = useState(0);
-  const [categorySwipeX, setCategorySwipeX] = useState(0);
-  const [isSwipingCategory, setIsSwipingCategory] = useState(false);
   const [pieView, setPieView] = useState<'expense' | 'income'>('expense');
   const [pieLegendExpanded, setPieLegendExpanded] = useState(false);
   const [pieRevealed, setPieRevealed] = useState(false);
@@ -552,12 +545,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     axis: 'x' | 'y' | null;
   }>({ startX: 0, startY: 0, dragging: false, axis: null });
   const didGoalSwipeRef = useRef(false);
-  const categorySwipeRef = useRef<{
-    startX: number;
-    startY: number;
-    dragging: boolean;
-    axis: 'x' | 'y' | null;
-  }>({ startX: 0, startY: 0, dragging: false, axis: null });
   const pieSwipeRef = useRef<{
     startX: number;
     startY: number;
@@ -577,7 +564,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     axis: 'x' | 'y' | null;
   }>({ startX: 0, startY: 0, dragging: false, axis: null });
   const didPieSwipeRef = useRef(false);
-  const didCategorySwipeRef = useRef(false);
   const didIncExpSwipeRef = useRef(false);
   const didTxSwipeRef = useRef(false);
   const pressTimerRef = useRef<number | null>(null);
@@ -606,12 +592,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         incExpSwipeRef.current.axis = null;
         setIsSwipingIncExp(false);
         setIncExpSwipeX(0);
-      }
-      if (categorySwipeRef.current.dragging) {
-        categorySwipeRef.current.dragging = false;
-        categorySwipeRef.current.axis = null;
-        setIsSwipingCategory(false);
-        setCategorySwipeX(0);
       }
       if (pieSwipeRef.current.dragging) {
         pieSwipeRef.current.dragging = false;
@@ -642,7 +622,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   };
 
   useEffect(() => {
-    setCategoryCustomOffset(0);
     setPieCustomOffset(0);
     setIncExpCustomOffset(0);
   }, [customDateFrom, customDateTo]);
@@ -652,17 +631,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     setIncExpYearOffset(0);
     setIncExpCustomOffset(0);
   }, [filters.incExp]);
-
-  useEffect(() => {
-    setCategoryMonthOffset(0);
-    setCategoryYearOffset(0);
-    setCategoryCustomOffset(0);
-    setCategoryListExpanded(false);
-  }, [filters.categoryReport]);
-
-  useEffect(() => {
-    setCategoryListExpanded(false);
-  }, [categoryView]);
 
   useEffect(() => {
     setPieMonthOffset(0);
@@ -796,68 +764,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     if (didIncExpSwipeRef.current) {
       window.setTimeout(() => {
         didIncExpSwipeRef.current = false;
-      }, 0);
-    }
-  };
-
-  const canSwipeCategory =
-    filters.categoryReport === 'monthly' ||
-    filters.categoryReport === 'yearly' ||
-    (filters.categoryReport === 'custom' && Boolean(customDateFrom && customDateTo));
-
-  const handleCategorySwipeStart = (clientX: number, clientY: number) => {
-    didCategorySwipeRef.current = false;
-    if (!canSwipeCategory) return;
-    categorySwipeRef.current = {
-      startX: clientX,
-      startY: clientY,
-      dragging: true,
-      axis: null,
-    };
-    setIsSwipingCategory(true);
-  };
-
-  const handleCategorySwipeMove = (clientX: number, clientY: number) => {
-    const state = categorySwipeRef.current;
-    if (!state.dragging) return;
-    const dx = clientX - state.startX;
-    const dy = clientY - state.startY;
-
-    if (!state.axis && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
-      state.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
-    }
-    if (state.axis !== 'x') return;
-
-    if (Math.abs(dx) > 10) {
-      didCategorySwipeRef.current = true;
-      handlePressEnd();
-    }
-    setCategorySwipeX(Math.max(-96, Math.min(96, dx * 0.45)));
-  };
-
-  const handleCategorySwipeEnd = () => {
-    const state = categorySwipeRef.current;
-    if (!state.dragging) return;
-    state.dragging = false;
-    setIsSwipingCategory(false);
-
-    if (state.axis === 'x') {
-      const step = categorySwipeX > 36 ? -1 : categorySwipeX < -36 ? 1 : 0;
-      if (step !== 0) {
-        if (filters.categoryReport === 'monthly') {
-          setCategoryMonthOffset((prev) => prev + step);
-        } else if (filters.categoryReport === 'yearly') {
-          setCategoryYearOffset((prev) => prev + step);
-        } else if (filters.categoryReport === 'custom') {
-          setCategoryCustomOffset((prev) => prev + step);
-        }
-      }
-    }
-    state.axis = null;
-    setCategorySwipeX(0);
-    if (didCategorySwipeRef.current) {
-      window.setTimeout(() => {
-        didCategorySwipeRef.current = false;
       }, 0);
     }
   };
@@ -1162,30 +1068,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     return { items, totalTarget, totalSaved, totalPct };
   }, [savingGoals, transactions, savingsList, lang]);
 
-  const categoryReportData = useMemo(
-    () =>
-      computeCategoryReport(
-        transactions,
-        filters.categoryReport,
-        categoryMonthOffset,
-        categoryYearOffset,
-        categoryCustomOffset,
-        customDateFrom,
-        customDateTo,
-        lang
-      ),
-    [
-      transactions,
-      filters.categoryReport,
-      categoryMonthOffset,
-      categoryYearOffset,
-      categoryCustomOffset,
-      customDateFrom,
-      customDateTo,
-      lang,
-    ]
-  );
-
   const pieReportData = useMemo(
     () =>
       computeCategoryReport(
@@ -1210,23 +1092,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     ]
   );
 
-  const openCategoryDrilldown = (
-    source: 'report' | 'pie',
-    kind: 'expense' | 'income',
-    categoryName: string
-  ) => {
-    const filterMode = source === 'report' ? filters.categoryReport : filters.categoryPieChart;
-    const periodTitle =
-      source === 'report' ? categoryReportData.periodTitle : pieReportData.periodTitle;
-    const monthOffset = source === 'report' ? categoryMonthOffset : pieMonthOffset;
-    const yearOffset = source === 'report' ? categoryYearOffset : pieYearOffset;
-    const customOffset = source === 'report' ? categoryCustomOffset : pieCustomOffset;
-
+  const openCategoryDrilldown = (kind: 'expense' | 'income', categoryName: string) => {
+    const filterMode = filters.categoryPieChart;
     const periodContext: DrilldownPeriodContext = {
-      periodLabel: periodTitle,
-      ...(filterMode === 'monthly' ? { monthOffset } : {}),
-      ...(filterMode === 'yearly' ? { yearOffset } : {}),
-      ...(filterMode === 'custom' ? { customOffset } : {}),
+      periodLabel: pieReportData.periodTitle,
+      ...(filterMode === 'monthly' ? { monthOffset: pieMonthOffset } : {}),
+      ...(filterMode === 'yearly' ? { yearOffset: pieYearOffset } : {}),
+      ...(filterMode === 'custom' ? { customOffset: pieCustomOffset } : {}),
     };
 
     onOpenDrilldown(
@@ -1974,219 +1846,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         );
       }
 
-      case 'categoryReport': {
-        const isExpenseView = categoryView === 'expense';
-        const activeItems = isExpenseView
-          ? categoryReportData.sortedExpenses
-          : categoryReportData.sortedIncomes;
-        const activeTotal = isExpenseView
-          ? categoryReportData.totalExpense
-          : categoryReportData.totalIncome;
-        const styleKind = isExpenseView ? 'exp' : 'inc';
-
-        return (
-          <div
-            key="categoryReport"
-            onTouchStart={(e) => {
-              handlePressStart('categoryReport', e.touches[0].clientX, e.touches[0].clientY);
-              handleCategorySwipeStart(e.touches[0].clientX, e.touches[0].clientY);
-            }}
-            onTouchMove={(e) => {
-              handlePressMove(e.touches[0].clientX, e.touches[0].clientY);
-              handleCategorySwipeMove(e.touches[0].clientX, e.touches[0].clientY);
-            }}
-            onTouchEnd={() => {
-              handlePressEnd();
-              handleCategorySwipeEnd();
-            }}
-            onTouchCancel={() => {
-              handlePressEnd();
-              handleCategorySwipeEnd();
-            }}
-            onMouseDown={(e) => {
-              if (e.button === 0) {
-                handlePressStart('categoryReport', e.clientX, e.clientY);
-                handleCategorySwipeStart(e.clientX, e.clientY);
-              }
-            }}
-            onMouseMove={(e) => {
-              if (e.buttons === 1) {
-                handlePressMove(e.clientX, e.clientY);
-                handleCategorySwipeMove(e.clientX, e.clientY);
-              }
-            }}
-            onMouseUp={() => {
-              handlePressEnd();
-              handleCategorySwipeEnd();
-            }}
-            onMouseLeave={() => {
-              handlePressEnd();
-              handleCategorySwipeEnd();
-            }}
-            onContextMenu={(e) => {
-              e.preventDefault();
-              handlePressEnd();
-              onOpenFilterCard('categoryReport');
-            }}
-            className={`select-none overflow-hidden rounded-2xl border shadow-sm transition-colors duration-200 ${
-              isExpenseView
-                ? 'border-rose-200/75 bg-rose-50/45 dark:border-rose-900/40 dark:bg-rose-950/20'
-                : 'border-emerald-200/75 bg-emerald-50/45 dark:border-emerald-900/40 dark:bg-emerald-950/20'
-            }`}
-          >
-            <div
-              style={{
-                transform: `translateX(${categorySwipeX}px)`,
-              }}
-              className={!isSwipingCategory ? 'transition-transform duration-200 ease-out' : ''}
-            >
-              {/* Header: Title + Period Filter & Top-Right Expense/Income Switch Icon */}
-              <div
-                className={`flex items-center justify-between gap-2 border-b px-4 py-2.5 sm:px-5 ${
-                  isExpenseView
-                    ? 'border-rose-200/60 dark:border-rose-900/35'
-                    : 'border-emerald-200/60 dark:border-emerald-900/35'
-                }`}
-              >
-                <div className="flex min-w-0 flex-1 items-center gap-1.5">
-                  <h3 className="shrink-0 whitespace-nowrap text-[13px] font-bold text-[#102A43] sm:text-sm dark:text-slate-100">
-                    {isExpenseView ? t.dashboard.expenseByCategory : t.dashboard.incomeByCategory}
-                  </h3>
-                  <span aria-hidden="true" className="shrink-0 text-xs text-slate-300 dark:text-slate-600">
-                    ·
-                  </span>
-                  <button
-                    type="button"
-                    onTouchStart={(e) => e.stopPropagation()}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (isLongPressRef.current || didCategorySwipeRef.current) return;
-                      onOpenFilterCard('categoryReport');
-                    }}
-                    aria-label={t.modals.selectTimePeriod}
-                    title={t.modals.selectTimePeriod}
-                    className="inline-flex min-h-[30px] min-w-0 cursor-pointer items-center gap-0.5 rounded-lg px-1.5 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-white/70 hover:text-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-400 dark:hover:bg-white/10 dark:hover:text-slate-200"
-                  >
-                    <span className="truncate">{categoryReportData.filterButtonLabel}</span>
-                    <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
-                  </button>
-                </div>
-
-                <button
-                  type="button"
-                  onTouchStart={(e) => e.stopPropagation()}
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (isLongPressRef.current || didCategorySwipeRef.current) return;
-                    setCategoryView((prev) => (prev === 'expense' ? 'income' : 'expense'));
-                  }}
-                  aria-label={
-                    isExpenseView ? t.dashboard.switchToIncome : t.dashboard.switchToExpense
-                  }
-                  title={isExpenseView ? t.dashboard.switchToIncome : t.dashboard.switchToExpense}
-                  className="inline-flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg border border-slate-200/80 bg-white/75 transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] active:scale-95 dark:border-slate-700/80 dark:bg-slate-800/70 dark:hover:bg-slate-800"
-                >
-                  {isExpenseView ? (
-                    <TrendingDown className="h-4 w-4 text-[#D94848] dark:text-rose-400" />
-                  ) : (
-                    <TrendingUp className="h-4 w-4 text-[#16845B] dark:text-emerald-400" />
-                  )}
-                </button>
-              </div>
-
-              {/* Active Breakdown Summary & Category Rows */}
-              <div className="p-4 sm:p-5">
-                <div className="mb-3 flex items-center justify-between gap-2 text-xs">
-                  <span className="truncate font-semibold text-slate-500 dark:text-slate-400">
-                    {isExpenseView
-                      ? t.dashboard.totalExpenseSuffix
-                      : t.dashboard.totalIncomeSuffix}
-                  </span>
-                  <span className="font-mono-num shrink-0 font-extrabold text-[#102A43] dark:text-slate-100">
-                    {formatMoney(activeTotal, currency)}
-                  </span>
-                </div>
-
-                {activeItems.length === 0 ? (
-                  <p className="py-6 text-center text-xs text-slate-500 dark:text-slate-400">
-                    {isExpenseView
-                      ? t.dashboard.noExpensesRecorded
-                      : t.dashboard.noIncomeRecorded}
-                  </p>
-                ) : (
-                  <div className="space-y-1.5">
-                    {(categoryListExpanded ? activeItems : activeItems.slice(0, 6)).map(
-                      ([cat, amount]) => {
-                        const pct =
-                          activeTotal > 0 ? ((amount / activeTotal) * 100).toFixed(1) : '0';
-                        const catStyle = getCategoryStyle(categoryStyles, styleKind, cat);
-                        return (
-                          <button
-                            key={cat}
-                            type="button"
-                            onClick={() => {
-                              if (isLongPressRef.current || didCategorySwipeRef.current) return;
-                              openCategoryDrilldown('report', categoryView, cat);
-                            }}
-                            className="group w-full min-h-[44px] cursor-pointer rounded-xl px-2 py-2 text-left transition-colors hover:bg-white/75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] active:scale-[0.995] dark:hover:bg-slate-800/60"
-                          >
-                            <div className="mb-1.5 flex items-center justify-between text-xs font-semibold text-slate-600 dark:text-slate-300">
-                              <span className="flex min-w-0 items-center gap-1.5 pr-2">
-                                <CategoryIconBadge style={catStyle} size="xs" />
-                                <span className="truncate group-hover:text-[#102A43] dark:group-hover:text-slate-100">
-                                  {cat}
-                                </span>
-                              </span>
-                              <span className="font-mono-num shrink-0">
-                                {formatMoney(amount, currency)} ({pct}%)
-                              </span>
-                            </div>
-                            <div className="h-2 overflow-hidden rounded-full bg-white/80 dark:bg-slate-800">
-                              <div
-                                className="h-full rounded-full"
-                                style={{ width: `${pct}%`, backgroundColor: catStyle.color }}
-                              />
-                            </div>
-                          </button>
-                        );
-                      }
-                    )}
-
-                    {activeItems.length > 6 && (
-                      <button
-                        type="button"
-                        onTouchStart={(e) => e.stopPropagation()}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setCategoryListExpanded((prev) => !prev);
-                        }}
-                        className="mt-1 flex w-full cursor-pointer items-center justify-center rounded-xl py-2 text-xs font-semibold text-slate-500 transition-colors hover:bg-white/70 hover:text-[#102A43] dark:text-slate-400 dark:hover:bg-slate-800/60 dark:hover:text-slate-200"
-                      >
-                        {categoryListExpanded
-                          ? t.dashboard.showLessCategories
-                          : t.dashboard.showMoreCategories.replace(
-                              '{count}',
-                              String(activeItems.length - 6)
-                            )}
-                      </button>
-                    )}
-                  </div>
-                )}
-
-                {canSwipeCategory && (
-                  <p className="mt-3 border-t border-slate-200/60 pt-2.5 text-[11px] text-slate-400 dark:border-slate-800/70 dark:text-slate-500">
-                    {t.dashboard.swipePrevNextPeriod}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      }
-
       case 'categoryPieChart': {
         const isExpensePie = pieView === 'expense';
         const activeItems = isExpensePie
@@ -2375,7 +2034,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                               onMouseLeave={() => setActiveChartCategory(null)}
                               onClick={() => {
                                 if (didPieSwipeRef.current || isLongPressRef.current) return;
-                                openCategoryDrilldown('pie', pieView, cat);
+                                openCategoryDrilldown(pieView, cat);
                               }}
                               className={`group flex min-h-[44px] w-full cursor-pointer flex-col justify-center gap-1 rounded-xl px-2.5 py-1.5 text-left text-xs transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] ${
                                 isHighlighted
