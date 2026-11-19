@@ -724,9 +724,9 @@ function OrthoGroApp() {
   const [closeNoteModalSeq, setCloseNoteModalSeq] = useState(0);
   const [showAssistantButton, setShowAssistantButton] = useState<boolean>(() => {
     try {
-      return localStorage.getItem('orthogro_show_assistant_v1') !== 'false';
+      return localStorage.getItem('orthogro_show_assistant_v1') === 'true';
     } catch {
-      return true;
+      return false;
     }
   });
   const [memoNavigationRequest, setMemoNavigationRequest] = useState<{
@@ -1862,7 +1862,10 @@ function OrthoGroApp() {
           state.settingsView === 'inc_cat'
         ) {
           setSettingsView('accounts_categories');
-        } else if (state.settingsView === 'tax_report') {
+        } else if (
+          state.settingsView === 'tax_report' ||
+          state.settingsView === 'shared_access'
+        ) {
           setSettingsView('pro_features');
         } else {
           setSettingsView('menu');
@@ -4771,13 +4774,33 @@ function OrthoGroApp() {
     return (
       <LanguageProvider lang={currentLanguage} setLanguage={(l) => void handleLanguageChange(l, false)}>
         <div className="flex min-h-screen flex-col items-center justify-center bg-[#F6F8F7] p-6 text-center dark:bg-slate-950">
-          <div className="text-3xl font-extrabold tracking-tight text-[#0E6042] dark:text-emerald-200">
+          <div className="text-4xl font-extrabold tracking-tight text-[#0E6042] dark:text-emerald-200">
             OrthoGro
           </div>
-          <div className="mt-1 text-xs font-bold uppercase tracking-widest text-[#16845B] dark:text-emerald-400">
-            {t.app.tagline}
-          </div>
-          <div className="mt-6 h-8 w-8 animate-spin rounded-full border-4 border-slate-200 border-t-[#16845B] dark:border-slate-800 dark:border-t-emerald-400" />
+          <p className="mt-1.5 text-sm font-medium text-slate-600 dark:text-slate-300">
+            {t.auth.subtitle}
+          </p>
+          <p
+            aria-label={currentLanguage === 'bn' ? t.app.tagline : 'Track • Save • Grow'}
+            className="mt-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-[#16845B] dark:text-emerald-400"
+          >
+            {currentLanguage === 'bn' ? (
+              <span>{t.app.tagline}</span>
+            ) : (
+              <>
+                <span>Track</span>
+                <span aria-hidden="true">•</span>
+                <span>Save</span>
+                <span aria-hidden="true">•</span>
+                <span>Grow</span>
+              </>
+            )}
+          </p>
+          <div
+            role="status"
+            aria-label={currentLanguage === 'bn' ? 'লোড হচ্ছে' : 'Loading'}
+            className="mt-6 h-8 w-8 animate-spin rounded-full border-[3px] border-emerald-100 border-t-[#16845B] dark:border-slate-800 dark:border-t-emerald-400"
+          />
         </div>
       </LanguageProvider>
     );
@@ -5877,13 +5900,17 @@ function OrthoGroApp() {
         transactions={transactions}
         wallets={workspace.wallets}
         savingsList={workspace.savingsList}
+        allAccountOptions={allAccountOptions}
         walletBalances={walletBalances}
         netWorth={assistantNetWorth}
         expenseCategories={workspace.expenseCategories}
         incomeCategories={workspace.incomeCategories}
-        expenseSubCategories={workspace.expenseSubCategories}
+        expenseSubCategories={normalizeExpenseSubCategories(workspace.expenseSubCategories)}
+        categoryStyles={normalizeCategoryStyles(workspace.categoryStyles)}
         defaultEntry={defaultEntry}
         currency={workspace.currency}
+        onAddListItem={handleAddListItem}
+        onAddSubCategory={handleAddSubCategory}
         onSaveTransactions={(drafts) => saveTransactionDrafts(drafts, false)}
         onOpenTransactionsInForm={(drafts) => {
           setEntries(drafts);

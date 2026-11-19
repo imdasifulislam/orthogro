@@ -949,7 +949,11 @@ export const DrilldownModal: React.FC<{
         className="flex h-[min(84vh,640px)] w-full max-w-md flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-3 flex shrink-0 items-start justify-between gap-2">
+        <div
+          className={`mb-3 flex shrink-0 justify-between gap-2 ${
+            isNetWorthDrilldown ? 'items-center' : 'items-start'
+          }`}
+        >
           <div className="min-w-0">
             <h3
               className={`truncate text-base font-bold ${
@@ -962,11 +966,7 @@ export const DrilldownModal: React.FC<{
             >
               {isNetWorthDrilldown ? t.modals.financialSummaryTitle : headerTitle}
             </h3>
-            {isNetWorthDrilldown ? (
-              <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
-                {formatDisplayDate(getTodayISO(), lang)}
-              </p>
-            ) : (
+            {!isNetWorthDrilldown &&
               (isCategoryDrilldown ||
                 drilldownType === 'income' ||
                 drilldownType === 'expense') && (
@@ -977,8 +977,7 @@ export const DrilldownModal: React.FC<{
                     {formatMoney(displayedTotal, currency)}
                   </span>
                 </p>
-              )
-            )}
+              )}
           </div>
           {!showNetWorthSummary ? (
             <select

@@ -817,6 +817,35 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </div>
             <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
           </button>
+
+          {/* Share Access (Live Partner Sharing) */}
+          <button
+            type="button"
+            onClick={() => setSettingsView('shared_access')}
+            className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800"
+          >
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400">
+                <Users className="h-[18px] w-[18px]" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-bold text-[#102A43] dark:text-slate-100">
+                    {t.settings.sharedAccess}
+                  </span>
+                  {pendingIncomingInvites.length > 0 && (
+                    <span className="rounded-md bg-[#16845B] px-1.5 py-0.5 text-[10px] font-bold text-white">
+                      {pendingIncomingInvites.length}
+                    </span>
+                  )}
+                </div>
+                <div className="truncate text-xs text-slate-500 dark:text-slate-400">
+                  {t.settings.sharedAccessDesc}
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+          </button>
         </div>
       </div>
     );
@@ -879,7 +908,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         outgoingInvites={outgoingInvites}
         pendingIncomingInvites={pendingIncomingInvites}
         acceptedSharedWorkspaces={acceptedSharedWorkspaces}
-        onBack={() => setSettingsView('menu')}
+        onBack={() => setSettingsView('pro_features')}
+        backLabel={t.settings.backToProFeatures}
         onGoogleLogin={onGoogleLogin}
         onSwitchToOwn={onSwitchToOwn}
         onSwitchToShared={onSwitchToShared}
@@ -1092,7 +1122,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             </button>
           )}
 
-          {/* Parent menu for Pro Features (Budget Goals, Saving Goals, Recurring Bills, Tax Report) */}
+          {/* Parent menu for Pro Features (Budget, Saving Goals, Recurring Bills, Reports, App Lock, Share Access) */}
           <button
             type="button"
             onClick={() => setSettingsView('pro_features')}
@@ -1112,30 +1142,6 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                       {dueRecurringCount} {t.settings.recurringDueSuffix}
                     </span>
                   )}
-                </div>
-                <div className="truncate text-xs text-slate-500 dark:text-slate-400">
-                  {t.settings.proFeaturesDesc}
-                </div>
-              </div>
-            </div>
-            <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
-          </button>
-
-          {/* Shared Access (Live Partner Sharing) */}
-          <button
-            type="button"
-            onClick={() => setSettingsView('shared_access')}
-            className="flex min-h-[56px] w-full items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-left transition-colors hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:bg-slate-800"
-          >
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400">
-                <Users className="h-[18px] w-[18px]" />
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-bold text-[#102A43] dark:text-slate-100">
-                    {t.settings.sharedAccess}
-                  </span>
                   {pendingIncomingInvites.length > 0 && (
                     <span className="rounded-md bg-[#16845B] px-1.5 py-0.5 text-[10px] font-bold text-white">
                       {pendingIncomingInvites.length}
@@ -1143,7 +1149,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   )}
                 </div>
                 <div className="truncate text-xs text-slate-500 dark:text-slate-400">
-                  {t.settings.sharedAccessDesc}
+                  {t.settings.proFeaturesDesc}
                 </div>
               </div>
             </div>
