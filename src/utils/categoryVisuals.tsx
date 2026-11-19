@@ -25,6 +25,7 @@ import {
   Droplets,
   Dumbbell,
   FileText,
+  Film,
   Flame,
   Fuel,
   Gamepad2,
@@ -45,6 +46,7 @@ import {
   Music,
   Package,
   Palette,
+  PartyPopper,
   Percent,
   PieChart,
   PiggyBank,
@@ -171,10 +173,12 @@ export const CATEGORY_ICONS: CategoryIconOption[] = [
   { key: 'graduation-cap', label: 'Education', icon: GraduationCap },
   { key: 'book-open', label: 'Books / Tuition', icon: BookOpen },
   { key: 'gamepad-2', label: 'Games / Hobby', icon: Gamepad2 },
+  { key: 'film', label: 'Entertainment / Movies', icon: Film },
   { key: 'music', label: 'Music / Events', icon: Music },
   { key: 'camera', label: 'Photo / Hobby', icon: Camera },
   { key: 'palette', label: 'Art / Design', icon: Palette },
   { key: 'gift', label: 'Gift', icon: Gift },
+  { key: 'party-popper', label: 'Festival / Bonus', icon: PartyPopper },
   { key: 'award', label: 'Bonus / Reward', icon: Award },
   { key: 'trophy', label: 'Achievement / Prize', icon: Trophy },
   { key: 'star', label: 'Favorite / Priority', icon: Star },
@@ -218,34 +222,59 @@ const ICON_MAP: Record<string, LucideIcon> = CATEGORY_ICONS.reduce(
 );
 
 export const DEFAULT_CATEGORY_STYLES: Record<string, CategoryStyle> = {
+  // Wallets
+  'wal:Cash': { icon: 'banknote', color: '#16845B' },
+  'wal:Bkash': { icon: 'wallet', color: '#DB2777' },
+  'wal:Nagad': { icon: 'smartphone', color: '#EA580C' },
+  'wal:Bank': { icon: 'landmark', color: '#2563EB' },
+
+  // Savings & Investments
   'sav:Emergency Fund': { icon: 'shield-check', color: '#D94848' },
+  'sav:Hobby/Want': { icon: 'gamepad-2', color: '#7C3AED' },
+  'sav:Invest': { icon: 'trending-up', color: '#16845B' },
+  'sav:Saving': { icon: 'piggy-bank', color: '#0D9488' },
+  'sav:Samity': { icon: 'users', color: '#2563EB' },
+  // Legacy savings fallbacks
   'sav:Deposit': { icon: 'landmark', color: '#0284C7' },
   'sav:Hobby': { icon: 'gamepad-2', color: '#7C3AED' },
-  'sav:Invest': { icon: 'trending-up', color: '#16845B' },
   'sav:Savings': { icon: 'piggy-bank', color: '#0D9488' },
-  'sav:Samity': { icon: 'users', color: '#2563EB' },
   'sav:Investment': { icon: 'trending-up', color: '#059669' },
 
+  // Expense Categories
   'exp:Family Maintenance': { icon: 'home', color: '#EA580C' },
   'exp:Relative': { icon: 'users', color: '#7C3AED' },
   'exp:Personal': { icon: 'user', color: '#0284C7' },
-  'exp:Career': { icon: 'briefcase', color: '#4F46E5' },
   'exp:Sadakah': { icon: 'hand-heart', color: '#16845B' },
+  'exp:Entertainment': { icon: 'film', color: '#E11D48' },
   'exp:Others': { icon: 'tag', color: '#475569' },
+  // Legacy expense fallback
+  'exp:Career': { icon: 'briefcase', color: '#4F46E5' },
 
+  // Expense Sub-categories — Family Maintenance
+  'sub:Family Maintenance::Groceries': { icon: 'shopping-cart', color: '#15803D' },
+  'sub:Family Maintenance::Utilities & Bill': { icon: 'zap', color: '#D97706' },
+  'sub:Family Maintenance::Utilities & Bills': { icon: 'zap', color: '#D97706' },
+  'sub:Family Maintenance::Rent & Housing': { icon: 'key', color: '#2563EB' },
+  'sub:Family Maintenance::Household': { icon: 'sofa', color: '#0D9488' },
+  'sub:Family Maintenance::Healthcare': { icon: 'heart-pulse', color: '#DC2626' },
+  'sub:Family Maintenance::Education': { icon: 'graduation-cap', color: '#4F46E5' },
+
+  // Expense Sub-categories — Personal
+  'sub:Personal::Food': { icon: 'utensils', color: '#F97316' },
+  'sub:Personal::Apparel': { icon: 'shirt', color: '#DB2777' },
+  'sub:Personal::Career': { icon: 'briefcase', color: '#4F46E5' },
+
+  // Income Categories
   'inc:Salary': { icon: 'banknote', color: '#16845B' },
-  'inc:Business': { icon: 'building-2', color: '#0284C7' },
-  'inc:Freelance': { icon: 'laptop', color: '#4F46E5' },
+  'inc:Business': { icon: 'building-2', color: '#2563EB' },
   'inc:Investment Return': { icon: 'trending-up', color: '#059669' },
-  'inc:Rental': { icon: 'home', color: '#0D9488' },
+  'inc:Freelance': { icon: 'laptop', color: '#4F46E5' },
+  'inc:Rental': { icon: 'key', color: '#0D9488' },
+  'inc:Festival Bonus': { icon: 'party-popper', color: '#D97706' },
   'inc:Gift': { icon: 'gift', color: '#DB2777' },
-  'inc:Bonus': { icon: 'award', color: '#D97706' },
   'inc:Others': { icon: 'coins', color: '#475569' },
-
-  'wal:Bank': { icon: 'landmark', color: '#2563EB' },
-  'wal:Bkash': { icon: 'wallet', color: '#DB2777' },
-  'wal:Nagad': { icon: 'wallet', color: '#EA580C' },
-  'wal:Cash': { icon: 'banknote', color: '#16845B' },
+  // Legacy income fallback
+  'inc:Bonus': { icon: 'award', color: '#D97706' },
 };
 
 export function getCategoryStyleKey(kind: CategoryKind, name: string): string {
@@ -283,16 +312,16 @@ export function getCategoryStyle(
     return custom;
   }
 
+  const preset = DEFAULT_CATEGORY_STYLES[scopedKey];
+  if (preset) {
+    return preset;
+  }
+
   if (kind === 'sub' && name.includes('::')) {
     const [parentCategory] = name.split('::');
     if (parentCategory) {
       return getCategoryStyle(categoryStyles, 'exp', parentCategory);
     }
-  }
-
-  const preset = DEFAULT_CATEGORY_STYLES[scopedKey];
-  if (preset) {
-    return preset;
   }
 
   const fallbackIcon =
@@ -318,9 +347,9 @@ export function getExpenseOrSubCategoryStyle(
   const cleanSub = (subCategory || '').trim();
   if (cleanSub) {
     const subKey = getCategoryStyleKey('sub', getSubCategoryTargetName(cleanCat, cleanSub));
-    const customSub = categoryStyles?.[subKey];
-    if (customSub && customSub.icon && customSub.color) {
-      return customSub;
+    const resolvedSub = categoryStyles?.[subKey] || DEFAULT_CATEGORY_STYLES[subKey];
+    if (resolvedSub && resolvedSub.icon && resolvedSub.color) {
+      return resolvedSub;
     }
   }
   return getCategoryStyle(categoryStyles, 'exp', cleanCat);

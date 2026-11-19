@@ -23,7 +23,6 @@ export type GridKey =
   | 'incExp'
   | 'lendBorrow'
   | 'budgetGoals'
-  | 'categoryReport'
   | 'categoryPieChart'
   | 'transactions';
 
@@ -199,7 +198,6 @@ export type FilterCardKey =
   | 'netWorth'
   | 'lendBorrow'
   | 'incExp'
-  | 'categoryReport'
   | 'categoryPieChart';
 
 export type DrilldownType =

@@ -263,7 +263,6 @@ export const FilterPeriodModal: React.FC<{
 
   const isLendBorrow = activeFilterCard === 'lendBorrow';
   const usesPeriodicPresets =
-    activeFilterCard === 'categoryReport' ||
     activeFilterCard === 'categoryPieChart' ||
     activeFilterCard === 'incExp';
 
@@ -2004,7 +2003,6 @@ export const CustomizeGridsModal: React.FC<{
     incExp: t.modals.gridIncExp,
     lendBorrow: t.modals.gridLendBorrow,
     budgetGoals: t.modals.gridBudgetGoals,
-    categoryReport: t.modals.gridCategoryReport,
     categoryPieChart: t.modals.gridCategoryPieChart,
     transactions: t.modals.gridTransactions,
   };

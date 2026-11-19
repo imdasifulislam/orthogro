@@ -148,17 +148,30 @@ import {
   getCurrentMonthKey,
 } from './utils/recurringBills';
 
-const DEFAULT_WALLETS = ['Bank', 'Bkash', 'Nagad', 'Cash'];
+const DEFAULT_WALLETS = ['Cash', 'Bkash', 'Nagad', 'Bank'];
+const LEGACY_DEFAULT_WALLETS = ['Bank', 'Bkash', 'Nagad', 'Cash'];
+
 const DEFAULT_SAVINGS = [
   'Emergency Fund',
-  'Deposit',
-  'Hobby',
+  'Wishlist',
   'Invest',
-  'Savings',
+  'Saving',
   'Samity',
 ];
-const LEGACY_DEFAULT_SAVINGS = ['Savings', 'Samity', 'Investment'];
+const LEGACY_DEFAULT_SAVINGS_LISTS: string[][] = [
+  ['Savings', 'Samity', 'Investment'],
+  ['Emergency Fund', 'Deposit', 'Hobby', 'Invest', 'Savings', 'Samity'],
+];
+
 const DEFAULT_EXPENSE_CATS = [
+  'Family Maintenance',
+  'Relative',
+  'Personal',
+  'Sadakah',
+  'Entertainment',
+  'Others',
+];
+const LEGACY_DEFAULT_EXPENSE_CATS = [
   'Family Maintenance',
   'Relative',
   'Personal',
@@ -166,41 +179,82 @@ const DEFAULT_EXPENSE_CATS = [
   'Sadakah',
   'Others',
 ];
+
 const DEFAULT_INCOME_CATS = [
   'Salary',
   'Business',
-  'Freelance',
   'Investment Return',
+  'Freelance',
   'Rental',
+  'Festival Bonus',
   'Gift',
-  'Bonus',
   'Others',
 ];
-const LEGACY_DEFAULT_INCOME_CATS = ['Salary', 'Business', 'Gift', 'Others'];
+const LEGACY_DEFAULT_INCOME_CATS_LISTS: string[][] = [
+  ['Salary', 'Business', 'Gift', 'Others'],
+  [
+    'Salary',
+    'Business',
+    'Freelance',
+    'Investment Return',
+    'Rental',
+    'Gift',
+    'Bonus',
+    'Others',
+  ],
+];
+
 const DEFAULT_EXPENSE_SUBCATEGORIES: Record<string, string[]> = {
   'Family Maintenance': [
     'Groceries',
-    'Utilities & Bills',
+    'Utilities & Bill',
     'Rent & Housing',
+    'Household',
     'Healthcare',
     'Education',
-    'Household',
   ],
+  Personal: ['Food', 'Apparel', 'Career'],
 };
+const LEGACY_DEFAULT_FAMILY_SUBS = [
+  'Groceries',
+  'Utilities & Bills',
+  'Rent & Housing',
+  'Healthcare',
+  'Education',
+  'Household',
+];
 
 function isExactStringArray(a: unknown, b: string[]): boolean {
   return Array.isArray(a) && a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
+function normalizeWallets(raw: unknown): string[] {
+  if (!Array.isArray(raw) || raw.length === 0) return DEFAULT_WALLETS;
+  if (isExactStringArray(raw, LEGACY_DEFAULT_WALLETS)) return DEFAULT_WALLETS;
+  const cleaned = raw.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+  return cleaned.length > 0 ? cleaned : DEFAULT_WALLETS;
+}
+
 function normalizeSavingsList(raw: unknown): string[] {
   if (!Array.isArray(raw)) return DEFAULT_SAVINGS;
-  if (isExactStringArray(raw, LEGACY_DEFAULT_SAVINGS)) return DEFAULT_SAVINGS;
+  if (LEGACY_DEFAULT_SAVINGS_LISTS.some((legacy) => isExactStringArray(raw, legacy))) {
+    return DEFAULT_SAVINGS;
+  }
   return raw.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+}
+
+function normalizeExpenseCats(raw: unknown): string[] {
+  if (!Array.isArray(raw) || raw.length === 0) return DEFAULT_EXPENSE_CATS;
+  if (isExactStringArray(raw, LEGACY_DEFAULT_EXPENSE_CATS)) return DEFAULT_EXPENSE_CATS;
+  const cleaned = raw.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
+  return cleaned.length > 0 ? cleaned : DEFAULT_EXPENSE_CATS;
 }
 
 function normalizeIncomeCats(raw: unknown): string[] {
   if (!Array.isArray(raw) || raw.length === 0) return DEFAULT_INCOME_CATS;
-  if (isExactStringArray(raw, LEGACY_DEFAULT_INCOME_CATS)) return DEFAULT_INCOME_CATS;
+  if (LEGACY_DEFAULT_INCOME_CATS_LISTS.some((legacy) => isExactStringArray(raw, legacy))) {
+    return DEFAULT_INCOME_CATS;
+  }
   const cleaned = raw.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
   return cleaned.length > 0 ? cleaned : DEFAULT_INCOME_CATS;
 }
@@ -209,8 +263,16 @@ function normalizeExpenseSubCategories(raw: unknown): Record<string, string[]> {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return { ...DEFAULT_EXPENSE_SUBCATEGORIES };
   }
+  const entries = Object.entries(raw as Record<string, unknown>);
+  if (
+    entries.length === 1 &&
+    entries[0][0] === 'Family Maintenance' &&
+    isExactStringArray(entries[0][1], LEGACY_DEFAULT_FAMILY_SUBS)
+  ) {
+    return { ...DEFAULT_EXPENSE_SUBCATEGORIES };
+  }
   const result: Record<string, string[]> = {};
-  Object.entries(raw as Record<string, unknown>).forEach(([cat, list]) => {
+  entries.forEach(([cat, list]) => {
     if (Array.isArray(list)) {
       result[cat] = list.filter((s): s is string => typeof s === 'string' && s.trim().length > 0);
     }
@@ -247,7 +309,6 @@ const DEFAULT_GRID_ORDER: GridKey[] = [
   'incExp',
   'lendBorrow',
   'budgetGoals',
-  'categoryReport',
   'categoryPieChart',
   'transactions',
 ];
@@ -257,36 +318,24 @@ const DEFAULT_VISIBLE_GRIDS: Record<GridKey, boolean> = {
   savings: true,
   incExp: true,
   lendBorrow: true,
-  budgetGoals: false,
-  categoryReport: true,
-  categoryPieChart: false,
+  budgetGoals: true,
+  categoryPieChart: true,
   transactions: true,
 };
 
-function normalizeGridOrder(raw?: GridKey[]): GridKey[] {
+function normalizeGridOrder(raw?: unknown[]): GridKey[] {
   const validSet = new Set<GridKey>(DEFAULT_GRID_ORDER);
-  const cleaned = Array.isArray(raw) ? raw.filter((k): k is GridKey => validSet.has(k)) : [];
+  const cleaned = Array.isArray(raw) ? raw.filter((k): k is GridKey => validSet.has(k as GridKey)) : [];
   const unique = Array.from(new Set(cleaned));
   if (unique.length === 0) return DEFAULT_GRID_ORDER;
   if (!unique.includes('budgetGoals')) {
-    const reportIdx = unique.indexOf('categoryReport');
-    const pieIdx = unique.indexOf('categoryPieChart');
-    const txIdx = unique.indexOf('transactions');
-    const insertIdx = reportIdx >= 0 ? reportIdx : pieIdx >= 0 ? pieIdx : txIdx;
-    if (insertIdx >= 0) {
-      unique.splice(insertIdx, 0, 'budgetGoals');
-    } else {
-      unique.push('budgetGoals');
-    }
-  }
-  if (!unique.includes('categoryReport')) {
     const pieIdx = unique.indexOf('categoryPieChart');
     const txIdx = unique.indexOf('transactions');
     const insertIdx = pieIdx >= 0 ? pieIdx : txIdx;
     if (insertIdx >= 0) {
-      unique.splice(insertIdx, 0, 'categoryReport');
+      unique.splice(insertIdx, 0, 'budgetGoals');
     } else {
-      unique.push('categoryReport');
+      unique.push('budgetGoals');
     }
   }
   if (!unique.includes('categoryPieChart')) {
@@ -304,7 +353,7 @@ function normalizeGridOrder(raw?: GridKey[]): GridKey[] {
 }
 
 function normalizeVisibleGrids(
-  raw?: Partial<Record<GridKey, boolean>>
+  raw?: Partial<Record<GridKey | 'categoryReport', boolean>>
 ): Record<GridKey, boolean> {
   return {
     netWorth: raw?.netWorth ?? DEFAULT_VISIBLE_GRIDS.netWorth,
@@ -312,9 +361,9 @@ function normalizeVisibleGrids(
     savings: raw?.savings ?? DEFAULT_VISIBLE_GRIDS.savings,
     incExp: raw?.incExp ?? DEFAULT_VISIBLE_GRIDS.incExp,
     lendBorrow: raw?.lendBorrow ?? DEFAULT_VISIBLE_GRIDS.lendBorrow,
-    budgetGoals: raw?.budgetGoals ?? false,
-    categoryReport: raw?.categoryReport ?? DEFAULT_VISIBLE_GRIDS.categoryReport,
-    categoryPieChart: raw?.categoryPieChart ?? false,
+    budgetGoals: raw?.budgetGoals ?? DEFAULT_VISIBLE_GRIDS.budgetGoals,
+    categoryPieChart:
+      raw?.categoryPieChart ?? raw?.categoryReport ?? DEFAULT_VISIBLE_GRIDS.categoryPieChart,
     transactions: raw?.transactions ?? DEFAULT_VISIBLE_GRIDS.transactions,
   };
 }
@@ -464,6 +513,151 @@ function buildDefaultWorkspace(
   };
 }
 
+function buildDefaultStarterMemos(): BazarMemo[] {
+  const today = getTodayISO();
+  const monthlyItems = [
+    { name: 'মিনিকেট চাল', qty: '১০ কেজি', price: 780, checked: true },
+    { name: 'সয়াবিন তেল', qty: '৫ লিটার', price: 860, checked: true },
+    { name: 'মসুর ডাল', qty: '২ কেজি', price: 280, checked: true },
+    { name: 'চিনি ও লবণ', qty: '২ কেজি', price: 210, checked: true },
+    { name: 'পেঁয়াজ ও রসুন', qty: '৩ কেজি', price: 290, checked: true },
+    { name: 'আটা ও ময়দা', qty: '২ কেজি', price: 140, checked: true },
+    { name: 'ডিটারজেন্ট ও সাবান', qty: '১ প্যাক', price: 320, checked: true },
+  ];
+  const todayItems = [
+    { name: 'মুরগি / মাছ', qty: '১ কেজি', price: 0, checked: false },
+    { name: 'ডিম', qty: '১ ডজন', price: 0, checked: false },
+    { name: 'তাজা সবজি', qty: '১ ব্যাগ', price: 0, checked: false },
+    { name: 'কাঁচা মরিচ ও ধনেপাতা', qty: '২৫০ গ্রাম', price: 0, checked: false },
+    { name: 'দুধ ও পাউরুটি', qty: '১ সেট', price: 0, checked: false },
+  ];
+  return [
+    {
+      id: generateSafeId('memo'),
+      date: today,
+      category: 'Family Maintenance',
+      subCategory: 'Groceries',
+      wallet: 'Cash',
+      note: 'মাসিক বাজার',
+      items: monthlyItems,
+      total: monthlyItems.reduce((sum, item) => sum + item.price, 0),
+    },
+    {
+      id: generateSafeId('memo'),
+      date: today,
+      category: 'Family Maintenance',
+      subCategory: 'Groceries',
+      wallet: 'Cash',
+      note: 'আজকের বাজার',
+      items: todayItems,
+      total: 0,
+    },
+  ];
+}
+
+function buildDefaultStarterNotes(): UserNote[] {
+  const today = getTodayISO();
+  return [
+    {
+      id: generateSafeId('note'),
+      title: '৬টি মানি ম্যানেজমেন্ট টিপস',
+      content: [
+        'মাসের শুরুতেই গুছিয়ে নিন আপনার টাকা! 💰',
+        '',
+        'মাসের শুরুতে একটু পরিকল্পনা করুন, তাহলে সারা মাসের আর্থিক চাপ অনেকটাই কমবে।',
+        '',
+        '১. বাজেট করুন:',
+        'মাসের আয় ও সম্ভাব্য খরচের হিসাব রাখুন।',
+        '',
+        '২. আগে সঞ্চয় করুন:',
+        'আয় পাওয়ার সঙ্গে সঙ্গেই সঞ্চয়ের টাকা আলাদা করুন।',
+        '',
+        '৩. প্রয়োজনকে অগ্রাধিকার দিন:',
+        'শখের আগে জরুরি খরচ মেটান।',
+        '',
+        '৪. অপ্রয়োজনীয় খরচ কমান:',
+        'ছোট ছোট খরচের দিকেও নজর রাখুন।',
+        '',
+        '৫. নিয়মিত হিসাব রাখুন:',
+        'প্রতিদিনের আয়-ব্যয় লিখে রাখুন।',
+        '',
+        '৬. জরুরি তহবিল গড়ুন:',
+        'হঠাৎ বিপদের জন্য ধীরে ধীরে আলাদা ফান্ড তৈরি করুন।',
+      ].join('\n'),
+      date: today,
+    },
+    {
+      id: generateSafeId('note'),
+      title: '50/30/20 Budget Rule',
+      content: [
+        'মেনে চলুন 50/30/20 Budget Rule:',
+        '',
+        '• ৫০% Needs: বাসা ভাড়া, খাবার, বিল ও প্রয়োজনীয় খরচ।',
+        '• ৩০% Wants: শপিং, ঘোরাঘুরি, বিনোদন ও শখ।',
+        '• ২০% Savings: সঞ্চয়, জরুরি তহবিল ও ঋণ পরিশোধ।',
+        '',
+        'মনে রাখবেন:',
+        'ভালো মানি ম্যানেজমেন্ট মানে বেশি আয় করা নয়, বরং আপনার আয়ের সঠিক ব্যবহার নিশ্চিত করা।',
+        '',
+        'এই মাসে আপনার প্রতিটি টাকার হিসাব থাকুক আপনার হাতেই!',
+      ].join('\n'),
+      date: today,
+    },
+  ];
+}
+
+function isUntouchedV1StarterMemos(list: BazarMemo[]): boolean {
+  if (list.length !== 2) return false;
+  const monthly = list.find((m) => m.note === 'মাসিক বাজার');
+  const today = list.find((m) => m.note === 'আজকের বাজার');
+  if (!monthly || !today) return false;
+  const monthlyUntouched =
+    monthly.items.length === 7 &&
+    monthly.total === 2880 &&
+    monthly.items.every((it) => !it.checked);
+  const todayUntouched =
+    today.items.length === 5 &&
+    today.total === 880 &&
+    today.items.some((it) => it.checked);
+  return monthlyUntouched && todayUntouched;
+}
+
+function isUntouchedV1StarterNotes(list: UserNote[]): boolean {
+  if (list.length !== 2) return false;
+  const titles = new Set(list.map((n) => n.title));
+  return titles.has('মাসিক হিসাবের চেকলিস্ট') && titles.has('আর্থিক লক্ষ্য ও দরকারি নোট');
+}
+
+function addStarterMemosToBatch(batch: ReturnType<typeof writeBatch>, uid: string) {
+  buildDefaultStarterMemos().forEach((m) => {
+    batch.set(doc(db, 'users', uid, 'memos', m.id), {
+      ownerId: uid,
+      date: m.date,
+      category: m.category,
+      subCategory: m.subCategory || 'Groceries',
+      wallet: m.wallet,
+      note: (m.note || '').slice(0, 500),
+      items: m.items,
+      total: m.total,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
+function addStarterNotesToBatch(batch: ReturnType<typeof writeBatch>, uid: string) {
+  buildDefaultStarterNotes().forEach((n) => {
+    batch.set(doc(db, 'users', uid, 'notes', n.id), {
+      ownerId: uid,
+      title: n.title.slice(0, 200),
+      content: n.content.slice(0, 20000),
+      date: n.date,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+  });
+}
+
 function clearGuestDeviceData() {
   clearAppPin('guest');
   try {
@@ -471,6 +665,9 @@ function clearGuestDeviceData() {
       localStorage.removeItem(key);
     });
     localStorage.removeItem('orthogro_default_hidden_grids_v1_guest');
+    localStorage.removeItem('orthogro_unified_pie_grid_v2_guest');
+    localStorage.removeItem('orthogro_budget_goals_on_v3_guest');
+    localStorage.removeItem('orthogro_show_assistant_v1');
     localStorage.removeItem(getFeatureGuideStorageKey(null));
     localStorage.removeItem(getCelebratedMilestonesKey(null));
   } catch {
@@ -684,23 +881,37 @@ function OrthoGroApp() {
       gridOrder: DEFAULT_GRID_ORDER,
       visibleGrids: DEFAULT_VISIBLE_GRIDS,
     });
-    let nextVisible = normalizeVisibleGrids(stored.visibleGrids);
+    const rawVis = stored.visibleGrids as Partial<Record<GridKey | 'categoryReport', boolean>> | undefined;
+    let nextVisible = normalizeVisibleGrids(rawVis);
     try {
-      const guestMigKey = 'orthogro_default_hidden_grids_v1_guest';
-      if (!localStorage.getItem(guestMigKey)) {
-        localStorage.setItem(guestMigKey, '1');
-        nextVisible = {
-          ...nextVisible,
-          budgetGoals: false,
-          categoryPieChart: false,
-        };
+      const guestPieMigKey = 'orthogro_unified_pie_grid_v2_guest';
+      if (!localStorage.getItem(guestPieMigKey)) {
+        localStorage.setItem(guestPieMigKey, '1');
+        if (rawVis?.categoryReport !== false) {
+          nextVisible = {
+            ...nextVisible,
+            categoryPieChart: true,
+          };
+        }
+      }
+      const guestBudgetMigKey = 'orthogro_budget_goals_on_v3_guest';
+      if (!localStorage.getItem(guestBudgetMigKey)) {
+        localStorage.setItem(guestBudgetMigKey, '1');
+        if (!nextVisible.budgetGoals) {
+          nextVisible = {
+            ...nextVisible,
+            budgetGoals: true,
+          };
+        }
       }
     } catch {
       // ignore storage errors
     }
     return {
       ...stored,
+      wallets: normalizeWallets(stored.wallets),
       savingsList: normalizeSavingsList(stored.savingsList),
+      expenseCategories: normalizeExpenseCats(stored.expenseCategories),
       incomeCategories: normalizeIncomeCats(stored.incomeCategories),
       expenseSubCategories: normalizeExpenseSubCategories(stored.expenseSubCategories),
       categoryStyles: normalizeCategoryStyles(stored.categoryStyles),
@@ -717,12 +928,14 @@ function OrthoGroApp() {
   const [transactions, setTransactions] = useState<Transaction[]>(() =>
     readGuestJSON<Transaction[]>(GUEST_STORAGE_KEYS.transactions, [])
   );
-  const [memos, setMemos] = useState<BazarMemo[]>(() =>
-    readGuestJSON<BazarMemo[]>(GUEST_STORAGE_KEYS.memos, [])
-  );
-  const [notes, setNotes] = useState<UserNote[]>(() =>
-    readGuestJSON<UserNote[]>(GUEST_STORAGE_KEYS.notes, [])
-  );
+  const [memos, setMemos] = useState<BazarMemo[]>(() => {
+    const stored = readGuestJSON<BazarMemo[]>(GUEST_STORAGE_KEYS.memos, buildDefaultStarterMemos());
+    return isUntouchedV1StarterMemos(stored) ? buildDefaultStarterMemos() : stored;
+  });
+  const [notes, setNotes] = useState<UserNote[]>(() => {
+    const stored = readGuestJSON<UserNote[]>(GUEST_STORAGE_KEYS.notes, buildDefaultStarterNotes());
+    return isUntouchedV1StarterNotes(stored) ? buildDefaultStarterNotes() : stored;
+  });
   const [budgetGoals, setBudgetGoals] = useState<BudgetGoal[]>(() =>
     readGuestJSON<BudgetGoal[]>(GUEST_STORAGE_KEYS.budgets, [])
   );
@@ -738,7 +951,6 @@ function OrthoGroApp() {
     netWorth: 'all',
     lendBorrow: 'all',
     incExp: 'monthly',
-    categoryReport: 'monthly',
     categoryPieChart: 'monthly',
   });
   const [activeFilterCard, setActiveFilterCard] = useState<FilterCardKey | null>(null);
@@ -1006,6 +1218,18 @@ function OrthoGroApp() {
                 visibleGrids: normalizeVisibleGrids(initialWs.visibleGrids),
                 updatedAt: serverTimestamp(),
               });
+              if (!wasInGuestMode) {
+                const starterBatch = writeBatch(db);
+                addStarterMemosToBatch(starterBatch, user.uid);
+                addStarterNotesToBatch(starterBatch, user.uid);
+                await starterBatch.commit();
+                try {
+                  localStorage.setItem(`orthogro_starter_memos_v2_${user.uid}`, '1');
+                  localStorage.setItem(`orthogro_starter_notes_v2_${user.uid}`, '1');
+                } catch {
+                  // ignore storage errors
+                }
+              }
               if (!hasSeenTutorialForAccount(user.uid)) {
                 setVideoTutorialMode('prompt');
                 setShowVideoTutorialModal(true);
@@ -1388,6 +1612,12 @@ function OrthoGroApp() {
               ops.push({ path: ['users', user.uid, 'recurringBills', id], data: payload });
             });
 
+            try {
+              localStorage.setItem(`orthogro_starter_memos_v2_${user.uid}`, '1');
+              localStorage.setItem(`orthogro_starter_notes_v2_${user.uid}`, '1');
+            } catch {
+              // ignore storage errors
+            }
             if (ops.length > 0) {
               try {
                 const CHUNK_SIZE = 400;
@@ -1528,19 +1758,34 @@ function OrthoGroApp() {
       (snap) => {
         if (snap.exists()) {
           const data = snap.data();
-          let nextVisible = normalizeVisibleGrids(
-            data.visibleGrids as Partial<Record<GridKey, boolean>> | undefined
-          );
-          const migKey = `orthogro_default_hidden_grids_v1_${uid}`;
-          let needsMigration = false;
+          const rawVisible = data.visibleGrids as
+            | Partial<Record<GridKey | 'categoryReport', boolean>>
+            | undefined;
+          let nextVisible = normalizeVisibleGrids(rawVisible);
+          const nextGridOrder = normalizeGridOrder(data.gridOrder as unknown[] | undefined);
+          const hadLegacyCategoryReport =
+            (Array.isArray(data.gridOrder) && data.gridOrder.includes('categoryReport')) ||
+            Boolean(rawVisible && 'categoryReport' in rawVisible);
+          const pieMigKey = `orthogro_unified_pie_grid_v2_${uid}`;
+          const budgetMigKey = `orthogro_budget_goals_on_v3_${uid}`;
+          let needsMigration = hadLegacyCategoryReport;
           try {
-            if (!localStorage.getItem(migKey)) {
-              localStorage.setItem(migKey, '1');
-              if (nextVisible.budgetGoals || nextVisible.categoryPieChart) {
+            if (!localStorage.getItem(pieMigKey)) {
+              localStorage.setItem(pieMigKey, '1');
+              if (!nextVisible.categoryPieChart && rawVisible?.categoryReport !== false) {
                 nextVisible = {
                   ...nextVisible,
-                  budgetGoals: false,
-                  categoryPieChart: false,
+                  categoryPieChart: true,
+                };
+                needsMigration = true;
+              }
+            }
+            if (!localStorage.getItem(budgetMigKey)) {
+              localStorage.setItem(budgetMigKey, '1');
+              if (!nextVisible.budgetGoals) {
+                nextVisible = {
+                  ...nextVisible,
+                  budgetGoals: true,
                 };
                 needsMigration = true;
               }
@@ -1549,12 +1794,9 @@ function OrthoGroApp() {
             // ignore storage errors
           }
           setWorkspace({
-            wallets: Array.isArray(data.wallets) && data.wallets.length > 0 ? data.wallets : DEFAULT_WALLETS,
+            wallets: normalizeWallets(data.wallets),
             savingsList: normalizeSavingsList(data.savingsList),
-            expenseCategories:
-              Array.isArray(data.expenseCategories) && data.expenseCategories.length > 0
-                ? data.expenseCategories
-                : DEFAULT_EXPENSE_CATS,
+            expenseCategories: normalizeExpenseCats(data.expenseCategories),
             incomeCategories: normalizeIncomeCats(data.incomeCategories),
             expenseSubCategories: normalizeExpenseSubCategories(data.expenseSubCategories),
             categoryStyles: normalizeCategoryStyles(data.categoryStyles),
@@ -1564,11 +1806,12 @@ function OrthoGroApp() {
               data.language === 'bn' || data.language === 'en'
                 ? (data.language as AppLanguage)
                 : readStoredLanguage(),
-            gridOrder: normalizeGridOrder(data.gridOrder as GridKey[] | undefined),
+            gridOrder: nextGridOrder,
             visibleGrids: nextVisible,
           });
           if (needsMigration && !isReadOnlyPartner) {
             void updateDoc(doc(db, 'users', uid), {
+              gridOrder: nextGridOrder,
               visibleGrids: nextVisible,
               updatedAt: serverTimestamp(),
             }).catch(() => {});
@@ -1608,6 +1851,30 @@ function OrthoGroApp() {
         }));
         list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
         setMemos(list);
+        if (uid === currentUser.uid) {
+          const seedKey = `orthogro_starter_memos_v2_${uid}`;
+          try {
+            if (!localStorage.getItem(seedKey)) {
+              localStorage.setItem(seedKey, '1');
+              if (snap.empty) {
+                const batch = writeBatch(db);
+                addStarterMemosToBatch(batch, uid);
+                void batch.commit().catch((err) => {
+                  handleFirestoreError(err, OperationType.WRITE, `users/${uid}/memos`);
+                });
+              } else if (isUntouchedV1StarterMemos(list)) {
+                const batch = writeBatch(db);
+                list.forEach((m) => batch.delete(doc(db, 'users', uid, 'memos', m.id)));
+                addStarterMemosToBatch(batch, uid);
+                void batch.commit().catch((err) => {
+                  handleFirestoreError(err, OperationType.WRITE, `users/${uid}/memos`);
+                });
+              }
+            }
+          } catch {
+            // ignore storage errors
+          }
+        }
       },
       (err) => handleFirestoreError(err, OperationType.LIST, `users/${uid}/memos`)
     );
@@ -1625,6 +1892,30 @@ function OrthoGroApp() {
         }));
         list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
         setNotes(list);
+        if (uid === currentUser.uid) {
+          const seedKey = `orthogro_starter_notes_v2_${uid}`;
+          try {
+            if (!localStorage.getItem(seedKey)) {
+              localStorage.setItem(seedKey, '1');
+              if (snap.empty) {
+                const batch = writeBatch(db);
+                addStarterNotesToBatch(batch, uid);
+                void batch.commit().catch((err) => {
+                  handleFirestoreError(err, OperationType.WRITE, `users/${uid}/notes`);
+                });
+              } else if (isUntouchedV1StarterNotes(list)) {
+                const batch = writeBatch(db);
+                list.forEach((n) => batch.delete(doc(db, 'users', uid, 'notes', n.id)));
+                addStarterNotesToBatch(batch, uid);
+                void batch.commit().catch((err) => {
+                  handleFirestoreError(err, OperationType.WRITE, `users/${uid}/notes`);
+                });
+              }
+            }
+          } catch {
+            // ignore storage errors
+          }
+        }
       },
       (err) => handleFirestoreError(err, OperationType.LIST, `users/${uid}/notes`)
     );
@@ -2393,6 +2684,16 @@ function OrthoGroApp() {
     if (fromNewUserOnboarding) {
       pendingOnboardingTutorialRef.current = true;
     }
+    try {
+      if (!localStorage.getItem(GUEST_STORAGE_KEYS.memos)) {
+        setMemos(buildDefaultStarterMemos());
+      }
+      if (!localStorage.getItem(GUEST_STORAGE_KEYS.notes)) {
+        setNotes(buildDefaultStarterNotes());
+      }
+    } catch {
+      // ignore storage errors
+    }
     localStorage.setItem(GUEST_STORAGE_KEYS.mode, 'true');
     setUnlockedAccountKey('guest');
     setIsGuest(true);
@@ -2409,6 +2710,8 @@ function OrthoGroApp() {
         cancelDestructive: true,
         onCancelAction: () => {
           clearGuestDeviceData();
+          setShowAssistantButton(false);
+          setIsAssistantOpen(false);
           setUnlockedAccountKey(null);
           setPinRecordVersion((v) => v + 1);
           setIsGuest(false);
@@ -4896,6 +5199,8 @@ function OrthoGroApp() {
       recurringBills.forEach((rb) =>
         batch.delete(doc(db, 'users', uid, 'recurringBills', rb.id))
       );
+      addStarterMemosToBatch(batch, uid);
+      addStarterNotesToBatch(batch, uid);
       try {
         await batch.commit();
       } catch (err) {
@@ -4903,8 +5208,8 @@ function OrthoGroApp() {
       }
     } else {
       setTransactions([]);
-      setMemos([]);
-      setNotes([]);
+      setMemos(buildDefaultStarterMemos());
+      setNotes(buildDefaultStarterNotes());
       setBudgetGoals([]);
       setSavingGoals([]);
       setRecurringBills([]);
