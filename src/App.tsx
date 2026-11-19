@@ -64,6 +64,10 @@ import { PWAInstallButton } from './components/PWAInstallButton';
 import { SettingsView as SettingsPanel } from './components/SettingsView';
 import { ShareAppModal } from './components/ShareAppModal';
 import {
+  VideoTutorialModal,
+  type VideoTutorialMode,
+} from './components/VideoTutorialModal';
+import {
   TransactionForm,
   type TransactionPageSubTab,
 } from './components/TransactionForm';
@@ -328,6 +332,37 @@ const GUEST_STORAGE_KEYS = {
 
 const RETURNING_USER_STORAGE_KEY = 'orthogro_returning_user_v1';
 const LAST_USER_HINT_STORAGE_KEY = 'orthogro_last_user_hint_v1';
+const ONBOARDING_CURRENCY_STORAGE_KEY = 'orthogro_onboarding_currency_v1';
+const TUTORIAL_SEEN_STORAGE_PREFIX = 'orthogro_tutorial_seen_v1_';
+const SUPPORTED_CURRENCIES: readonly CurrencySymbol[] = ['৳', '$', '€', '£', 'SAR', '₹'];
+
+function readStoredOnboardingCurrency(): CurrencySymbol {
+  try {
+    const stored = localStorage.getItem(ONBOARDING_CURRENCY_STORAGE_KEY);
+    if (stored && (SUPPORTED_CURRENCIES as readonly string[]).includes(stored)) {
+      return stored as CurrencySymbol;
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return '৳';
+}
+
+function hasSeenTutorialForAccount(accountKey: string): boolean {
+  try {
+    return localStorage.getItem(`${TUTORIAL_SEEN_STORAGE_PREFIX}${accountKey}`) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markTutorialSeenForAccount(accountKey: string) {
+  try {
+    localStorage.setItem(`${TUTORIAL_SEEN_STORAGE_PREFIX}${accountKey}`, '1');
+  } catch {
+    // ignore storage errors
+  }
+}
 
 const ALL_FEATURE_TIP_IDS: FeatureTipId[] = [
   'saving_goals',
@@ -506,6 +541,9 @@ function OrthoGroApp() {
   const [pinRecordVersion, setPinRecordVersion] = useState(0);
   const [showAppLockModal, setShowAppLockModal] = useState(false);
   const [showShareAppModal, setShowShareAppModal] = useState(false);
+  const [showVideoTutorialModal, setShowVideoTutorialModal] = useState(false);
+  const [videoTutorialMode, setVideoTutorialMode] = useState<VideoTutorialMode>('prompt');
+  const pendingOnboardingTutorialRef = useRef(false);
   const [showTxTypeDrawer, setShowTxTypeDrawer] = useState(false);
   const [showTxFormDrawer, setShowTxFormDrawer] = useState(false);
   const backgroundHiddenAtRef = useRef<number | null>(null);
@@ -606,7 +644,7 @@ function OrthoGroApp() {
       incomeCategories: DEFAULT_INCOME_CATS,
       expenseSubCategories: DEFAULT_EXPENSE_SUBCATEGORIES,
       categoryStyles: DEFAULT_CATEGORY_STYLES,
-      currency: '৳',
+      currency: readStoredOnboardingCurrency(),
       themeMode: 'system',
       language: readStoredLanguage(),
       gridOrder: DEFAULT_GRID_ORDER,
@@ -894,7 +932,7 @@ function OrthoGroApp() {
                   ),
                   expenseSubCategories: DEFAULT_EXPENSE_SUBCATEGORIES,
                   categoryStyles: DEFAULT_CATEGORY_STYLES,
-                  currency: '৳',
+                  currency: readStoredOnboardingCurrency(),
                   themeMode: 'system',
                   language: readStoredLanguage(),
                   gridOrder: DEFAULT_GRID_ORDER,
@@ -907,7 +945,7 @@ function OrthoGroApp() {
                   incomeCategories: DEFAULT_INCOME_CATS,
                   expenseSubCategories: DEFAULT_EXPENSE_SUBCATEGORIES,
                   categoryStyles: DEFAULT_CATEGORY_STYLES,
-                  currency: '৳',
+                  currency: readStoredOnboardingCurrency(),
                   themeMode: 'system',
                   language: readStoredLanguage(),
                   gridOrder: DEFAULT_GRID_ORDER,
@@ -934,6 +972,10 @@ function OrthoGroApp() {
                 visibleGrids: normalizeVisibleGrids(initialWs.visibleGrids),
                 updatedAt: serverTimestamp(),
               });
+              if (!hasSeenTutorialForAccount(user.uid)) {
+                setVideoTutorialMode('prompt');
+                setShowVideoTutorialModal(true);
+              }
             } catch (err) {
               handleFirestoreError(err, OperationType.CREATE, `users/${user.uid}`);
             }
@@ -1557,6 +1599,16 @@ function OrthoGroApp() {
     const timer = window.setTimeout(() => setShowAddLaunchCue(false), 5000);
     return () => window.clearTimeout(timer);
   }, [showAddLaunchCue]);
+  useEffect(() => {
+    if (!isWorkspaceActive || !pendingOnboardingTutorialRef.current) return;
+    pendingOnboardingTutorialRef.current = false;
+    const accountKey = currentUser?.uid || 'guest';
+    if (!hasSeenTutorialForAccount(accountKey)) {
+      setVideoTutorialMode('prompt');
+      setShowVideoTutorialModal(true);
+    }
+  }, [isWorkspaceActive, currentUser, isGuest]);
+
   const hasOpenOverlay = Boolean(
     confirmDialog ||
       activeMilestone ||
@@ -1564,6 +1616,7 @@ function OrthoGroApp() {
       showNotificationsModal ||
       showAppLockModal ||
       showShareAppModal ||
+      showVideoTutorialModal ||
       showTxTypeDrawer ||
       showTxFormDrawer ||
       showRecurringBillsModal ||
@@ -1595,6 +1648,7 @@ function OrthoGroApp() {
     showNotificationsModal,
     showAppLockModal,
     showShareAppModal,
+    showVideoTutorialModal,
     showTxTypeDrawer,
     showTxFormDrawer,
     showRecurringBillsModal,
@@ -1623,6 +1677,7 @@ function OrthoGroApp() {
     showNotificationsModal,
     showAppLockModal,
     showShareAppModal,
+    showVideoTutorialModal,
     showTxTypeDrawer,
     showTxFormDrawer,
     showRecurringBillsModal,
@@ -1664,6 +1719,7 @@ function OrthoGroApp() {
     showNotificationsModal,
     showAppLockModal,
     showShareAppModal,
+    showVideoTutorialModal,
     showTxTypeDrawer,
     showTxFormDrawer,
     showRecurringBillsModal,
@@ -1721,6 +1777,11 @@ function OrthoGroApp() {
       }
       if (state.showShareAppModal) {
         setShowShareAppModal(false);
+        return;
+      }
+      if (state.showVideoTutorialModal) {
+        markTutorialSeenForAccount(auth.currentUser?.uid || 'guest');
+        setShowVideoTutorialModal(false);
         return;
       }
       if (state.showTxTypeDrawer) {
@@ -2149,14 +2210,38 @@ function OrthoGroApp() {
     }
   };
 
+  // Onboarding currency selection (persisted before login so new Guest & Google workspaces inherit it)
+  const handleOnboardingCurrencyChange = (nextCurrency: CurrencySymbol) => {
+    try {
+      localStorage.setItem(ONBOARDING_CURRENCY_STORAGE_KEY, nextCurrency);
+    } catch {
+      // ignore storage errors
+    }
+    setWorkspace((prev) => {
+      const next = { ...prev, currency: nextCurrency };
+      if (!currentUser) {
+        try {
+          localStorage.setItem(GUEST_STORAGE_KEYS.workspace, JSON.stringify(next));
+        } catch {
+          // ignore storage errors
+        }
+      }
+      return next;
+    });
+  };
+
   // Auth actions
-  const handleGoogleLogin = async () => {
+  const handleGoogleLogin = async (fromNewUserOnboarding = false) => {
+    if (fromNewUserOnboarding) {
+      pendingOnboardingTutorialRef.current = true;
+    }
     setIsSigningIn(true);
     try {
       const result = await signInWithPopup(auth, googleProvider);
       setUnlockedAccountKey(getPinAccountKey(result.user.uid));
       notify('success', `${t.toasts.signedInAs} ${result.user.email}`);
     } catch (error) {
+      pendingOnboardingTutorialRef.current = false;
       notify(
         'error',
         error instanceof Error ? error.message : t.toasts.googleSignInFailed
@@ -2166,7 +2251,10 @@ function OrthoGroApp() {
     }
   };
 
-  const handleGuestLogin = () => {
+  const handleGuestLogin = (fromNewUserOnboarding = false) => {
+    if (fromNewUserOnboarding) {
+      pendingOnboardingTutorialRef.current = true;
+    }
     localStorage.setItem(GUEST_STORAGE_KEYS.mode, 'true');
     setUnlockedAccountKey('guest');
     setIsGuest(true);
@@ -4705,6 +4793,8 @@ function OrthoGroApp() {
         <AuthScreen
           isReturningUser={isReturningUser}
           lastUserHint={lastUserHint}
+          currency={workspace.currency}
+          onCurrencyChange={handleOnboardingCurrencyChange}
           onClearLastUserHint={() => {
             setLastUserHint(null);
             setIsReturningUser(false);
@@ -5139,6 +5229,10 @@ function OrthoGroApp() {
               onDeleteInvite={handleDeleteInvite}
               onLeaveSharedWorkspace={handleLeaveSharedWorkspace}
               onOpenShareApp={() => setShowShareAppModal(true)}
+              onOpenVideoTutorial={() => {
+                setVideoTutorialMode('player');
+                setShowVideoTutorialModal(true);
+              }}
             />
           )}
         </main>
@@ -5568,6 +5662,24 @@ function OrthoGroApp() {
         onClose={() => setShowShareAppModal(false)}
       />
 
+      <VideoTutorialModal
+        open={showVideoTutorialModal}
+        mode={videoTutorialMode}
+        onWatchVideo={() => {
+          markTutorialSeenForAccount(currentUser?.uid || 'guest');
+          setVideoTutorialMode('player');
+        }}
+        onDismissLater={() => {
+          markTutorialSeenForAccount(currentUser?.uid || 'guest');
+          setShowVideoTutorialModal(false);
+          notify('info', t.tutorial.laterToast);
+        }}
+        onClosePlayer={() => {
+          markTutorialSeenForAccount(currentUser?.uid || 'guest');
+          setShowVideoTutorialModal(false);
+        }}
+      />
+
       <NotificationsModal
         open={showNotificationsModal}
         dueRecurringCount={dueRecurringCount}
@@ -5754,6 +5866,7 @@ function OrthoGroApp() {
           !showNotificationsModal &&
           !showAppLockModal &&
           !showShareAppModal &&
+          !showVideoTutorialModal &&
           !showTxTypeDrawer &&
           !showTxFormDrawer &&
           !activeMilestone &&
