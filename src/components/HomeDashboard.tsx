@@ -1579,13 +1579,23 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           </div>
         );
 
-      case 'budgetGoals':
+      case 'budgetGoals': {
+        const isBudgetView = goalView === 'budget';
+        const budgetOverTotal = budgetSummary.totalPct > 100;
+        const headerPct = isBudgetView
+          ? budgetSummary.sortedGoals.length > 0
+            ? `${Math.round(budgetSummary.totalPct)}%`
+            : null
+          : savingSummary.items.length > 0
+          ? `${Math.round(savingSummary.totalPct)}%`
+          : null;
+
         return (
           <div
             key="budgetGoals"
             onClick={() => {
               if (didGoalSwipeRef.current) return;
-              if (goalView === 'budget') {
+              if (isBudgetView) {
                 onOpenBudgetGoalsModal();
               } else {
                 onOpenSavingGoalsModal();
@@ -1593,23 +1603,37 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             }}
             className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-colors hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
           >
-            {/* Card Header */}
-            <div className="flex items-center justify-between gap-2">
-              <h3 className="flex min-w-0 items-center gap-1.5 text-[13px] font-bold leading-snug text-[#102A43] sm:text-sm dark:text-slate-100">
-                {goalView === 'budget' ? (
+            {/* Minimal Card Header */}
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="flex min-w-0 items-center gap-2 text-sm font-bold leading-snug text-[#102A43] dark:text-slate-100">
+                {isBudgetView ? (
                   <Target className="h-4 w-4 shrink-0 text-[#16845B] dark:text-emerald-400" />
                 ) : (
                   <PiggyBank className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
                 )}
                 <span className="truncate">
-                  {goalView === 'budget'
+                  {isBudgetView
                     ? t.dashboard.monthlyBudgetGoals
                     : t.dashboard.savingGoalsTitle}
                 </span>
               </h3>
+
+              {headerPct && (
+                <span
+                  className={`font-mono-num shrink-0 text-xs font-bold tabular-nums ${
+                    isBudgetView
+                      ? budgetOverTotal
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : 'text-[#16845B] dark:text-emerald-400'
+                      : 'text-sky-600 dark:text-sky-400'
+                  }`}
+                >
+                  {headerPct}
+                </span>
+              )}
             </div>
 
-            {/* Swipeable Single-Pane Carousel (Budget Goals <-> Saving Goals) */}
+            {/* Swipeable Single-Pane Carousel (Monthly Budget <-> Saving Goals) */}
             <div
               onTouchStart={(e) =>
                 handleGoalSwipeStart(e.touches[0].clientX, e.touches[0].clientY)
@@ -1624,19 +1648,19 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               }}
               onMouseUp={handleGoalSwipeEnd}
               onMouseLeave={handleGoalSwipeEnd}
-              className="mt-3.5 overflow-hidden select-none cursor-grab active:cursor-grabbing"
+              className="mt-3 overflow-hidden select-none cursor-grab active:cursor-grabbing"
             >
               <div
                 style={{
                   transform: `translateX(calc(${
-                    goalView === 'budget' ? '0%' : '-50%'
+                    isBudgetView ? '0%' : '-50%'
                   } + ${goalSwipeX}px))`,
                 }}
                 className={`flex w-[200%] items-start ${
                   !isSwipingGoal ? 'transition-transform duration-300 ease-out' : ''
                 }`}
               >
-                {/* Slide 1: Monthly Budget Goals */}
+                {/* Slide 1: Monthly Budget */}
                 <div className="w-1/2 shrink-0 pr-1">
                   {budgetSummary.sortedGoals.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-5 text-center dark:border-slate-800 dark:bg-slate-950/40">
@@ -1655,25 +1679,29 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      {/* Overall Monthly Budget Progress */}
-                      <div className="rounded-xl border border-slate-100 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-950/60">
-                        <div className="mb-2 text-xs font-bold text-[#102A43] dark:text-slate-200">
-                          {t.dashboard.totalBudgetedSpend}
+                    <div>
+                      {/* Clean Unboxed Overall Budget Progress */}
+                      <div className="border-b border-slate-100 pb-3.5 dark:border-slate-800/80">
+                        <div className="font-mono-num mb-2 flex items-baseline justify-between gap-2 tabular-nums">
+                          <span className="text-base font-extrabold text-[#102A43] dark:text-slate-100">
+                            {formatMoney(budgetSummary.totalSpent, currency)}
+                          </span>
+                          <span className="text-xs font-medium text-slate-400 dark:text-slate-500">
+                            / {formatMoney(budgetSummary.totalLimit, currency)}
+                          </span>
                         </div>
-                        <div className="font-mono-num mb-1.5 text-xs font-bold text-[#102A43] dark:text-slate-100">
-                          {formatMoney(budgetSummary.totalSpent, currency)} /{' '}
-                          {formatMoney(budgetSummary.totalLimit, currency)} (
-                          {Math.round(budgetSummary.totalPct)}%)
-                        </div>
-                        <div className="h-2.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                        <div
+                          className={`h-1.5 overflow-hidden rounded-full ${
+                            budgetOverTotal
+                              ? 'bg-rose-500/15 dark:bg-rose-400/20'
+                              : 'bg-emerald-500/12 dark:bg-emerald-400/15'
+                          }`}
+                        >
                           <div
                             className={`h-full rounded-full transition-all duration-300 ${
-                              budgetSummary.totalPct > 100
-                                ? 'bg-rose-600 dark:bg-rose-500'
-                                : budgetSummary.totalPct >= 80
-                                ? 'bg-amber-500 dark:bg-amber-400'
-                                : 'bg-[#16845B] dark:bg-emerald-500'
+                              budgetOverTotal
+                                ? 'bg-rose-500 dark:bg-rose-400'
+                                : 'bg-[#16845B] dark:bg-emerald-400'
                             }`}
                             style={{
                               width: `${Math.min(100, Math.max(0, budgetSummary.totalPct))}%`,
@@ -1682,29 +1710,12 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                         </div>
                       </div>
 
-                      {/* Per-Category Budget Goals */}
-                      <div className="space-y-3">
+                      {/* Minimal Per-Category Rows */}
+                      <div className="mt-2.5 space-y-2">
                         {budgetSummary.sortedGoals.map(({ goal, spent, pct }) => {
                           const roundedPct = Math.round(pct);
-                          const remaining = goal.monthlyLimit - spent;
                           const isOver = pct > 100;
-                          const isNear = !isOver && pct >= 80;
-
-                          const statusLabel = isOver
-                            ? t.dashboard.overBudget
-                            : isNear
-                            ? t.dashboard.nearLimit
-                            : t.dashboard.onTrack;
-                          const statusTextClass = isOver
-                            ? 'text-rose-600 dark:text-rose-400'
-                            : isNear
-                            ? 'text-amber-600 dark:text-amber-400'
-                            : 'text-[#16845B] dark:text-emerald-400';
-                          const barColorClass = isOver
-                            ? 'bg-rose-600 dark:bg-rose-500'
-                            : isNear
-                            ? 'bg-amber-500 dark:bg-amber-400'
-                            : 'bg-[#16845B] dark:bg-emerald-500';
+                          const exceeded = Math.max(0, spent - goal.monthlyLimit);
 
                           return (
                             <button
@@ -1714,43 +1725,62 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                                 e.stopPropagation();
                                 if (!didGoalSwipeRef.current) onOpenBudgetGoalsModal(goal);
                               }}
-                              className="block w-full cursor-pointer rounded-xl p-2 -mx-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                              className="block w-full cursor-pointer rounded-xl px-2 py-1.5 -mx-2 text-left transition-colors hover:bg-slate-50/90 dark:hover:bg-slate-800/40"
                             >
-                              <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs">
-                                <div className="flex min-w-0 items-center gap-1.5">
+                              <div className="mb-1.5 flex items-center justify-between gap-2">
+                                <div className="flex min-w-0 items-center gap-2">
                                   <CategoryIconBadge
                                     style={getCategoryStyle(categoryStyles, 'exp', goal.category)}
                                     size="xs"
                                   />
-                                  <span className="truncate font-bold text-[#102A43] dark:text-slate-100">
+                                  <span className="truncate text-[13px] font-semibold text-[#102A43] dark:text-slate-100">
                                     {goal.category}
                                   </span>
-                                  <span className={`font-semibold ${statusTextClass}`}>
-                                    · {statusLabel}
-                                  </span>
                                 </div>
-                                <span className="font-mono-num shrink-0 font-semibold text-slate-600 dark:text-slate-300">
-                                  {formatMoney(spent, currency)} /{' '}
-                                  {formatMoney(goal.monthlyLimit, currency)}{' '}
-                                  <span className={`font-bold ${statusTextClass}`}>
-                                    ({roundedPct}%)
+                                <span className="font-mono-num shrink-0 text-xs tabular-nums">
+                                  <span className="font-bold text-[#102A43] dark:text-slate-100">
+                                    {formatMoney(spent, currency)}
+                                  </span>
+                                  <span className="font-normal text-slate-400 dark:text-slate-500">
+                                    {' / '}
+                                    {formatMoney(goal.monthlyLimit, currency)}
                                   </span>
                                 </span>
                               </div>
-                              <div className="h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+
+                              <div className="flex items-center gap-2.5">
                                 <div
-                                  className={`h-full rounded-full transition-all duration-300 ${barColorClass}`}
-                                  style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
-                                />
+                                  className={`h-1.5 flex-1 overflow-hidden rounded-full ${
+                                    isOver
+                                      ? 'bg-rose-500/15 dark:bg-rose-400/20'
+                                      : 'bg-emerald-500/12 dark:bg-emerald-400/15'
+                                  }`}
+                                >
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-300 ${
+                                      isOver
+                                        ? 'bg-rose-500 dark:bg-rose-400'
+                                        : 'bg-[#16845B] dark:bg-emerald-400'
+                                    }`}
+                                    style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
+                                  />
+                                </div>
+                                <span
+                                  className={`font-mono-num w-9 shrink-0 text-right text-[11px] font-semibold tabular-nums ${
+                                    isOver
+                                      ? 'text-rose-600 dark:text-rose-400'
+                                      : 'text-[#16845B] dark:text-emerald-400'
+                                  }`}
+                                >
+                                  {roundedPct}%
+                                </span>
                               </div>
-                              <div className="font-mono-num mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-                                {remaining >= 0
-                                  ? `${formatMoney(remaining, currency)} ${t.dashboard.remainingMonth}`
-                                  : `${t.dashboard.exceededLimitBy} ${formatMoney(
-                                      Math.abs(remaining),
-                                      currency
-                                    )}`}
-                              </div>
+
+                              {isOver && (
+                                <div className="font-mono-num mt-1 text-[11px] font-medium text-rose-600 dark:text-rose-400">
+                                  +{formatMoney(exceeded, currency)} {t.dashboard.overBudget}
+                                </div>
+                              )}
                             </button>
                           );
                         })}
@@ -1759,7 +1789,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   )}
                 </div>
 
-                {/* Slide 2: Saving Goals (Monthly or Certain Period) */}
+                {/* Slide 2: Saving Goals */}
                 <div className="w-1/2 shrink-0 pl-1">
                   {savingSummary.items.length === 0 ? (
                     <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-5 text-center dark:border-slate-800 dark:bg-slate-950/40">
@@ -1778,24 +1808,20 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       </button>
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      {/* Overall Saving Goals Progress */}
-                      <div className="rounded-xl border border-slate-100 bg-slate-50 p-3.5 dark:border-slate-800 dark:bg-slate-950/60">
-                        <div className="mb-2 text-xs font-bold text-[#102A43] dark:text-slate-200">
-                          {t.dashboard.totalSavedTowardGoals}
+                    <div>
+                      {/* Clean Unboxed Overall Saving Progress */}
+                      <div className="border-b border-slate-100 pb-3.5 dark:border-slate-800/80">
+                        <div className="font-mono-num mb-2 flex items-baseline justify-between gap-2 tabular-nums">
+                          <span className="text-base font-extrabold text-[#102A43] dark:text-slate-100">
+                            {formatMoney(savingSummary.totalSaved, currency)}
+                          </span>
+                          <span className="text-xs font-medium text-slate-400 dark:text-slate-500">
+                            / {formatMoney(savingSummary.totalTarget, currency)}
+                          </span>
                         </div>
-                        <div className="font-mono-num mb-1.5 text-xs font-bold text-[#102A43] dark:text-slate-100">
-                          {formatMoney(savingSummary.totalSaved, currency)} /{' '}
-                          {formatMoney(savingSummary.totalTarget, currency)} (
-                          {Math.round(savingSummary.totalPct)}%)
-                        </div>
-                        <div className="h-2.5 overflow-hidden rounded-full bg-slate-200 dark:bg-slate-800">
+                        <div className="h-1.5 overflow-hidden rounded-full bg-sky-500/12 dark:bg-sky-400/15">
                           <div
-                            className={`h-full rounded-full transition-all duration-300 ${
-                              savingSummary.totalPct >= 100
-                                ? 'bg-[#16845B] dark:bg-emerald-500'
-                                : 'bg-sky-600 dark:bg-sky-400'
-                            }`}
+                            className="h-full rounded-full bg-sky-500 transition-all duration-300 dark:bg-sky-400"
                             style={{
                               width: `${Math.min(100, Math.max(0, savingSummary.totalPct))}%`,
                             }}
@@ -1803,45 +1829,28 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                         </div>
                       </div>
 
-                      {/* Per-Saving-Goal Rows */}
-                      <div className="space-y-3">
+                      {/* Minimal Per-Saving-Goal Rows */}
+                      <div className="mt-2.5 space-y-2">
                         {savingSummary.items.map(({ goal, progress }) => {
                           const roundedPct = Math.max(0, Math.round(progress.pct));
                           const reached = progress.pct >= 100;
-                          const ended =
+                          const showAccountSuffix = Boolean(
+                            goal.account &&
+                              goal.account.trim().toLowerCase() !== goal.title.trim().toLowerCase()
+                          );
+                          const daysText =
                             !reached &&
                             goal.periodType === 'period' &&
                             progress.daysLeft !== null &&
-                            progress.daysLeft < 0;
-
-                          const statusLabel = reached
-                            ? t.dashboard.goalReached
-                            : ended
-                            ? t.dashboard.goalEnded
-                            : t.dashboard.inProgress;
-                          const statusTextClass = reached
-                            ? 'text-[#16845B] dark:text-emerald-400'
-                            : ended
-                            ? 'text-amber-600 dark:text-amber-400'
-                            : 'text-sky-600 dark:text-sky-400';
-                          const barColorClass = reached
-                            ? 'bg-[#16845B] dark:bg-emerald-500'
-                            : ended
-                            ? 'bg-amber-500 dark:bg-amber-400'
-                            : 'bg-sky-600 dark:bg-sky-400';
-
-                          const daysText =
-                            progress.daysLeft === null
-                              ? ''
-                              : progress.daysLeft < 0
-                              ? ''
-                              : progress.daysLeft === 0
-                              ? t.dashboard.endsTodayLabel
-                              : `${progress.daysLeft} ${
-                                  progress.daysLeft === 1
-                                    ? t.dashboard.dayLeftLabel
-                                    : t.dashboard.daysLeftLabel
-                                }`;
+                            progress.daysLeft >= 0
+                              ? progress.daysLeft === 0
+                                ? t.dashboard.endsTodayLabel
+                                : `${progress.daysLeft} ${
+                                    progress.daysLeft === 1
+                                      ? t.dashboard.dayLeftLabel
+                                      : t.dashboard.daysLeftLabel
+                                  }`
+                              : '';
 
                           return (
                             <button
@@ -1851,10 +1860,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                                 e.stopPropagation();
                                 if (!didGoalSwipeRef.current) onOpenSavingGoalsModal(goal);
                               }}
-                              className="block w-full cursor-pointer rounded-xl p-2 -mx-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                              className="block w-full cursor-pointer rounded-xl px-2 py-1.5 -mx-2 text-left transition-colors hover:bg-slate-50/90 dark:hover:bg-slate-800/40"
                             >
-                              <div className="mb-1 flex flex-wrap items-center justify-between gap-2 text-xs">
-                                <div className="flex min-w-0 items-center gap-1.5">
+                              <div className="mb-1.5 flex items-center justify-between gap-2">
+                                <div className="flex min-w-0 items-center gap-2">
                                   <CategoryIconBadge
                                     style={getCategoryStyle(
                                       categoryStyles,
@@ -1863,44 +1872,46 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                                     )}
                                     size="xs"
                                   />
-                                  <span className="truncate font-bold text-[#102A43] dark:text-slate-100">
+                                  <span className="truncate text-[13px] font-semibold text-[#102A43] dark:text-slate-100">
                                     {goal.title}
-                                  </span>
-                                  <span className={`font-semibold ${statusTextClass}`}>
-                                    · {statusLabel}
+                                    {showAccountSuffix && (
+                                      <span className="font-normal text-slate-400 dark:text-slate-500">
+                                        {' · '}
+                                        {goal.account}
+                                      </span>
+                                    )}
                                   </span>
                                 </div>
-                                <span className="font-mono-num shrink-0 font-semibold text-slate-600 dark:text-slate-300">
-                                  {formatMoney(progress.savedAmount, currency)} /{' '}
-                                  {formatMoney(goal.targetAmount, currency)}{' '}
-                                  <span className={`font-bold ${statusTextClass}`}>
-                                    ({roundedPct}%)
+                                <span className="font-mono-num shrink-0 text-xs tabular-nums">
+                                  <span className="font-bold text-[#102A43] dark:text-slate-100">
+                                    {formatMoney(progress.savedAmount, currency)}
+                                  </span>
+                                  <span className="font-normal text-slate-400 dark:text-slate-500">
+                                    {' / '}
+                                    {formatMoney(goal.targetAmount, currency)}
                                   </span>
                                 </span>
                               </div>
-                              <div className="h-2.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                                <div
-                                  className={`h-full rounded-full transition-all duration-300 ${barColorClass}`}
-                                  style={{
-                                    width: `${Math.min(100, Math.max(0, progress.pct))}%`,
-                                  }}
-                                />
-                              </div>
-                              <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
-                                <span className="truncate">
-                                  {goal.periodType === 'monthly'
-                                    ? `${t.dashboard.monthlyLabel} · ${progress.periodLabel}`
-                                    : progress.periodLabel}{' '}
-                                  · {goal.account || t.dashboard.allSavingsLabel}
-                                </span>
-                                <span className="font-mono-num shrink-0">
-                                  {reached
-                                    ? t.dashboard.goalReached
-                                    : `${formatMoney(progress.remaining, currency)} ${t.dashboard.remainingToGoal}${
-                                        daysText ? ` · ${daysText}` : ''
-                                      }`}
+
+                              <div className="flex items-center gap-2.5">
+                                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sky-500/12 dark:bg-sky-400/15">
+                                  <div
+                                    className="h-full rounded-full bg-sky-500 transition-all duration-300 dark:bg-sky-400"
+                                    style={{
+                                      width: `${Math.min(100, Math.max(0, progress.pct))}%`,
+                                    }}
+                                  />
+                                </div>
+                                <span className="font-mono-num w-9 shrink-0 text-right text-[11px] font-semibold tabular-nums text-sky-600 dark:text-sky-400">
+                                  {roundedPct}%
                                 </span>
                               </div>
+
+                              {daysText && (
+                                <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
+                                  {daysText}
+                                </div>
+                              )}
                             </button>
                           );
                         })}
@@ -1911,10 +1922,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </div>
             </div>
 
-            {/* Bottom slide indicator + hint */}
-            <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
+            {/* Bottom slide indicator + subtle hint */}
+            <div className="mt-3.5 flex items-center justify-between border-t border-slate-100 pt-2.5 text-[11px] text-slate-400 dark:border-slate-800/80 dark:text-slate-500">
               <span>
-                {goalView === 'budget'
+                {isBudgetView
                   ? t.dashboard.swipeLeftSaving
                   : t.dashboard.swipeRightBudget}
               </span>
@@ -1934,7 +1945,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 >
                   <span
                     className={`block h-1.5 rounded-full transition-all ${
-                      goalView === 'budget'
+                      isBudgetView
                         ? 'w-5 bg-[#16845B] dark:bg-emerald-400'
                         : 'w-2 bg-slate-300 dark:bg-slate-700'
                     }`}
@@ -1951,8 +1962,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 >
                   <span
                     className={`block h-1.5 rounded-full transition-all ${
-                      goalView === 'saving'
-                        ? 'w-5 bg-sky-600 dark:bg-sky-400'
+                      !isBudgetView
+                        ? 'w-5 bg-sky-500 dark:bg-sky-400'
                         : 'w-2 bg-slate-300 dark:bg-slate-700'
                     }`}
                   />
@@ -1961,6 +1972,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             </div>
           </div>
         );
+      }
 
       case 'categoryReport': {
         const isExpenseView = categoryView === 'expense';

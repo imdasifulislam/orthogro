@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Check, Landmark, PiggyBank, Plus, Search, Sparkles, Wallet, X } from 'lucide-react';
-import { useTranslation } from '../i18n';
-import type { CategoryKind, CategoryStyle } from '../types';
+import { getTranslations, useTranslation } from '../i18n';
+import type { AppLanguage, CategoryKind, CategoryStyle } from '../types';
 import {
   CATEGORY_COLORS,
   CATEGORY_ICONS,
@@ -35,6 +35,7 @@ interface TransactionPickerDrawerProps {
   categoryStyles?: Record<string, CategoryStyle>;
   isReadOnly?: boolean;
   canCreate?: boolean;
+  langOverride?: AppLanguage;
   onSelect: (value: string) => void;
   onCreateItem: (
     kind: AddableItemKind,
@@ -119,11 +120,13 @@ export const TransactionPickerDrawer: React.FC<TransactionPickerDrawerProps> = (
   categoryStyles,
   isReadOnly = false,
   canCreate = true,
+  langOverride,
   onSelect,
   onCreateItem,
   onClose,
 }) => {
-  const { t } = useTranslation();
+  const { t: contextT } = useTranslation();
+  const t = langOverride ? getTranslations(langOverride) : contextT;
   const [searchQuery, setSearchQuery] = useState('');
   const [creatingKind, setCreatingKind] = useState<AddableItemKind | null>(null);
   const [newName, setNewName] = useState('');
