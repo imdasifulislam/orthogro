@@ -90,6 +90,8 @@ export interface TransactionDraft {
 export interface BazarMemoItem {
   name: string;
   price: number;
+  qty?: string;
+  checked?: boolean;
 }
 
 export interface BazarMemo {

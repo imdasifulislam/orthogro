@@ -213,7 +213,7 @@
         },
         "items": {
           "type": "array",
-          "description": "List of itemized products and prices (max 200)."
+          "description": "List of itemized products with name, price, and optional qty and checked state (max 200)."
         },
         "total": {
           "type": "number"

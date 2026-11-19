@@ -1,7 +1,26 @@
-import React, { useState } from 'react';
-import { ChevronDown, Pencil, Plus, Trash2, X } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import {
+  ArrowLeft,
+  Check,
+  ChevronDown,
+  Copy,
+  MessageSquare,
+  Plus,
+  Save,
+  Share2,
+  Trash2,
+  Wallet,
+  X,
+} from 'lucide-react';
 import { useTranslation } from '../i18n';
-import type { BazarMemo, CategoryStyle, CurrencySymbol, UserNote } from '../types';
+import type {
+  BazarMemo,
+  BazarMemoItem,
+  CategoryStyle,
+  CurrencySymbol,
+  UserNote,
+} from '../types';
 import {
   CategoryIconBadge,
   getCategoryStyle,
@@ -60,8 +79,128 @@ interface MemoNotepadProps {
   closeNoteModalSeq?: number;
 }
 
+interface DraftMemoRow {
+  name: string;
+  qty: string;
+  price: string;
+  checked: boolean;
+}
+
+interface ExpenseDrawerTarget {
+  source: 'active' | 'saved';
+  defaultTitle: string;
+  amount: number;
+  items: BazarMemoItem[];
+  date: string;
+  category: string;
+  subCategory: string;
+  wallet: string;
+}
+
+interface ShareSheetState {
+  kind: 'memo' | 'note';
+  title: string;
+  text: string;
+}
+
+const createEmptyRow = (): DraftMemoRow => ({
+  name: '',
+  qty: '',
+  price: '',
+  checked: false,
+});
+
 const pickDefaultMemoWallet = (options: string[]) =>
   options.find((acc) => acc.trim().toLowerCase() === 'cash') || options[0] || 'Cash';
+
+function extractSaveableItems(rows: DraftMemoRow[]): BazarMemoItem[] {
+  return rows
+    .filter((r) => r.name.trim() !== '')
+    .map((r) => {
+      const parsed = parseFloat(r.price);
+      const cleanQty = r.qty.trim().slice(0, 40);
+      const item: BazarMemoItem = {
+        name: r.name.trim().slice(0, 120),
+        price: Number.isFinite(parsed) && parsed > 0 ? parsed : 0,
+      };
+      if (cleanQty) item.qty = cleanQty;
+      if (r.checked) item.checked = true;
+      return item;
+    });
+}
+
+function serializeMemoSnapshot(note: string, items: BazarMemoItem[]): string {
+  return JSON.stringify({
+    note: note.trim(),
+    items: items.map((it) => ({
+      name: it.name.trim(),
+      price: Number.isFinite(it.price) && it.price > 0 ? it.price : 0,
+      qty: (it.qty || '').trim(),
+      checked: Boolean(it.checked),
+    })),
+  });
+}
+
+function serializeNoteSnapshot(title: string, content: string): string {
+  return JSON.stringify({
+    title: title.trim(),
+    content: content.trim(),
+  });
+}
+
+async function copyTextToClipboard(text: string): Promise<boolean> {
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // fall back to execCommand below
+    }
+  }
+  if (typeof document === 'undefined') return false;
+  try {
+    const el = document.createElement('textarea');
+    el.value = text;
+    el.setAttribute('readonly', '');
+    el.style.position = 'fixed';
+    el.style.left = '-9999px';
+    el.style.top = '0';
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(el);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+function formatMemoShareText(
+  title: string,
+  items: Array<{ name: string; qty?: string }>
+): string {
+  const lines = items
+    .filter((item) => item.name.trim() !== '')
+    .map((item) => {
+      const cleanName = item.name.trim();
+      const cleanQty = (item.qty || '').trim();
+      return cleanQty ? `• ${cleanName} - ${cleanQty}` : `• ${cleanName}`;
+    });
+  const body = lines.join('\n');
+  const trimmedTitle = title.trim();
+  const header = trimmedTitle ? `${trimmedTitle}\n\n` : '';
+  return `${header}${body}\n\n— OrthoGro`;
+}
+
+function formatNoteShareText(title: string, content: string): string {
+  const cleanTitle = title.trim();
+  const cleanContent = content.trim();
+  const parts: string[] = [];
+  if (cleanTitle) parts.push(cleanTitle);
+  if (cleanContent) parts.push(cleanContent);
+  return `${parts.join('\n\n')}\n\n— OrthoGro`;
+}
 
 export const MemoNotepad: React.FC<MemoNotepadProps> = ({
   memos,
@@ -90,170 +229,450 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'memo' | 'notepad'>('memo');
   const [tabSwipeX, setTabSwipeX] = useState(0);
   const [isSwipingTab, setIsSwipingTab] = useState(false);
-  const tabSwipeRef = React.useRef<{
+  const tabSwipeRef = useRef<{
     startX: number;
     startY: number;
     dragging: boolean;
     axis: 'x' | 'y' | null;
   }>({ startX: 0, startY: 0, dragging: false, axis: null });
-  const didTabSwipeRef = React.useRef(false);
+  const didTabSwipeRef = useRef(false);
 
-  React.useEffect(() => {
-    if (!navigationRequest) return;
-    setActiveSubTab(navigationRequest.tab);
-    window.setTimeout(() => {
-      if (navigationRequest.tab === 'memo' && navigationRequest.scrollToSaved) {
-        document
-          .getElementById('saved-memos-section')
-          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      } else {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      }
-    }, 80);
-  }, [navigationRequest]);
-
-  // Bazar Memo form state
+  // Dedicated Bazar Memo Editor state (false = Saved Memos list, true = dedicated Add/Edit page)
+  const [isMemoEditorOpen, setIsMemoEditorOpen] = useState(false);
   const [memoDate, setMemoDate] = useState(getTodayISO());
   const [memoCategory, setMemoCategory] = useState(expenseCategories[0] || 'Others');
   const [memoSubCategory, setMemoSubCategory] = useState('');
   const [memoWallet, setMemoWallet] = useState(() => pickDefaultMemoWallet(allAccountOptions));
   const [memoNoteText, setMemoNoteText] = useState('');
-  const [memoRows, setMemoRows] = useState<Array<{ name: string; price: string }>>([
-    { name: '', price: '' },
-  ]);
+  const [memoRows, setMemoRows] = useState<DraftMemoRow[]>([createEmptyRow()]);
   const [editingMemoId, setEditingMemoId] = useState<string | null>(null);
-  const itemInputRefs = React.useRef<Array<HTMLInputElement | null>>([]);
-  const priceInputRefs = React.useRef<Array<HTMLInputElement | null>>([]);
-  const noteContentRef = React.useRef<HTMLTextAreaElement | null>(null);
+
+  const initialMemoSnapshotRef = useRef<string>(serializeMemoSnapshot('', []));
+  const isSavingMemoRef = useRef(false);
+
+  const itemInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const qtyInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const priceInputRefs = useRef<Array<HTMLInputElement | null>>([]);
+  const noteContentRef = useRef<HTMLTextAreaElement | null>(null);
+
+  // Notepad modal state
+  const [isAddingNote, setIsAddingNote] = useState(false);
+  const [selectedNote, setSelectedNote] = useState<UserNote | null>(null);
+  const [currentTitle, setCurrentTitle] = useState('');
+  const [currentContent, setCurrentContent] = useState('');
+  const initialNoteSnapshotRef = useRef<string>(serializeNoteSnapshot('', ''));
+  const isSavingNoteRef = useRef(false);
+
+  // Expense bottom drawer & pickers
+  const [expenseDrawer, setExpenseDrawer] = useState<ExpenseDrawerTarget | null>(null);
+  const [drawerTitle, setDrawerTitle] = useState('');
+  const [drawerDate, setDrawerDate] = useState(getTodayISO());
+  const [drawerCategory, setDrawerCategory] = useState(expenseCategories[0] || 'Others');
+  const [drawerSubCategory, setDrawerSubCategory] = useState('');
+  const [drawerWallet, setDrawerWallet] = useState(() =>
+    pickDefaultMemoWallet(allAccountOptions)
+  );
+  const [isLoggingExpense, setIsLoggingExpense] = useState(false);
+  const [activeMemoPicker, setActiveMemoPicker] = useState<
+    'category' | 'subCategory' | 'wallet' | null
+  >(null);
+
+  // Share bottom sheet
+  const [shareSheet, setShareSheet] = useState<ShareSheetState | null>(null);
+  const [shareTextDraft, setShareTextDraft] = useState('');
+  const [copiedJustNow, setCopiedJustNow] = useState(false);
+
+  // Keep latest state in a ref for unmount auto-save safety (e.g. tapping bottom nav tab directly)
+  const latestRef = useRef({
+    isMemoEditorOpen,
+    isReadOnly,
+    memoNoteText,
+    memoRows,
+    memoDate,
+    memoCategory,
+    memoSubCategory,
+    memoWallet,
+    editingMemoId,
+    onSaveMemo,
+    isAddingNote,
+    selectedNote,
+    currentTitle,
+    currentContent,
+    onSaveNote,
+    untitled: t.common.untitled,
+  });
+
+  latestRef.current = {
+    isMemoEditorOpen,
+    isReadOnly,
+    memoNoteText,
+    memoRows,
+    memoDate,
+    memoCategory,
+    memoSubCategory,
+    memoWallet,
+    editingMemoId,
+    onSaveMemo,
+    isAddingNote,
+    selectedNote,
+    currentTitle,
+    currentContent,
+    onSaveNote,
+    untitled: t.common.untitled,
+  };
+
+  // Auto-save dirty memo or note if component unmounts while editor is open
+  useEffect(() => {
+    return () => {
+      const s = latestRef.current;
+      if (s.isMemoEditorOpen && !s.isReadOnly && !isSavingMemoRef.current) {
+        const valid = extractSaveableItems(s.memoRows);
+        const currentSnap = serializeMemoSnapshot(s.memoNoteText, valid);
+        if (valid.length > 0 && currentSnap !== initialMemoSnapshotRef.current) {
+          isSavingMemoRef.current = true;
+          initialMemoSnapshotRef.current = currentSnap;
+          const total = valid.reduce((sum, it) => sum + it.price, 0);
+          void s.onSaveMemo(
+            {
+              date: s.memoDate,
+              category: s.memoCategory,
+              ...(s.memoSubCategory ? { subCategory: s.memoSubCategory } : {}),
+              wallet: s.memoWallet,
+              items: valid,
+              total,
+              note: s.memoNoteText.trim(),
+            },
+            s.editingMemoId || undefined
+          );
+        }
+      }
+      if ((s.isAddingNote || s.selectedNote) && !s.isReadOnly && !isSavingNoteRef.current) {
+        const hasText = Boolean(s.currentTitle.trim() || s.currentContent.trim());
+        const noteSnap = serializeNoteSnapshot(s.currentTitle, s.currentContent);
+        if (hasText && noteSnap !== initialNoteSnapshotRef.current) {
+          isSavingNoteRef.current = true;
+          initialNoteSnapshotRef.current = noteSnap;
+          void s.onSaveNote(
+            {
+              title: s.currentTitle.trim() || s.untitled,
+              content: s.currentContent.trim(),
+              date: getTodayISO(),
+            },
+            s.selectedNote?.id
+          );
+        }
+      }
+    };
+  }, []);
+
+  // Close editor automatically if the currently-edited memo was deleted
+  useEffect(() => {
+    if (isMemoEditorOpen && editingMemoId && !memos.some((m) => m.id === editingMemoId)) {
+      initialMemoSnapshotRef.current = serializeMemoSnapshot('', []);
+      setIsMemoEditorOpen(false);
+      setEditingMemoId(null);
+      setMemoRows([createEmptyRow()]);
+      setMemoNoteText('');
+    }
+  }, [memos, isMemoEditorOpen, editingMemoId]);
+
+  useEffect(() => {
+    if (!navigationRequest) return;
+    setActiveSubTab(navigationRequest.tab);
+    setIsMemoEditorOpen(false);
+    window.setTimeout(() => {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }, 60);
+  }, [navigationRequest]);
 
   // Sync default selectors if lists change
-  React.useEffect(() => {
+  useEffect(() => {
     if (!expenseCategories.includes(memoCategory)) {
       setMemoCategory(expenseCategories[0] || 'Others');
       setMemoSubCategory('');
     }
   }, [expenseCategories, memoCategory]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (!allAccountOptions.includes(memoWallet)) {
       setMemoWallet(pickDefaultMemoWallet(allAccountOptions));
     }
   }, [allAccountOptions, memoWallet]);
 
-  // Notepad modal & picker drawer state
-  const [isAddingNote, setIsAddingNote] = useState(false);
-  const [selectedNote, setSelectedNote] = useState<UserNote | null>(null);
-  const [currentTitle, setCurrentTitle] = useState('');
-  const [currentContent, setCurrentContent] = useState('');
-  const [activeMemoPicker, setActiveMemoPicker] = useState<
-    'category' | 'subCategory' | 'wallet' | null
-  >(null);
-  const [showMemoDetails, setShowMemoDetails] = useState(false);
-  const [loggingMemoId, setLoggingMemoId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!copiedJustNow) return;
+    const timer = window.setTimeout(() => setCopiedJustNow(false), 2000);
+    return () => window.clearTimeout(timer);
+  }, [copiedJustNow]);
 
-  React.useEffect(() => {
-    onNoteModalOpenChange?.(Boolean(isAddingNote || selectedNote || activeMemoPicker));
-  }, [isAddingNote, selectedNote, activeMemoPicker, onNoteModalOpenChange]);
+  useEffect(() => {
+    onNoteModalOpenChange?.(
+      Boolean(
+        isMemoEditorOpen ||
+          isAddingNote ||
+          selectedNote ||
+          activeMemoPicker ||
+          expenseDrawer ||
+          shareSheet
+      )
+    );
+  }, [
+    isMemoEditorOpen,
+    isAddingNote,
+    selectedNote,
+    activeMemoPicker,
+    expenseDrawer,
+    shareSheet,
+    onNoteModalOpenChange,
+  ]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     return () => {
       onNoteModalOpenChange?.(false);
     };
   }, [onNoteModalOpenChange]);
 
-  React.useEffect(() => {
+  const memoTotal = memoRows.reduce((sum, r) => sum + (parseFloat(r.price) || 0), 0);
+
+  const resetMemoFields = () => {
+    setMemoRows([createEmptyRow()]);
+    setMemoNoteText('');
+    setMemoDate(getTodayISO());
+    setMemoCategory(expenseCategories[0] || 'Others');
+    setMemoSubCategory('');
+    setMemoWallet(pickDefaultMemoWallet(allAccountOptions));
+    setEditingMemoId(null);
+    initialMemoSnapshotRef.current = serializeMemoSnapshot('', []);
+  };
+
+  const openNewMemoEditor = () => {
+    if (isReadOnly) return;
+    resetMemoFields();
+    setIsMemoEditorOpen(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const openSavedMemoEditor = (memo: BazarMemo) => {
+    setEditingMemoId(memo.id);
+    setMemoDate(memo.date || getTodayISO());
+    setMemoCategory(
+      expenseCategories.includes(memo.category)
+        ? memo.category
+        : expenseCategories[0] || 'Others'
+    );
+    setMemoSubCategory(memo.subCategory || '');
+    setMemoWallet(
+      allAccountOptions.includes(memo.wallet)
+        ? memo.wallet
+        : pickDefaultMemoWallet(allAccountOptions)
+    );
+    setMemoNoteText(memo.note || '');
+    const loadedRows: DraftMemoRow[] = memo.items.map((it) => ({
+      name: it.name,
+      qty: it.qty || '',
+      price: it.price > 0 ? String(it.price) : '',
+      checked: Boolean(it.checked),
+    }));
+    loadedRows.push(createEmptyRow());
+    setMemoRows(loadedRows);
+    initialMemoSnapshotRef.current = serializeMemoSnapshot(
+      memo.note || '',
+      extractSaveableItems(loadedRows)
+    );
+    setIsMemoEditorOpen(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // Auto-save on Back / Exit without requiring explicit Save tap
+  const handleExitMemoEditor = async () => {
+    if (isSavingMemoRef.current) return;
+    const valid = extractSaveableItems(memoRows);
+    const currentSnap = serializeMemoSnapshot(memoNoteText, valid);
+
+    if (!isReadOnly && valid.length > 0 && currentSnap !== initialMemoSnapshotRef.current) {
+      isSavingMemoRef.current = true;
+      initialMemoSnapshotRef.current = currentSnap;
+      const total = valid.reduce((sum, item) => sum + item.price, 0);
+      try {
+        await onSaveMemo(
+          {
+            date: memoDate,
+            category: memoCategory,
+            ...(memoSubCategory ? { subCategory: memoSubCategory } : {}),
+            wallet: memoWallet,
+            items: valid,
+            total,
+            note: memoNoteText.trim(),
+          },
+          editingMemoId || undefined
+        );
+      } finally {
+        isSavingMemoRef.current = false;
+      }
+    }
+
+    resetMemoFields();
+    setIsMemoEditorOpen(false);
+  };
+
+  // Auto-save on Notepad Close / Back / Backdrop click
+  const handleCloseNoteModal = async () => {
+    if (isSavingNoteRef.current) return;
+    const hasText = Boolean(currentTitle.trim() || currentContent.trim());
+    const currentSnap = serializeNoteSnapshot(currentTitle, currentContent);
+
+    if (!isReadOnly && hasText && currentSnap !== initialNoteSnapshotRef.current) {
+      isSavingNoteRef.current = true;
+      initialNoteSnapshotRef.current = currentSnap;
+      try {
+        await onSaveNote(
+          {
+            title: currentTitle.trim() || t.common.untitled,
+            content: currentContent.trim(),
+            date: getTodayISO(),
+          },
+          selectedNote?.id
+        );
+      } finally {
+        isSavingNoteRef.current = false;
+      }
+    }
+
+    setIsAddingNote(false);
+    setSelectedNote(null);
+  };
+
+  // Hardware / Browser Back button handler
+  useEffect(() => {
     if (closeNoteModalSeq > 0) {
       if (activeMemoPicker) {
         setActiveMemoPicker(null);
         return;
       }
-      setIsAddingNote(false);
-      setSelectedNote(null);
+      if (shareSheet) {
+        setShareSheet(null);
+        return;
+      }
+      if (expenseDrawer) {
+        setExpenseDrawer(null);
+        return;
+      }
+      if (isAddingNote || selectedNote) {
+        void handleCloseNoteModal();
+        return;
+      }
+      if (isMemoEditorOpen) {
+        void handleExitMemoEditor();
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closeNoteModalSeq]);
 
-  const memoTotal = memoRows.reduce((sum, r) => sum + (parseFloat(r.price) || 0), 0);
+  // Escape key closes top-most sheet/drawer/modal
+  useEffect(() => {
+    if (!shareSheet && !expenseDrawer && !isAddingNote && !selectedNote) return;
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (activeMemoPicker) return;
+      if (shareSheet) {
+        setShareSheet(null);
+      } else if (expenseDrawer) {
+        setExpenseDrawer(null);
+      } else if (isAddingNote || selectedNote) {
+        void handleCloseNoteModal();
+      }
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shareSheet, expenseDrawer, activeMemoPicker, isAddingNote, selectedNote]);
 
-  const resetMemoForm = () => {
-    setMemoRows([{ name: '', price: '' }]);
-    setMemoNoteText('');
-    setMemoSubCategory('');
-    setMemoWallet(pickDefaultMemoWallet(allAccountOptions));
-    setEditingMemoId(null);
-    setShowMemoDetails(false);
-  };
-
-  const handleRowChange = (idx: number, field: 'name' | 'price', value: string) => {
+  const handleRowChange = (
+    idx: number,
+    field: 'name' | 'qty' | 'price',
+    value: string
+  ) => {
     setMemoRows((prev) => {
       const updated = prev.map((row, i) => (i === idx ? { ...row, [field]: value } : row));
       const editedRow = updated[idx];
       if (
         idx === updated.length - 1 &&
-        (editedRow.name.trim() !== '' || editedRow.price.trim() !== '')
+        (editedRow.name.trim() !== '' ||
+          editedRow.qty.trim() !== '' ||
+          editedRow.price.trim() !== '')
       ) {
-        updated.push({ name: '', price: '' });
+        updated.push(createEmptyRow());
       }
       return updated;
     });
   };
 
+  const handleToggleRowChecked = (idx: number) => {
+    setMemoRows((prev) =>
+      prev.map((row, i) => (i === idx ? { ...row, checked: !row.checked } : row))
+    );
+  };
+
   const handleRemoveRow = (idx: number) => {
     setMemoRows((prev) => {
-      if (prev.length <= 1) return [{ name: '', price: '' }];
+      if (prev.length <= 1) return [createEmptyRow()];
       const next = prev.filter((_, i) => i !== idx);
-      return next.length > 0 ? next : [{ name: '', price: '' }];
+      return next.length > 0 ? next : [createEmptyRow()];
     });
   };
 
   const appendAndFocusRow = () => {
     setMemoRows((prev) => {
       const last = prev[prev.length - 1];
-      if (last && last.name.trim() === '' && last.price.trim() === '') {
+      if (
+        last &&
+        last.name.trim() === '' &&
+        last.qty.trim() === '' &&
+        last.price.trim() === ''
+      ) {
         window.requestAnimationFrame(() => itemInputRefs.current[prev.length - 1]?.focus());
         return prev;
       }
       const nextIndex = prev.length;
       window.requestAnimationFrame(() => itemInputRefs.current[nextIndex]?.focus());
-      return [...prev, { name: '', price: '' }];
+      return [...prev, createEmptyRow()];
     });
   };
 
-  const getSaveableItems = () =>
-    memoRows
-      .filter((r) => r.name.trim() !== '')
-      .map((r) => {
-        const parsed = parseFloat(r.price);
-        return {
-          name: r.name.trim(),
-          price: Number.isFinite(parsed) && parsed > 0 ? parsed : 0,
-        };
-      });
-
   const handleSaveMemoClick = async () => {
-    const valid = getSaveableItems();
+    if (isReadOnly || isSavingMemoRef.current) return;
+    const valid = extractSaveableItems(memoRows);
     if (valid.length === 0) {
       onNotify('error', t.toasts.needMemoItem);
       return;
     }
     const total = valid.reduce((s, item) => s + item.price, 0);
-    await onSaveMemo(
-      {
-        date: memoDate,
-        category: memoCategory,
-        ...(memoSubCategory ? { subCategory: memoSubCategory } : {}),
-        wallet: memoWallet,
-        items: valid,
-        total,
-        note: memoNoteText.trim(),
-      },
-      editingMemoId || undefined
-    );
-    resetMemoForm();
+    const currentSnap = serializeMemoSnapshot(memoNoteText, valid);
+    isSavingMemoRef.current = true;
+    initialMemoSnapshotRef.current = currentSnap;
+    try {
+      await onSaveMemo(
+        {
+          date: memoDate,
+          category: memoCategory,
+          ...(memoSubCategory ? { subCategory: memoSubCategory } : {}),
+          wallet: memoWallet,
+          items: valid,
+          total,
+          note: memoNoteText.trim(),
+        },
+        editingMemoId || undefined
+      );
+    } finally {
+      isSavingMemoRef.current = false;
+    }
+    resetMemoFields();
+    setIsMemoEditorOpen(false);
   };
 
-  const handleAddAsExpenseClick = async () => {
-    const valid = getSaveableItems();
+  const openExpenseDrawerForActive = () => {
+    if (isReadOnly) return;
+    const valid = extractSaveableItems(memoRows);
     if (valid.length === 0) {
       onNotify('error', t.toasts.needMemoItem);
       return;
@@ -263,58 +682,183 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
       onNotify('error', t.toasts.needMemoPriceForExpense);
       return;
     }
-    const itemsDescription = valid
-      .map((i) => (i.price > 0 ? `${i.name}: ${formatMoney(i.price, currency)}` : i.name))
-      .join(', ');
-    const title = memoNoteText.trim() || `${t.memo.bazarMemoPrefix} (${memoDate})`;
-
-    await onAddMemoAsExpense({
-      title,
+    const defaultTitle =
+      memoNoteText.trim() || `${t.memo.bazarMemoPrefix} (${memoDate})`;
+    setDrawerTitle(defaultTitle);
+    setDrawerDate(memoDate);
+    setDrawerCategory(
+      expenseCategories.includes(memoCategory)
+        ? memoCategory
+        : expenseCategories[0] || 'Others'
+    );
+    setDrawerSubCategory(memoSubCategory);
+    setDrawerWallet(
+      allAccountOptions.includes(memoWallet)
+        ? memoWallet
+        : pickDefaultMemoWallet(allAccountOptions)
+    );
+    setExpenseDrawer({
+      source: 'active',
+      defaultTitle,
       amount: total,
+      items: valid,
+      date: memoDate,
       category: memoCategory,
-      ...(memoSubCategory ? { subCategory: memoSubCategory } : {}),
+      subCategory: memoSubCategory,
       wallet: memoWallet,
-      rawDate: memoDate,
-      note: itemsDescription,
     });
-    resetMemoForm();
   };
 
-  const handleQuickLogSavedMemo = async (memo: BazarMemo) => {
-    if (isReadOnly || loggingMemoId || memo.total <= 0) return;
-    const itemsDescription = memo.items
-      .map((i) => (i.price > 0 ? `${i.name}: ${formatMoney(i.price, currency)}` : i.name))
-      .join(', ');
-    const title = memo.note?.trim() || `${t.memo.bazarMemoPrefix} (${memo.date})`;
-    setLoggingMemoId(memo.id);
+  const openExpenseDrawerForSaved = (memo: BazarMemo) => {
+    if (isReadOnly || memo.total <= 0) return;
+    const defaultTitle =
+      memo.note?.trim() || `${t.memo.bazarMemoPrefix} (${memo.date})`;
+    const safeCat = expenseCategories.includes(memo.category)
+      ? memo.category
+      : expenseCategories[0] || 'Others';
+    const safeWallet = allAccountOptions.includes(memo.wallet)
+      ? memo.wallet
+      : pickDefaultMemoWallet(allAccountOptions);
+    setDrawerTitle(defaultTitle);
+    setDrawerDate(memo.date || getTodayISO());
+    setDrawerCategory(safeCat);
+    setDrawerSubCategory(memo.subCategory || '');
+    setDrawerWallet(safeWallet);
+    setExpenseDrawer({
+      source: 'saved',
+      defaultTitle,
+      amount: memo.total,
+      items: memo.items,
+      date: memo.date || getTodayISO(),
+      category: safeCat,
+      subCategory: memo.subCategory || '',
+      wallet: safeWallet,
+    });
+  };
+
+  const handleConfirmLogExpense = async () => {
+    if (!expenseDrawer || isLoggingExpense || isReadOnly) return;
+    setIsLoggingExpense(true);
     try {
+      const itemsDescription = expenseDrawer.items
+        .map((i) => {
+          const label = i.qty ? `${i.name} (${i.qty})` : i.name;
+          return i.price > 0 ? `${label}: ${formatMoney(i.price, currency)}` : label;
+        })
+        .join(', ');
+      const finalTitle =
+        drawerTitle.trim() || `${t.memo.bazarMemoPrefix} (${drawerDate})`;
+
       await onAddMemoAsExpense({
-        title,
-        amount: memo.total,
-        category: memo.category,
-        ...(memo.subCategory ? { subCategory: memo.subCategory } : {}),
-        wallet: memo.wallet,
-        rawDate: memo.date,
+        title: finalTitle,
+        amount: expenseDrawer.amount,
+        category: drawerCategory,
+        ...(drawerSubCategory ? { subCategory: drawerSubCategory } : {}),
+        wallet: drawerWallet,
+        rawDate: drawerDate,
         note: itemsDescription,
       });
+
+      const wasActive = expenseDrawer.source === 'active';
+      // If user edited an existing saved memo (e.g. entered prices at the market) and logged it,
+      // persist those item price/check updates silently on the saved memo too
+      if (wasActive && editingMemoId) {
+        const valid = extractSaveableItems(memoRows);
+        const currentSnap = serializeMemoSnapshot(memoNoteText, valid);
+        if (valid.length > 0 && currentSnap !== initialMemoSnapshotRef.current) {
+          initialMemoSnapshotRef.current = currentSnap;
+          await onSaveMemo(
+            {
+              date: drawerDate,
+              category: drawerCategory,
+              ...(drawerSubCategory ? { subCategory: drawerSubCategory } : {}),
+              wallet: drawerWallet,
+              items: valid,
+              total: expenseDrawer.amount,
+              note: memoNoteText.trim(),
+            },
+            editingMemoId
+          );
+        }
+      }
+
+      setExpenseDrawer(null);
+      if (wasActive) {
+        resetMemoFields();
+        setIsMemoEditorOpen(false);
+      }
     } finally {
-      setLoggingMemoId(null);
+      setIsLoggingExpense(false);
     }
   };
 
+  const openShareSheetForActiveMemo = () => {
+    const valid = extractSaveableItems(memoRows);
+    if (valid.length === 0) {
+      onNotify('info', t.memo.needItemToShare);
+      return;
+    }
+    const text = formatMemoShareText(memoNoteText, valid);
+    setShareTextDraft(text);
+    setCopiedJustNow(false);
+    setShareSheet({
+      kind: 'memo',
+      title: memoNoteText.trim() || t.memo.bazarMemoTab,
+      text,
+    });
+  };
+
+  const openShareSheetForSavedMemo = (memo: BazarMemo) => {
+    if (!memo.items || memo.items.length === 0) {
+      onNotify('info', t.memo.needItemToShare);
+      return;
+    }
+    const text = formatMemoShareText(memo.note || '', memo.items);
+    setShareTextDraft(text);
+    setCopiedJustNow(false);
+    setShareSheet({
+      kind: 'memo',
+      title: memo.note?.trim() || `${t.memo.bazarMemoPrefix} (${memo.date})`,
+      text,
+    });
+  };
+
+  const openShareSheetForNote = (title: string, content: string) => {
+    if (!title.trim() && !content.trim()) {
+      onNotify('info', t.memo.needNoteToShare);
+      return;
+    }
+    const text = formatNoteShareText(title, content);
+    setShareTextDraft(text);
+    setCopiedJustNow(false);
+    setShareSheet({
+      kind: 'note',
+      title: title.trim() || t.memo.notepadTab,
+      text,
+    });
+  };
+
   const handleSaveNoteClick = async () => {
+    if (isReadOnly || isSavingNoteRef.current) return;
     if (!currentContent.trim() && !currentTitle.trim()) {
       onNotify('error', t.toasts.needNoteContent);
       return;
     }
-    await onSaveNote(
-      {
-        title: currentTitle.trim() || t.common.untitled,
-        content: currentContent.trim(),
-        date: getTodayISO(),
-      },
-      selectedNote?.id
-    );
+    const snap = serializeNoteSnapshot(currentTitle, currentContent);
+    isSavingNoteRef.current = true;
+    initialNoteSnapshotRef.current = snap;
+    try {
+      await onSaveNote(
+        {
+          title: currentTitle.trim() || t.common.untitled,
+          content: currentContent.trim(),
+          date: getTodayISO(),
+        },
+        selectedNote?.id
+      );
+    } finally {
+      isSavingNoteRef.current = false;
+    }
     setIsAddingNote(false);
     setSelectedNote(null);
   };
@@ -327,9 +871,12 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
     didTabSwipeRef.current = false;
     const el = target instanceof HTMLElement ? target : null;
     if (
+      isMemoEditorOpen ||
       isAddingNote ||
       selectedNote ||
       activeMemoPicker ||
+      expenseDrawer ||
+      shareSheet ||
       el?.closest('input, textarea, select, [contenteditable="true"]')
     ) {
       return;
@@ -387,256 +934,227 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
     }
   };
 
+  // Share Sheet derived helpers
+  const trimmedShareText = shareTextDraft.trim();
+  const supportsNativeShare =
+    typeof navigator !== 'undefined' && typeof navigator.share === 'function';
+  const isAndroid =
+    typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+  const encodedShareText = encodeURIComponent(trimmedShareText);
+  const whatsappWebUrl = `https://wa.me/?text=${encodedShareText}`;
+  const whatsappHref = isAndroid
+    ? `intent://send?text=${encodedShareText}#Intent;scheme=whatsapp;package=com.whatsapp;S.browser_fallback_url=${encodeURIComponent(
+        whatsappWebUrl
+      )};end`
+    : whatsappWebUrl;
+  const telegramHref = `https://t.me/share/url?url=%20&text=${encodedShareText}`;
+  const smsHref = `sms:?body=${encodedShareText}`;
+
+  const handleCopyShareText = async () => {
+    if (!trimmedShareText) {
+      onNotify('info', t.shareApp.emptyWarning);
+      return;
+    }
+    const ok = await copyTextToClipboard(trimmedShareText);
+    if (ok) {
+      setCopiedJustNow(true);
+      onNotify('success', t.memo.copiedToast);
+    }
+  };
+
+  const handleNativeShareText = async () => {
+    if (!trimmedShareText) {
+      onNotify('info', t.shareApp.emptyWarning);
+      return;
+    }
+    if (!supportsNativeShare) {
+      await handleCopyShareText();
+      return;
+    }
+    try {
+      await navigator.share({
+        title: shareSheet?.title || 'OrthoGro',
+        text: trimmedShareText,
+      });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return;
+      const ok = await copyTextToClipboard(trimmedShareText);
+      if (ok) {
+        setCopiedJustNow(true);
+        onNotify('success', t.memo.copiedToast);
+      }
+    }
+  };
+
+  const handleCopyAndOpenMessenger = async (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!trimmedShareText) {
+      e.preventDefault();
+      onNotify('info', t.shareApp.emptyWarning);
+      return;
+    }
+    const ok = await copyTextToClipboard(trimmedShareText);
+    if (ok) {
+      setCopiedJustNow(true);
+      onNotify('info', t.shareApp.messengerCopiedToast);
+    }
+  };
+
+  const handleExternalSocialClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
+    if (!trimmedShareText) {
+      e.preventDefault();
+      onNotify('info', t.shareApp.emptyWarning);
+    }
+  };
+
   return (
     <div className="mx-auto max-w-4xl">
-      {/* Sub-tab segmented selector */}
-      <div className="mb-5 grid grid-cols-2 gap-1 rounded-xl bg-slate-200/70 p-1 dark:bg-slate-800">
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('memo')}
-          className={`min-h-[42px] rounded-lg text-sm font-semibold transition-colors whitespace-nowrap ${
-            activeSubTab === 'memo'
-              ? 'bg-white text-[#16845B] shadow-sm dark:bg-slate-900 dark:text-emerald-400'
-              : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
-          }`}
-        >
-          {t.memo.bazarMemoTab}
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveSubTab('notepad')}
-          className={`min-h-[42px] rounded-lg text-sm font-semibold transition-colors whitespace-nowrap ${
-            activeSubTab === 'notepad'
-              ? 'bg-white text-[#16845B] shadow-sm dark:bg-slate-900 dark:text-emerald-400'
-              : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
-          }`}
-        >
-          {t.memo.notepadTab}
-        </button>
-      </div>
+      {/* Dedicated Full-Focus Bazar Memo Add/Edit View */}
+      {isMemoEditorOpen ? (
+        <div className="mx-auto max-w-2xl">
+          {/* Clean Top Editor Navigation Bar */}
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <button
+              type="button"
+              onClick={() => void handleExitMemoEditor()}
+              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm font-bold text-[#102A43] transition-colors hover:bg-slate-200/60 dark:text-slate-100 dark:hover:bg-slate-800"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              <span>{t.memo.backToMemos}</span>
+            </button>
 
-      {/* Swipeable Two-Pane Viewport (Bazar Memo <-> Notepad) */}
-      <div
-        onTouchStart={(e) =>
-          handleTabSwipeStart(e.touches[0].clientX, e.touches[0].clientY, e.target)
-        }
-        onTouchMove={(e) => handleTabSwipeMove(e.touches[0].clientX, e.touches[0].clientY)}
-        onTouchEnd={handleTabSwipeEnd}
-        onTouchCancel={handleTabSwipeEnd}
-        onMouseDown={(e) => {
-          if (e.button === 0) handleTabSwipeStart(e.clientX, e.clientY, e.target);
-        }}
-        onMouseMove={(e) => {
-          if (e.buttons === 1) handleTabSwipeMove(e.clientX, e.clientY);
-        }}
-        onMouseUp={handleTabSwipeEnd}
-        onMouseLeave={handleTabSwipeEnd}
-        className={`overflow-hidden ${isSwipingTab && Math.abs(tabSwipeX) > 10 ? 'select-none' : ''}`}
-      >
-        <div
-          style={{
-            transform: `translateX(calc(${
-              activeSubTab === 'memo' ? '0%' : '-50%'
-            } + ${tabSwipeX}px))`,
-          }}
-          className={`flex w-[200%] items-start ${
-            !isSwipingTab ? 'transition-transform duration-300 ease-out' : ''
-          }`}
-        >
-          {/* Pane 1: Bazar Memo */}
-          <div
-            aria-hidden={activeSubTab !== 'memo'}
-            className={`w-1/2 shrink-0 ${
-              !isSwipingTab && activeSubTab !== 'memo'
-                ? 'pointer-events-none max-h-0 overflow-hidden'
-                : ''
-            }`}
-          >
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
-          {/* Builder column — Clutter-free Open Note Canvas */}
-          <div className="lg:col-span-6">
-            <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-              {/* Minimal Note Title & Collapsible Metadata */}
-              <div className="px-5 pt-4 pb-1">
-                {editingMemoId && (
-                  <div className="mb-2 flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold text-[#16845B] dark:text-emerald-400">
-                      {t.memo.editMemo}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={resetMemoForm}
-                      className="text-xs font-semibold text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200"
-                    >
-                      {t.memo.cancelEdit}
-                    </button>
-                  </div>
-                )}
-
-                {/* Borderless Memo Title / Note */}
-                <input
-                  type="text"
-                  maxLength={500}
-                  aria-label={t.memo.memoNoteLabel}
-                  placeholder={t.memo.memoNotePlaceholder}
-                  value={memoNoteText}
-                  onChange={(e) => setMemoNoteText(e.target.value)}
-                  className="w-full bg-transparent text-base font-bold text-[#102A43] placeholder:font-medium placeholder:text-slate-400 focus:outline-none sm:text-lg dark:text-slate-100 dark:placeholder:text-slate-500"
-                />
-
-                {/* Collapsible Details Summary Strip */}
+            <div className="flex items-center gap-2">
+              {!isReadOnly && (
+                <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                  {t.memo.autoSaveHint}
+                </span>
+              )}
+              {editingMemoId && !isReadOnly && (
                 <button
                   type="button"
-                  onClick={() => setShowMemoDetails((prev) => !prev)}
-                  aria-expanded={showMemoDetails}
-                  className="mt-1.5 flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl px-1.5 py-1.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/40"
+                  aria-label={t.common.delete}
+                  title={t.common.delete}
+                  onClick={() => onDeleteMemo(editingMemoId)}
+                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-950"
                 >
-                  <span className="flex min-w-0 items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                    <CategoryIconBadge
-                      style={getExpenseOrSubCategoryStyle(
-                        categoryStyles,
-                        memoCategory,
-                        memoSubCategory
-                      )}
-                      size="sm"
-                    />
-                    <span className="truncate font-medium">
-                      {memoDate === getTodayISO() ? t.memo.todayLabel : memoDate}
-                      {' · '}
-                      {memoCategory}
-                      {memoSubCategory ? ` / ${memoSubCategory}` : ''}
-                      {' · '}
-                      {memoWallet}
-                    </span>
-                  </span>
-                  <span className="flex shrink-0 items-center gap-1 whitespace-nowrap text-[11px] font-semibold text-[#16845B] dark:text-emerald-400">
-                    <span>{showMemoDetails ? t.memo.hideDetails : t.memo.editDetails}</span>
-                    <ChevronDown
-                      className={`h-3.5 w-3.5 transition-transform duration-200 ${
-                        showMemoDetails ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </span>
+                  <Trash2 className="h-4 w-4" />
                 </button>
+              )}
+            </div>
+          </div>
 
-                {/* Expandable Date / Category / Sub-category / Wallet Pickers */}
-                {showMemoDetails && (
-                  <div className="mt-2 space-y-2 pb-2">
-                    <div className="flex items-center gap-2">
-                      <input
-                        type="date"
-                        aria-label={t.memo.dateLabel}
-                        value={memoDate}
-                        onChange={(e) => setMemoDate(e.target.value)}
-                        className="min-h-[44px] shrink-0 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-xs font-bold text-[#102A43] transition-colors hover:border-slate-300 focus:border-[#16845B] focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100 dark:hover:border-slate-700 dark:focus:border-emerald-400 dark:focus:bg-slate-900"
-                      />
+          {/* Dedicated Open Memo Canvas */}
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            {/* Optional Memo Title */}
+            <div className="px-4 pt-3.5 pb-1.5 sm:px-5">
+              <input
+                type="text"
+                maxLength={500}
+                readOnly={isReadOnly}
+                aria-label={t.memo.memoNoteLabel}
+                placeholder={t.memo.memoNotePlaceholder}
+                value={memoNoteText}
+                onChange={(e) => setMemoNoteText(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    itemInputRefs.current[0]?.focus();
+                  }
+                }}
+                className="w-full bg-transparent text-base font-bold text-[#102A43] placeholder:font-medium placeholder:text-slate-400 focus:outline-none sm:text-lg dark:text-slate-100 dark:placeholder:text-slate-500"
+              />
+            </div>
 
-                      <button
-                        type="button"
-                        aria-label={t.memo.categoryLabel}
-                        onClick={() => setActiveMemoPicker('category')}
-                        className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <CategoryIconBadge
-                            style={getCategoryStyle(categoryStyles, 'exp', memoCategory)}
-                            size="sm"
-                          />
-                          <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
-                            {memoCategory}
-                          </span>
-                        </span>
-                        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      </button>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        aria-label={t.txForm.subCategoryLabel}
-                        onClick={() => setActiveMemoPicker('subCategory')}
-                        className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <CategoryIconBadge
-                            style={getExpenseOrSubCategoryStyle(
-                              categoryStyles,
-                              memoCategory,
-                              memoSubCategory
-                            )}
-                            size="sm"
-                          />
-                          <span
-                            className={`truncate text-xs ${
-                              memoSubCategory
-                                ? 'font-bold text-[#102A43] dark:text-slate-100'
-                                : 'font-semibold text-slate-500 dark:text-slate-400'
-                            }`}
-                          >
-                            {memoSubCategory || t.txForm.subCategoryChipPlaceholder}
-                          </span>
-                        </span>
-                        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      </button>
-
-                      <button
-                        type="button"
-                        aria-label={t.memo.walletLabel}
-                        onClick={() => setActiveMemoPicker('wallet')}
-                        className="flex min-h-[44px] min-w-0 flex-1 items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-2.5 py-1.5 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <CategoryIconBadge
-                            style={getCategoryStyle(
-                              categoryStyles,
-                              savingsList.includes(memoWallet) ? 'sav' : 'wal',
-                              memoWallet
-                            )}
-                            size="sm"
-                          />
-                          <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
-                            {memoWallet}
-                          </span>
-                        </span>
-                        <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Open Canvas Item + Inline Price Rows (Zero lines, zero columns) */}
-              <div className="px-5 pt-2 pb-3 space-y-0.5">
+            {/* Tight Flat Item Rows (Zero inner borders, zero column boxes) */}
+            <div className="px-3 pt-0.5 pb-2 sm:px-4">
+              <div className="space-y-0">
                 {memoRows.map((row, idx) => {
-                  const canRemove =
-                    memoRows.length > 1 || row.name.trim() !== '' || row.price.trim() !== '';
+                  const hasRowContent =
+                    row.name.trim() !== '' ||
+                    row.qty.trim() !== '' ||
+                    row.price.trim() !== '';
+                  const canRemove = !isReadOnly && (memoRows.length > 1 || hasRowContent);
+
                   return (
                     <div
                       key={idx}
-                      className="group flex min-h-[44px] items-center gap-2 rounded-xl px-1.5 transition-colors focus-within:bg-emerald-50/35 dark:focus-within:bg-emerald-950/20"
+                      className="group flex items-center gap-1 rounded-lg px-1 py-0.5 transition-colors focus-within:bg-emerald-50/40 dark:focus-within:bg-emerald-950/25"
                     >
+                      {/* Checkbox */}
+                      <button
+                        type="button"
+                        role="checkbox"
+                        aria-checked={row.checked}
+                        aria-label={t.memo.toggleCheckAria}
+                        disabled={isReadOnly}
+                        onClick={() => handleToggleRowChecked(idx)}
+                        className="-ml-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B]/50 disabled:opacity-60"
+                      >
+                        <span
+                          className={`flex h-[18px] w-[18px] items-center justify-center rounded-md border transition-colors ${
+                            row.checked
+                              ? 'border-[#16845B] bg-[#16845B] text-white dark:border-emerald-500 dark:bg-emerald-500 dark:text-slate-950'
+                              : 'border-slate-300 bg-transparent group-hover:border-slate-400 dark:border-slate-600 dark:group-hover:border-slate-500'
+                          }`}
+                        >
+                          {row.checked && <Check className="h-3 w-3 stroke-[3]" />}
+                        </span>
+                      </button>
+
+                      {/* Item Name */}
                       <input
                         ref={(el) => {
                           itemInputRefs.current[idx] = el;
                         }}
                         type="text"
+                        readOnly={isReadOnly}
                         placeholder={t.memo.addItemPlaceholder}
                         value={row.name}
                         onChange={(e) => handleRowChange(idx, 'name', e.target.value)}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
+                            qtyInputRefs.current[idx]?.focus();
+                          }
+                        }}
+                        className={`min-w-0 flex-1 bg-transparent py-1 text-sm leading-snug focus:outline-none ${
+                          row.checked
+                            ? 'text-slate-400 line-through dark:text-slate-500'
+                            : 'text-[#102A43] placeholder:text-slate-400 dark:text-slate-100 dark:placeholder:text-slate-500'
+                        }`}
+                      />
+
+                      {/* Quantity / Unit (kg/pc) */}
+                      <input
+                        ref={(el) => {
+                          qtyInputRefs.current[idx] = el;
+                        }}
+                        type="text"
+                        maxLength={40}
+                        readOnly={isReadOnly}
+                        aria-label={t.memo.qtyPlaceholder}
+                        placeholder={t.memo.qtyPlaceholder}
+                        value={row.qty}
+                        onChange={(e) => handleRowChange(idx, 'qty', e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
                             priceInputRefs.current[idx]?.focus();
                           }
                         }}
-                        className="min-w-0 flex-1 bg-transparent py-2 text-sm leading-relaxed text-[#102A43] placeholder:text-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
+                        className={`w-14 shrink-0 bg-transparent py-1 text-right text-xs font-medium focus:outline-none sm:w-16 ${
+                          row.checked
+                            ? 'text-slate-400 line-through dark:text-slate-500'
+                            : 'text-slate-600 placeholder:text-slate-300 dark:text-slate-300 dark:placeholder:text-slate-600'
+                        }`}
                       />
-                      <div className="flex shrink-0 items-center gap-1">
+
+                      {/* Price */}
+                      <div className="flex shrink-0 items-center gap-0.5 pl-1">
                         <span
-                          className={`select-none text-xs transition-colors ${
+                          className={`select-none text-[11px] transition-colors ${
                             row.price.trim() !== ''
-                              ? 'text-slate-500 dark:text-slate-400'
-                              : 'text-slate-300 group-focus-within:text-slate-400 dark:text-slate-600 dark:group-focus-within:text-slate-500'
+                              ? 'text-slate-400 dark:text-slate-400'
+                              : 'text-slate-300 group-focus-within:text-slate-400 dark:text-slate-700 dark:group-focus-within:text-slate-500'
                           }`}
                         >
                           {currency}
@@ -649,6 +1167,8 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                           inputMode="decimal"
                           step="any"
                           min="0"
+                          readOnly={isReadOnly}
+                          aria-label={t.memo.pricePlaceholder}
                           placeholder="0"
                           value={row.price}
                           onChange={(e) => handleRowChange(idx, 'price', e.target.value)}
@@ -662,416 +1182,1008 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                               }
                             }
                           }}
-                          className="no-spinner w-20 bg-transparent py-2 text-right font-mono-num text-sm font-semibold tabular-nums text-[#102A43] placeholder:font-normal placeholder:text-slate-300 focus:outline-none sm:w-24 dark:text-slate-100 dark:placeholder:text-slate-600"
+                          className={`no-spinner w-14 bg-transparent py-1 text-right font-mono-num text-sm font-semibold tabular-nums focus:outline-none sm:w-[70px] ${
+                            row.checked
+                              ? 'text-slate-400 dark:text-slate-500'
+                              : 'text-[#102A43] placeholder:font-normal placeholder:text-slate-300 dark:text-slate-100 dark:placeholder:text-slate-600'
+                          }`}
                         />
-                        {canRemove ? (
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveRow(idx)}
-                            aria-label={t.common.delete}
-                            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-slate-100 hover:text-rose-500 dark:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-rose-400"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        ) : (
-                          <span className="h-8 w-8 shrink-0" aria-hidden="true" />
-                        )}
                       </div>
+
+                      {/* Subtle Delete Row Button */}
+                      {canRemove ? (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRow(idx)}
+                          aria-label={t.common.delete}
+                          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md transition-colors hover:bg-slate-100 hover:text-rose-500 dark:hover:bg-slate-800 dark:hover:text-rose-400 ${
+                            hasRowContent
+                              ? 'text-slate-300 dark:text-slate-600'
+                              : 'text-slate-200 group-focus-within:text-slate-400 dark:text-slate-700 dark:group-focus-within:text-slate-500'
+                          }`}
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      ) : (
+                        <span className="h-7 w-7 shrink-0" aria-hidden="true" />
+                      )}
                     </div>
                   );
                 })}
+              </div>
 
-                <div className="pt-1">
+              {/* Add item trigger */}
+              {!isReadOnly && (
+                <div className="pt-1 pl-1">
                   <button
                     type="button"
                     onClick={appendAndFocusRow}
-                    className="inline-flex min-h-[44px] items-center gap-1.5 px-1.5 text-xs font-bold text-[#16845B] hover:underline dark:text-emerald-400"
+                    className="inline-flex min-h-[36px] items-center gap-1.5 px-1 text-xs font-bold text-[#16845B] hover:underline dark:text-emerald-400"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     {t.memo.addItemBtn}
                   </button>
                 </div>
+              )}
+            </div>
+
+            {/* Compact Summary & 3 Icon Action Buttons Footer */}
+            <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/70 px-4 py-3 sm:px-5 dark:border-slate-800 dark:bg-slate-950/50">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                  {t.common.total}
+                </p>
+                <p className="truncate font-mono-num text-lg font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
+                  {formatMoney(memoTotal, currency)}
+                </p>
               </div>
 
-              {/* Quiet Total & Actions Footer */}
-              <div className="border-t border-dashed border-slate-200/90 bg-slate-50/50 px-5 pt-3.5 pb-4 dark:border-slate-800 dark:bg-slate-950/40">
-                <div className="mb-3.5 flex items-baseline justify-between">
-                  <span className="text-xs font-bold tracking-wide text-slate-500 dark:text-slate-400">
-                    {t.common.total}
+              <div className="flex shrink-0 items-center gap-1.5">
+                {/* Save Memo Icon Button */}
+                <button
+                  type="button"
+                  disabled={isReadOnly}
+                  onClick={() => void handleSaveMemoClick()}
+                  title={editingMemoId ? t.memo.updateMemo : t.memo.saveMemo}
+                  aria-label={editingMemoId ? t.memo.updateMemo : t.memo.saveMemo}
+                  className="flex min-h-[44px] min-w-[48px] flex-col items-center justify-center gap-0.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[#102A43] transition-colors hover:border-[#16845B]/40 hover:bg-emerald-50/60 hover:text-[#16845B] active:scale-[0.97] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-500/40 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-400"
+                >
+                  <Save className="h-4 w-4" />
+                  <span className="text-[10px] font-bold leading-none whitespace-nowrap">
+                    {editingMemoId ? t.memo.updateShort : t.memo.saveShort}
                   </span>
-                  <span className="font-mono-num text-lg font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
-                    {formatMoney(memoTotal, currency)}
-                  </span>
-                </div>
+                </button>
 
-                <div className="grid grid-cols-2 gap-2.5">
-                  <button
-                    type="button"
-                    disabled={isReadOnly}
-                    onClick={handleSaveMemoClick}
-                    className="min-h-[44px] rounded-xl bg-[#16845B] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-[#126B4A] disabled:opacity-50"
-                  >
-                    {editingMemoId ? t.memo.updateMemo : t.memo.saveMemo}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isReadOnly}
-                    onClick={handleAddAsExpenseClick}
-                    className="min-h-[44px] rounded-xl bg-[#102A43] px-4 py-2.5 text-sm font-bold text-white transition-colors hover:bg-slate-800 disabled:opacity-50 dark:bg-sky-700 dark:hover:bg-sky-600"
-                  >
-                    {t.memo.addAsExpense}
-                  </button>
+                {/* Share Memo Icon Button */}
+                <button
+                  type="button"
+                  onClick={openShareSheetForActiveMemo}
+                  title={t.memo.shareMemo}
+                  aria-label={t.memo.shareMemo}
+                  className="flex min-h-[44px] min-w-[48px] flex-col items-center justify-center gap-0.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[#102A43] transition-colors hover:border-sky-400/50 hover:bg-sky-50/60 hover:text-sky-700 active:scale-[0.97] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-sky-500/40 dark:hover:bg-sky-950/40 dark:hover:text-sky-400"
+                >
+                  <Share2 className="h-4 w-4" />
+                  <span className="text-[10px] font-bold leading-none whitespace-nowrap">
+                    {t.memo.shareShort}
+                  </span>
+                </button>
+
+                {/* Add as Expense Icon Button */}
+                <button
+                  type="button"
+                  disabled={isReadOnly}
+                  onClick={openExpenseDrawerForActive}
+                  title={t.memo.addAsExpense}
+                  aria-label={t.memo.addAsExpense}
+                  className="flex min-h-[44px] min-w-[52px] flex-col items-center justify-center gap-0.5 rounded-xl bg-[#16845B] px-3 py-1.5 text-white shadow-xs transition-colors hover:bg-[#126B4A] active:scale-[0.97] disabled:opacity-50"
+                >
+                  <Wallet className="h-4 w-4" />
+                  <span className="text-[10px] font-bold leading-none whitespace-nowrap">
+                    {t.memo.expenseShort}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Sub-tab segmented selector */}
+          <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-slate-200/70 p-1 dark:bg-slate-800">
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('memo')}
+              className={`min-h-[42px] rounded-lg text-sm font-semibold transition-colors whitespace-nowrap ${
+                activeSubTab === 'memo'
+                  ? 'bg-white text-[#16845B] shadow-sm dark:bg-slate-900 dark:text-emerald-400'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              {t.memo.bazarMemoTab}
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSubTab('notepad')}
+              className={`min-h-[42px] rounded-lg text-sm font-semibold transition-colors whitespace-nowrap ${
+                activeSubTab === 'notepad'
+                  ? 'bg-white text-[#16845B] shadow-sm dark:bg-slate-900 dark:text-emerald-400'
+                  : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              {t.memo.notepadTab}
+            </button>
+          </div>
+
+          {/* Swipeable Two-Pane Viewport (Saved Bazar Memos <-> Personal Notes) */}
+          <div
+            onTouchStart={(e) =>
+              handleTabSwipeStart(e.touches[0].clientX, e.touches[0].clientY, e.target)
+            }
+            onTouchMove={(e) => handleTabSwipeMove(e.touches[0].clientX, e.touches[0].clientY)}
+            onTouchEnd={handleTabSwipeEnd}
+            onTouchCancel={handleTabSwipeEnd}
+            onMouseDown={(e) => {
+              if (e.button === 0) handleTabSwipeStart(e.clientX, e.clientY, e.target);
+            }}
+            onMouseMove={(e) => {
+              if (e.buttons === 1) handleTabSwipeMove(e.clientX, e.clientY);
+            }}
+            onMouseUp={handleTabSwipeEnd}
+            onMouseLeave={handleTabSwipeEnd}
+            className={`overflow-hidden ${isSwipingTab && Math.abs(tabSwipeX) > 10 ? 'select-none' : ''}`}
+          >
+            <div
+              style={{
+                transform: `translateX(calc(${
+                  activeSubTab === 'memo' ? '0%' : '-50%'
+                } + ${tabSwipeX}px))`,
+              }}
+              className={`flex w-[200%] items-start ${
+                !isSwipingTab ? 'transition-transform duration-300 ease-out' : ''
+              }`}
+            >
+              {/* Pane 1: Saved Bazar Memos List */}
+              <div
+                aria-hidden={activeSubTab !== 'memo'}
+                className={`w-1/2 shrink-0 ${
+                  !isSwipingTab && activeSubTab !== 'memo'
+                    ? 'pointer-events-none max-h-0 overflow-hidden'
+                    : ''
+                }`}
+              >
+                <div id="saved-memos-section" className="scroll-mt-20">
+                  <div className="mb-4 flex items-center justify-between gap-3">
+                    <h2 className="text-base font-bold text-[#102A43] dark:text-slate-100">
+                      {t.memo.savedMemos} ({memos.length})
+                    </h2>
+                    <button
+                      type="button"
+                      disabled={isReadOnly}
+                      onClick={() => {
+                        if (didTabSwipeRef.current) return;
+                        openNewMemoEditor();
+                      }}
+                      className="inline-flex min-h-[42px] shrink-0 items-center gap-1.5 rounded-xl bg-[#16845B] px-4 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#126B4A] active:scale-[0.98] disabled:opacity-50 whitespace-nowrap"
+                    >
+                      <Plus className="h-4 w-4" />
+                      {t.memo.newMemoBtn}
+                    </button>
+                  </div>
+
+                  {memos.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/60 px-6 py-10 text-center dark:border-slate-800 dark:bg-slate-900/50">
+                      <p className="max-w-sm text-sm text-slate-500 dark:text-slate-400">
+                        {t.memo.noSavedMemos}
+                      </p>
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={openNewMemoEditor}
+                          className="mt-4 inline-flex min-h-[42px] items-center gap-1.5 rounded-xl bg-[#16845B] px-4 py-2 text-xs font-bold text-white shadow-sm transition-colors hover:bg-[#126B4A]"
+                        >
+                          <Plus className="h-4 w-4" />
+                          {t.memo.newMemoBtn}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                      {memos.map((memo) => (
+                        <div
+                          key={memo.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            if (didTabSwipeRef.current) return;
+                            openSavedMemoEditor(memo);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              openSavedMemoEditor(memo);
+                            }
+                          }}
+                          className="flex cursor-pointer flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors hover:border-[#16845B]/50 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-emerald-500/40"
+                        >
+                          <div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <h4 className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
+                                  {memo.note
+                                    ? memo.note
+                                    : `${t.memo.bazarMemoPrefix} (${memo.date})`}
+                                </h4>
+                                <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
+                                  {memo.date} · {memo.items.length} {t.memo.itemsCountSuffix}
+                                </p>
+                              </div>
+                              <div className="flex shrink-0 items-center gap-1">
+                                <button
+                                  type="button"
+                                  aria-label={t.memo.shareMemo}
+                                  title={t.memo.shareMemo}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openShareSheetForSavedMemo(memo);
+                                  }}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors hover:bg-sky-50 hover:text-sky-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-sky-950/60 dark:hover:text-sky-400"
+                                >
+                                  <Share2 className="h-3.5 w-3.5" />
+                                </button>
+                                {!isReadOnly && (
+                                  <button
+                                    type="button"
+                                    aria-label={t.common.delete}
+                                    title={t.common.delete}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onDeleteMemo(memo.id);
+                                    }}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-950"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Tight Borderless Item Preview */}
+                            <div className="mt-2.5 space-y-0.5 text-xs">
+                              {memo.items.slice(0, 6).map((item, i) => (
+                                <div
+                                  key={i}
+                                  className="flex items-baseline justify-between gap-3 text-slate-700 dark:text-slate-300"
+                                >
+                                  <span className="min-w-0 truncate">
+                                    <span
+                                      className={
+                                        item.checked
+                                          ? 'text-slate-400 line-through dark:text-slate-500'
+                                          : ''
+                                      }
+                                    >
+                                      {item.name}
+                                    </span>
+                                    {item.qty && (
+                                      <span className="ml-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                                        · {item.qty}
+                                      </span>
+                                    )}
+                                  </span>
+                                  <span className="font-mono-num shrink-0 font-semibold tabular-nums text-[#102A43] dark:text-slate-200">
+                                    {item.price > 0 ? formatMoney(item.price, currency) : '—'}
+                                  </span>
+                                </div>
+                              ))}
+                              {memo.items.length > 6 && (
+                                <p className="pt-0.5 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                                  +{memo.items.length - 6} {t.memo.itemsCountSuffix}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2.5 dark:border-slate-800">
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                                {t.common.total}
+                              </span>
+                              <span className="font-mono-num text-sm font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
+                                {memo.total > 0
+                                  ? formatMoney(memo.total, currency)
+                                  : t.memo.plannedNoPrice}
+                              </span>
+                            </div>
+
+                            {memo.total > 0 && !isReadOnly ? (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openExpenseDrawerForSaved(memo);
+                                }}
+                                className="min-h-[36px] shrink-0 whitespace-nowrap rounded-xl bg-[#102A43] px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-slate-800 dark:bg-sky-700 dark:hover:bg-sky-600"
+                              >
+                                {t.memo.logAsExpense}
+                              </button>
+                            ) : (
+                              <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                                {t.memo.tapToOpen}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Pane 2: Notepad */}
+              <div
+                aria-hidden={activeSubTab !== 'notepad'}
+                className={`w-1/2 shrink-0 ${
+                  !isSwipingTab && activeSubTab !== 'notepad'
+                    ? 'pointer-events-none max-h-0 overflow-hidden'
+                    : ''
+                }`}
+              >
+                <div>
+                  <div className="mb-4 flex items-center justify-between">
+                    <h2 className="text-base font-bold text-[#102A43] dark:text-slate-100">
+                      {t.memo.personalNotes} ({notes.length})
+                    </h2>
+                    <button
+                      type="button"
+                      disabled={isReadOnly}
+                      onClick={() => {
+                        if (didTabSwipeRef.current) return;
+                        setSelectedNote(null);
+                        setCurrentTitle('');
+                        setCurrentContent('');
+                        initialNoteSnapshotRef.current = serializeNoteSnapshot('', '');
+                        setIsAddingNote(true);
+                      }}
+                      className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl bg-[#16845B] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#126B4A] disabled:opacity-50"
+                    >
+                      <Plus className="h-4 w-4" />
+                      {t.memo.newNote}
+                    </button>
+                  </div>
+
+                  {notes.length === 0 ? (
+                    <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
+                      {t.memo.noNotesYet}
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                      {notes.map((note) => (
+                        <div
+                          key={note.id}
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => {
+                            if (didTabSwipeRef.current) return;
+                            setSelectedNote(note);
+                            setCurrentTitle(note.title);
+                            setCurrentContent(note.content);
+                            initialNoteSnapshotRef.current = serializeNoteSnapshot(
+                              note.title,
+                              note.content
+                            );
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault();
+                              setSelectedNote(note);
+                              setCurrentTitle(note.title);
+                              setCurrentContent(note.content);
+                              initialNoteSnapshotRef.current = serializeNoteSnapshot(
+                                note.title,
+                                note.content
+                              );
+                            }
+                          }}
+                          className="flex cursor-pointer flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors hover:border-[#16845B]/50 dark:border-slate-800 dark:bg-slate-900"
+                        >
+                          <div>
+                            <div className="flex items-start justify-between gap-2">
+                              <h4 className="line-clamp-1 text-sm font-bold text-[#102A43] dark:text-slate-100">
+                                {note.title}
+                              </h4>
+                              <button
+                                type="button"
+                                aria-label={t.memo.shareNote}
+                                title={t.memo.shareNote}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openShareSheetForNote(note.title, note.content);
+                                }}
+                                className="-mt-1 -mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-[#16845B] dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-emerald-400"
+                              >
+                                <Share2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                            <p className="mt-1.5 line-clamp-4 whitespace-pre-line text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                              {note.content || t.memo.emptyNote}
+                            </p>
+                          </div>
+                          <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-2.5 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
+                            <span>{note.date}</span>
+                            <span>{t.memo.tapToOpen}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
           </div>
+        </>
+      )}
 
-          {/* Saved memos list column — Clean Borderless Note Cards with Quick Log */}
-          <div id="saved-memos-section" className="space-y-3 lg:col-span-6 scroll-mt-20">
-            <h3 className="text-sm font-bold text-[#102A43] dark:text-slate-200">
-              {t.memo.savedMemos} ({memos.length})
-            </h3>
-            {memos.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-8 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
-                {t.memo.noSavedMemos}
-              </div>
-            ) : (
-              memos.map((memo) => (
-                <div
-                  key={memo.id}
-                  className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <h4 className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
-                        {memo.note ? memo.note : `${t.memo.bazarMemoPrefix} (${memo.date})`}
-                      </h4>
-                      <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
-                        {memo.date} · {memo.category}
-                        {memo.subCategory ? ` / ${memo.subCategory}` : ''} · {memo.wallet}
-                      </p>
-                    </div>
-                    {!isReadOnly && (
-                      <div className="flex shrink-0 items-center gap-1.5">
-                        <button
-                          type="button"
-                          aria-label={t.common.edit}
-                          onClick={() => {
-                            setEditingMemoId(memo.id);
-                            setMemoDate(memo.date);
-                            setMemoCategory(memo.category);
-                            setMemoSubCategory(memo.subCategory || '');
-                            setMemoWallet(memo.wallet);
-                            setMemoNoteText(memo.note || '');
-                            const loadedRows = memo.items.map((it) => ({
-                              name: it.name,
-                              price: it.price > 0 ? String(it.price) : '',
-                            }));
-                            loadedRows.push({ name: '', price: '' });
-                            setMemoRows(loadedRows);
-                            setShowMemoDetails(false);
-                            window.scrollTo({ top: 0, behavior: 'smooth' });
-                          }}
-                          className="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          type="button"
-                          aria-label={t.common.delete}
-                          onClick={() => onDeleteMemo(memo.id)}
-                          className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-950"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Borderless Item List */}
-                  <div className="mt-3 space-y-1.5 text-xs">
-                    {memo.items.map((item, i) => (
-                      <div
-                        key={i}
-                        className="flex items-baseline justify-between gap-3 text-slate-700 dark:text-slate-300"
-                      >
-                        <span className="min-w-0 truncate">{item.name}</span>
-                        <span className="font-mono-num shrink-0 font-semibold tabular-nums text-[#102A43] dark:text-slate-200">
-                          {item.price > 0 ? formatMoney(item.price, currency) : '—'}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2 pt-2">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                        {t.common.total}
-                      </span>
-                      <span className="font-mono-num text-sm font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
-                        {memo.total > 0 ? formatMoney(memo.total, currency) : t.memo.plannedNoPrice}
-                      </span>
-                    </div>
-
-                    {memo.total > 0 && !isReadOnly && (
-                      <button
-                        type="button"
-                        disabled={loggingMemoId === memo.id}
-                        onClick={() => void handleQuickLogSavedMemo(memo)}
-                        className="min-h-[40px] shrink-0 whitespace-nowrap rounded-xl bg-[#102A43] px-3.5 py-2 text-xs font-bold text-white transition-colors hover:bg-slate-800 disabled:opacity-50 dark:bg-sky-700 dark:hover:bg-sky-600"
-                      >
-                        {loggingMemoId === memo.id ? t.memo.loggingExpense : t.memo.logAsExpense}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-          </div>
-
-          {/* Pane 2: Notepad */}
+      {/* Notepad Editor Modal (Auto-saves on Back / Close / Backdrop tap) */}
+      {(isAddingNote || selectedNote) && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+          onClick={() => void handleCloseNoteModal()}
+        >
           <div
-            aria-hidden={activeSubTab !== 'notepad'}
-            className={`w-1/2 shrink-0 ${
-              !isSwipingTab && activeSubTab !== 'notepad'
-                ? 'pointer-events-none max-h-0 overflow-hidden'
-                : ''
-            }`}
+            className="flex h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900"
+            onClick={(e) => e.stopPropagation()}
           >
-            <div>
-              <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-base font-bold text-[#102A43] dark:text-slate-100">
-                  {t.memo.personalNotes} ({notes.length})
-                </h2>
+            {/* Unified Note Header + Share + Close */}
+            <div className="flex items-center justify-between px-5 pt-4 pb-1">
+              <span className="text-xs font-semibold text-slate-400 dark:text-slate-500">
+                {selectedNote ? `${t.memo.editNote} · ${selectedNote.date}` : t.memo.newNote}
+              </span>
+              <div className="-mr-1.5 flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => openShareSheetForNote(currentTitle, currentContent)}
+                  aria-label={t.memo.shareNote}
+                  title={t.memo.shareNote}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-[#16845B] dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-emerald-400"
+                >
+                  <Share2 className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleCloseNoteModal()}
+                  aria-label={t.common.close}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <input
+              type="text"
+              maxLength={200}
+              readOnly={isReadOnly}
+              aria-label={t.memo.noteTitlePlaceholder}
+              placeholder={t.memo.noteTitlePlaceholder}
+              value={currentTitle}
+              onChange={(e) => setCurrentTitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  noteContentRef.current?.focus();
+                }
+              }}
+              className="w-full bg-transparent px-5 pt-1.5 pb-3 text-base font-bold text-[#102A43] placeholder:font-medium placeholder:text-slate-400 focus:outline-none sm:text-lg dark:text-slate-100 dark:placeholder:text-slate-500"
+            />
+
+            <div className="mx-5 border-b border-slate-100 dark:border-slate-800" />
+
+            <textarea
+              ref={noteContentRef}
+              maxLength={20000}
+              readOnly={isReadOnly}
+              aria-label={t.memo.noteContentPlaceholder}
+              placeholder={t.memo.noteContentPlaceholder}
+              value={currentContent}
+              onChange={(e) => setCurrentContent(e.target.value)}
+              className="w-full flex-1 resize-none bg-transparent px-5 py-3.5 text-sm leading-relaxed text-[#102A43] placeholder:text-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
+            />
+
+            <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/60 px-5 py-3.5 dark:border-slate-800 dark:bg-slate-950/40">
+              {selectedNote && !isReadOnly ? (
                 <button
                   type="button"
                   onClick={() => {
-                    if (didTabSwipeRef.current) return;
+                    // Bypass auto-save when deleting
+                    initialNoteSnapshotRef.current = serializeNoteSnapshot(
+                      currentTitle,
+                      currentContent
+                    );
+                    onDeleteNote(selectedNote.id);
                     setSelectedNote(null);
-                    setCurrentTitle('');
-                    setCurrentContent('');
-                    setIsAddingNote(true);
                   }}
-                  className="inline-flex min-h-[42px] items-center gap-1.5 rounded-xl bg-[#16845B] px-4 py-2 text-xs font-bold text-white shadow-sm hover:bg-[#126B4A]"
+                  className="min-h-[42px] rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700"
                 >
-                  <Plus className="h-4 w-4" />
-                  {t.memo.newNote}
+                  {t.common.delete}
                 </button>
-              </div>
-
-              {notes.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-300 bg-white/60 p-10 text-center text-sm text-slate-500 dark:border-slate-800 dark:bg-slate-900/50 dark:text-slate-400">
-                  {t.memo.noNotesYet}
-                </div>
               ) : (
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {notes.map((note) => (
-                    <button
-                      key={note.id}
-                      type="button"
-                      onClick={() => {
-                        if (didTabSwipeRef.current) return;
-                        setSelectedNote(note);
-                        setCurrentTitle(note.title);
-                        setCurrentContent(note.content);
-                      }}
-                      className="flex flex-col justify-between rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors hover:border-[#16845B]/50 dark:border-slate-800 dark:bg-slate-900"
-                    >
-                      <div>
-                        <h4 className="line-clamp-1 text-sm font-bold text-[#102A43] dark:text-slate-100">
-                          {note.title}
-                        </h4>
-                        <p className="mt-1.5 line-clamp-4 whitespace-pre-line text-xs leading-relaxed text-slate-500 dark:text-slate-400">
-                          {note.content || t.memo.emptyNote}
-                        </p>
-                      </div>
-                      <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-2.5 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
-                        <span>{note.date}</span>
-                        <span>{t.memo.tapToOpen}</span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
+                <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                  {!isReadOnly ? t.memo.autoSaveHint : ''}
+                </span>
               )}
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleCloseNoteModal()}
+                  className="min-h-[42px] rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+                >
+                  {t.common.close}
+                </button>
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveNoteClick()}
+                    className="min-h-[42px] rounded-xl bg-[#16845B] px-5 py-2 text-xs font-bold text-white hover:bg-[#126B4A]"
+                  >
+                    {selectedNote ? t.common.update : t.common.save}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
 
-      {(isAddingNote || selectedNote) && (
+      {/* Slide-Up Add as Expense Bottom Drawer (Portal z-55) */}
+      {expenseDrawer &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[55] flex items-end justify-center bg-slate-950/60 backdrop-blur-xs sm:items-center sm:p-4"
+            onClick={() => setExpenseDrawer(null)}
+          >
             <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
-              onClick={() => {
-                setIsAddingNote(false);
-                setSelectedNote(null);
-              }}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="expense-drawer-title"
+              onClick={(e) => e.stopPropagation()}
+              className="animate-drawer-up flex max-h-[90vh] w-full max-w-md flex-col rounded-t-3xl border border-slate-200 bg-white shadow-2xl sm:rounded-3xl dark:border-slate-800 dark:bg-slate-900"
             >
-              <div
-                className="flex h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {/* Unified Note Header + Title + Body */}
-                <div className="flex items-center justify-between px-5 pt-4 pb-1">
-                  <span className="text-xs font-semibold text-slate-400 dark:text-slate-500">
-                    {selectedNote ? `${t.memo.editNote} · ${selectedNote.date}` : t.memo.newNote}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAddingNote(false);
-                      setSelectedNote(null);
-                    }}
-                    aria-label={t.common.close}
-                    className="-mr-1.5 flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
+              {/* Mobile Drag Handle */}
+              <div className="flex justify-center pt-2.5 pb-1 sm:hidden">
+                <div className="h-1 w-10 rounded-full bg-slate-300 dark:bg-slate-700" />
+              </div>
+
+              {/* Drawer Header */}
+              <div className="flex items-start justify-between gap-3 px-5 pt-3 pb-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
+                    <Wallet className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3
+                      id="expense-drawer-title"
+                      className="text-base font-extrabold text-[#102A43] dark:text-slate-100"
+                    >
+                      {t.memo.expenseDrawerTitle}
+                    </h3>
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                      {t.memo.expenseDrawerSubtitle}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setExpenseDrawer(null)}
+                  aria-label={t.common.close}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="space-y-3.5 overflow-y-auto px-5 pb-5">
+                {/* Total Summary Card */}
+                <div className="flex items-center justify-between gap-3 rounded-2xl bg-slate-50 px-4 py-3.5 dark:bg-slate-950/70">
+                  <div className="min-w-0 flex-1">
+                    <input
+                      type="text"
+                      maxLength={200}
+                      value={drawerTitle}
+                      onChange={(e) => setDrawerTitle(e.target.value)}
+                      placeholder={t.memo.memoNotePlaceholder}
+                      className="w-full bg-transparent text-sm font-bold text-[#102A43] placeholder:text-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
+                    />
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                      {expenseDrawer.items.length} {t.memo.itemsCountSuffix}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                      {t.common.total}
+                    </p>
+                    <p className="font-mono-num text-xl font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
+                      {formatMoney(expenseDrawer.amount, currency)}
+                    </p>
+                  </div>
                 </div>
 
-                <input
-                  type="text"
-                  maxLength={200}
-                  aria-label={t.memo.noteTitlePlaceholder}
-                  placeholder={t.memo.noteTitlePlaceholder}
-                  value={currentTitle}
-                  onChange={(e) => setCurrentTitle(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      noteContentRef.current?.focus();
-                    }
-                  }}
-                  className="w-full bg-transparent px-5 pt-1.5 pb-3 text-base font-bold text-[#102A43] placeholder:font-medium placeholder:text-slate-400 focus:outline-none sm:text-lg dark:text-slate-100 dark:placeholder:text-slate-500"
-                />
+                {/* Date & Category Row */}
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-slate-500 dark:text-slate-400">
+                      {t.memo.dateLabel}
+                    </label>
+                    <input
+                      type="date"
+                      value={drawerDate}
+                      onChange={(e) => setDrawerDate(e.target.value)}
+                      className="min-h-[44px] w-full rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-xs font-bold text-[#102A43] transition-colors hover:border-slate-300 focus:border-[#16845B] focus:bg-white focus:outline-none dark:border-slate-800 dark:bg-slate-950/60 dark:text-slate-100 dark:hover:border-slate-700 dark:focus:border-emerald-400 dark:focus:bg-slate-900"
+                    />
+                  </div>
 
-                <div className="mx-5 border-b border-slate-100 dark:border-slate-800" />
-
-                <textarea
-                  ref={noteContentRef}
-                  maxLength={20000}
-                  aria-label={t.memo.noteContentPlaceholder}
-                  placeholder={t.memo.noteContentPlaceholder}
-                  value={currentContent}
-                  onChange={(e) => setCurrentContent(e.target.value)}
-                  className="w-full flex-1 resize-none bg-transparent px-5 py-3.5 text-sm leading-relaxed text-[#102A43] placeholder:text-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
-                />
-
-                <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/60 px-5 py-3.5 dark:border-slate-800 dark:bg-slate-950/40">
-                  {selectedNote ? (
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-slate-500 dark:text-slate-400">
+                      {t.memo.categoryLabel}
+                    </label>
                     <button
                       type="button"
-                      onClick={() => {
-                        onDeleteNote(selectedNote.id);
-                        setSelectedNote(null);
-                      }}
-                      className="min-h-[42px] rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700"
+                      onClick={() => setActiveMemoPicker('category')}
+                      className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
                     >
-                      {t.common.delete}
-                    </button>
-                  ) : (
-                    <div />
-                  )}
-
-                  <div className="flex gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsAddingNote(false);
-                        setSelectedNote(null);
-                      }}
-                      className="min-h-[42px] rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                    >
-                      {t.common.cancel}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSaveNoteClick}
-                      className="min-h-[42px] rounded-xl bg-[#16845B] px-5 py-2 text-xs font-bold text-white hover:bg-[#126B4A]"
-                    >
-                      {selectedNote ? t.common.update : t.common.save}
+                      <span className="flex min-w-0 items-center gap-2">
+                        <CategoryIconBadge
+                          style={getCategoryStyle(categoryStyles, 'exp', drawerCategory)}
+                          size="sm"
+                        />
+                        <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                          {drawerCategory}
+                        </span>
+                      </span>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
                     </button>
                   </div>
                 </div>
+
+                {/* Sub-Category & Wallet Row */}
+                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-slate-500 dark:text-slate-400">
+                      {t.txForm.subCategoryLabel}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMemoPicker('subCategory')}
+                      className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <CategoryIconBadge
+                          style={getExpenseOrSubCategoryStyle(
+                            categoryStyles,
+                            drawerCategory,
+                            drawerSubCategory
+                          )}
+                          size="sm"
+                        />
+                        <span
+                          className={`truncate text-xs ${
+                            drawerSubCategory
+                              ? 'font-bold text-[#102A43] dark:text-slate-100'
+                              : 'font-semibold text-slate-500 dark:text-slate-400'
+                          }`}
+                        >
+                          {drawerSubCategory || t.txForm.subCategoryChipPlaceholder}
+                        </span>
+                      </span>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="mb-1 block text-xs font-bold text-slate-500 dark:text-slate-400">
+                      {t.memo.walletLabel}
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setActiveMemoPicker('wallet')}
+                      className="flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50/70 px-3 py-2 text-left transition-all hover:border-slate-300 hover:bg-slate-100 active:scale-[0.98] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <CategoryIconBadge
+                          style={getCategoryStyle(
+                            categoryStyles,
+                            savingsList.includes(drawerWallet) ? 'sav' : 'wal',
+                            drawerWallet
+                          )}
+                          size="sm"
+                        />
+                        <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                          {drawerWallet}
+                        </span>
+                      </span>
+                      <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Confirm & Log CTA */}
+                <button
+                  type="button"
+                  disabled={isLoggingExpense}
+                  onClick={() => void handleConfirmLogExpense()}
+                  className="mt-1 flex min-h-[48px] w-full items-center justify-center gap-2 rounded-xl bg-[#16845B] px-5 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#126B4A] active:scale-[0.99] disabled:opacity-60"
+                >
+                  {isLoggingExpense ? t.memo.loggingExpense : t.memo.confirmLogExpense}
+                </button>
               </div>
             </div>
-      )}
-      {activeMemoPicker && (() => {
-        const pickerMode: TransactionPickerMode =
-          activeMemoPicker === 'category'
-            ? 'exp_cat'
-            : activeMemoPicker === 'subCategory'
-            ? 'sub_cat'
-            : 'account';
+          </div>,
+          document.body
+        )}
 
-        const pickerTitle =
-          pickerMode === 'exp_cat'
-            ? t.txForm.drawerChooseExpCategory
-            : pickerMode === 'sub_cat'
-            ? `${t.txForm.drawerChooseSubCategory} · ${memoCategory}`
-            : t.txForm.drawerChooseAccount;
+      {/* Slide-Up Share Sheet (Social Apps + Native Share + Copy) (Portal z-55) */}
+      {shareSheet &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-[55] flex items-end justify-center bg-slate-950/60 backdrop-blur-xs sm:items-center sm:p-4"
+            onClick={() => setShareSheet(null)}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="memo-share-sheet-title"
+              onClick={(e) => e.stopPropagation()}
+              className="animate-drawer-up w-full max-w-md rounded-t-3xl border border-slate-200 bg-white p-5 shadow-2xl sm:rounded-3xl dark:border-slate-800 dark:bg-slate-900"
+            >
+              {/* Mobile Drag Handle */}
+              <div className="mb-3 flex justify-center sm:hidden">
+                <div className="h-1 w-10 rounded-full bg-slate-300 dark:bg-slate-700" />
+              </div>
 
-        const selectedValue =
-          activeMemoPicker === 'category'
-            ? memoCategory
-            : activeMemoPicker === 'subCategory'
-            ? memoSubCategory
-            : memoWallet;
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
+                    <Share2 className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3
+                      id="memo-share-sheet-title"
+                      className="text-base font-extrabold text-[#102A43] dark:text-slate-100"
+                    >
+                      {shareSheet.kind === 'memo'
+                        ? t.memo.shareListTitle
+                        : t.memo.shareNoteTitle}
+                    </h3>
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                      {shareSheet.kind === 'memo'
+                        ? t.memo.shareListSubtitle
+                        : t.memo.shareNoteSubtitle}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShareSheet(null)}
+                  aria-label={t.common.close}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-500 transition-colors hover:bg-slate-100 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
 
-        const pickerSubs = Array.from(
-          new Set([
-            ...(expenseSubCategories?.[memoCategory] || []),
-            ...(memoSubCategory ? [memoSubCategory] : []),
-          ])
-        );
+              {/* Editable Formatted Message Preview */}
+              <div className="mt-4">
+                <textarea
+                  rows={5}
+                  value={shareTextDraft}
+                  onChange={(e) => setShareTextDraft(e.target.value)}
+                  className="w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 px-3.5 py-3 text-sm leading-relaxed text-[#102A43] outline-none transition-colors focus:border-[#16845B] focus:bg-white dark:border-slate-800 dark:bg-slate-950/70 dark:text-slate-100 dark:focus:border-emerald-500 dark:focus:bg-slate-950"
+                />
+              </div>
 
-        const handleCreateFromDrawer = async (
-          kind: AddableItemKind,
-          name: string,
-          parentCat?: string,
-          style?: CategoryStyle
-        ): Promise<boolean> => {
-          if (kind === 'sub_cat') {
-            if (!onAddSubCategory || !parentCat) return false;
-            return onAddSubCategory(parentCat, name, style);
-          }
-          if (!onAddListItem) return false;
-          return onAddListItem(kind, name, style);
-        };
+              {/* Primary Actions: Copy & System Share */}
+              <div className="mt-3 flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => void handleCopyShareText()}
+                  className={`flex min-h-[44px] flex-1 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold text-white transition-colors whitespace-nowrap ${
+                    copiedJustNow
+                      ? 'bg-emerald-600 dark:bg-emerald-600'
+                      : 'bg-[#16845B] hover:bg-[#126B4A]'
+                  }`}
+                >
+                  {copiedJustNow ? (
+                    <Check className="h-4 w-4" />
+                  ) : (
+                    <Copy className="h-4 w-4" />
+                  )}
+                  {copiedJustNow ? t.memo.copiedListBtn : t.memo.copyListBtn}
+                </button>
 
-        return (
-          <TransactionPickerDrawer
-            open={true}
-            mode={pickerMode}
-            title={pickerTitle}
-            selectedValue={selectedValue}
-            parentCategory={memoCategory}
-            expenseCategories={expenseCategories}
-            incomeCategories={[]}
-            subCategories={pickerSubs}
-            wallets={wallets}
-            savingsList={savingsList}
-            allAccountOptions={allAccountOptions}
-            categoryStyles={categoryStyles}
-            isReadOnly={isReadOnly}
-            onSelect={(val) => {
-              if (activeMemoPicker === 'category') {
-                setMemoCategory(val);
-                if (!(expenseSubCategories?.[val] || []).includes(memoSubCategory)) {
-                  setMemoSubCategory('');
+                {supportsNativeShare && (
+                  <button
+                    type="button"
+                    onClick={() => void handleNativeShareText()}
+                    className="flex min-h-[44px] items-center justify-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-xs font-bold text-[#102A43] transition-colors hover:bg-slate-100 whitespace-nowrap dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700"
+                  >
+                    <Share2 className="h-4 w-4 text-[#16845B] dark:text-emerald-400" />
+                    {t.shareApp.nativeShareBtn}
+                  </button>
+                )}
+              </div>
+
+              {/* Direct Social Share Row */}
+              <div className="mt-4 border-t border-slate-100 pt-4 dark:border-slate-800">
+                <p className="mb-2.5 text-xs font-bold text-slate-500 dark:text-slate-400">
+                  {t.shareApp.shareViaLabel}
+                </p>
+                <div className="grid grid-cols-4 gap-2">
+                  {/* WhatsApp */}
+                  <a
+                    href={whatsappHref}
+                    target={isAndroid ? undefined : '_blank'}
+                    rel={isAndroid ? undefined : 'noopener noreferrer'}
+                    onClick={handleExternalSocialClick}
+                    className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2.5 text-center transition-colors hover:border-[#25D366]/50 hover:bg-[#25D366]/[0.06] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-[#25D366]/50 dark:hover:bg-[#25D366]/10"
+                  >
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#25D366] text-white">
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                        className="h-4 w-4 fill-current"
+                      >
+                        <path d="M12.04 2a9.94 9.94 0 0 0-8.48 15.16L2 22l4.98-1.52A9.95 9.95 0 1 0 12.04 2Zm5.8 14.07c-.24.68-1.42 1.31-1.97 1.39-.51.07-1.15.1-1.85-.12-.43-.14-.98-.32-1.69-.63-2.97-1.28-4.91-4.27-5.06-4.47-.15-.2-1.21-1.61-1.21-3.07s.76-2.18 1.03-2.48c.27-.3.59-.38.79-.38h.57c.18 0 .43-.07.67.51.25.6.84 2.06.91 2.21.07.15.12.33.02.53-.1.2-.15.33-.3.5-.15.18-.31.4-.45.54-.15.15-.3.31-.13.61.18.3.78 1.29 1.68 2.09 1.15 1.03 2.13 1.35 2.43 1.5.3.15.48.13.66-.08.18-.2.76-.89.96-1.19.2-.3.4-.25.68-.15.28.1 1.77.84 2.07.99.3.15.51.23.58.35.08.13.08.73-.17 1.4Z" />
+                      </svg>
+                    </span>
+                    <span className="w-full truncate text-[11px] font-bold text-[#102A43] dark:text-slate-200">
+                      {t.shareApp.whatsapp}
+                    </span>
+                  </a>
+
+                  {/* Messenger (Copy + Open) */}
+                  <a
+                    href="https://www.messenger.com/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(e) => void handleCopyAndOpenMessenger(e)}
+                    className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2.5 text-center transition-colors hover:border-[#0084FF]/50 hover:bg-[#0084FF]/[0.06] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-[#0084FF]/50 dark:hover:bg-[#0084FF]/10"
+                  >
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-tr from-[#0099FF] via-[#A033FF] to-[#FF5280] text-white">
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                        className="h-4 w-4 fill-current"
+                      >
+                        <path d="M12 2C6.48 2 2 6.14 2 11.25c0 2.9 1.44 5.49 3.7 7.19V22l3.36-1.85c.93.26 1.91.4 2.94.4 5.52 0 10-4.14 10-9.3C22 6.14 17.52 2 12 2Zm1.01 12.5-2.55-2.72-4.97 2.72 5.47-5.8 2.61 2.72 4.91-2.72-5.47 5.8Z" />
+                      </svg>
+                    </span>
+                    <span className="w-full truncate text-[11px] font-bold text-[#102A43] dark:text-slate-200">
+                      {t.shareApp.messenger}
+                    </span>
+                  </a>
+
+                  {/* Telegram */}
+                  <a
+                    href={telegramHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={handleExternalSocialClick}
+                    className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2.5 text-center transition-colors hover:border-[#229ED9]/50 hover:bg-[#229ED9]/[0.06] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-[#229ED9]/50 dark:hover:bg-[#229ED9]/10"
+                  >
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#229ED9] text-white">
+                      <svg
+                        aria-hidden="true"
+                        viewBox="0 0 24 24"
+                        className="h-4 w-4 fill-current"
+                      >
+                        <path d="M21.2 4.6 2.9 11.7c-1.2.5-1.2 1.2-.2 1.5l4.7 1.5 10.9-6.9c.5-.3 1-.1.6.2l-8.8 8-.3 4.8c.5 0 .7-.2 1-.5l2.3-2.2 4.8 3.5c.9.5 1.5.2 1.7-.8l3.1-14.6c.3-1.3-.5-1.9-1.5-1.6Z" />
+                      </svg>
+                    </span>
+                    <span className="w-full truncate text-[11px] font-bold text-[#102A43] dark:text-slate-200">
+                      {t.shareApp.telegram}
+                    </span>
+                  </a>
+
+                  {/* SMS */}
+                  <a
+                    href={smsHref}
+                    onClick={handleExternalSocialClick}
+                    className="flex min-h-[44px] flex-col items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-2 py-2.5 text-center transition-colors hover:border-emerald-500/40 hover:bg-emerald-500/[0.06] dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-emerald-500/40 dark:hover:bg-emerald-500/10"
+                  >
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#102A43] text-white dark:bg-slate-700">
+                      <MessageSquare className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="w-full truncate text-[11px] font-bold text-[#102A43] dark:text-slate-200">
+                      {t.memo.sms}
+                    </span>
+                  </a>
+                </div>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {/* Visual Category / Sub-Category / Wallet Picker Drawer (z-65) */}
+      {activeMemoPicker &&
+        (() => {
+          const pickerMode: TransactionPickerMode =
+            activeMemoPicker === 'category'
+              ? 'exp_cat'
+              : activeMemoPicker === 'subCategory'
+              ? 'sub_cat'
+              : 'account';
+
+          const pickerTitle =
+            pickerMode === 'exp_cat'
+              ? t.txForm.drawerChooseExpCategory
+              : pickerMode === 'sub_cat'
+              ? `${t.txForm.drawerChooseSubCategory} · ${drawerCategory}`
+              : t.txForm.drawerChooseAccount;
+
+          const selectedValue =
+            activeMemoPicker === 'category'
+              ? drawerCategory
+              : activeMemoPicker === 'subCategory'
+              ? drawerSubCategory
+              : drawerWallet;
+
+          const pickerSubs = Array.from(
+            new Set([
+              ...(expenseSubCategories?.[drawerCategory] || []),
+              ...(drawerSubCategory ? [drawerSubCategory] : []),
+            ])
+          );
+
+          const handleCreateFromDrawer = async (
+            kind: AddableItemKind,
+            name: string,
+            parentCat?: string,
+            style?: CategoryStyle
+          ): Promise<boolean> => {
+            if (kind === 'sub_cat') {
+              if (!onAddSubCategory || !parentCat) return false;
+              return onAddSubCategory(parentCat, name, style);
+            }
+            if (!onAddListItem) return false;
+            return onAddListItem(kind, name, style);
+          };
+
+          return (
+            <TransactionPickerDrawer
+              open={true}
+              mode={pickerMode}
+              title={pickerTitle}
+              selectedValue={selectedValue}
+              parentCategory={drawerCategory}
+              expenseCategories={expenseCategories}
+              incomeCategories={[]}
+              subCategories={pickerSubs}
+              wallets={wallets}
+              savingsList={savingsList}
+              allAccountOptions={allAccountOptions}
+              categoryStyles={categoryStyles}
+              isReadOnly={isReadOnly}
+              onSelect={(val) => {
+                if (activeMemoPicker === 'category') {
+                  setDrawerCategory(val);
+                  if (!(expenseSubCategories?.[val] || []).includes(drawerSubCategory)) {
+                    setDrawerSubCategory('');
+                  }
+                } else if (activeMemoPicker === 'subCategory') {
+                  setDrawerSubCategory(val);
+                } else {
+                  setDrawerWallet(val);
                 }
-              } else if (activeMemoPicker === 'subCategory') {
-                setMemoSubCategory(val);
-              } else {
-                setMemoWallet(val);
-              }
-            }}
-            onCreateItem={handleCreateFromDrawer}
-            onClose={() => setActiveMemoPicker(null)}
-          />
-        );
-      })()}
+              }}
+              onCreateItem={handleCreateFromDrawer}
+              onClose={() => setActiveMemoPicker(null)}
+            />
+          );
+        })()}
     </div>
   );
 };

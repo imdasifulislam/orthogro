@@ -20,6 +20,7 @@ import {
   Moon,
   Pencil,
   PiggyBank,
+  Play,
   Plus,
   Repeat,
   RotateCcw,
@@ -118,6 +119,7 @@ interface SettingsViewProps {
   onDeleteInvite: (invite: ShareInvite) => Promise<void>;
   onLeaveSharedWorkspace: (invite: ShareInvite) => Promise<void>;
   onOpenShareApp: () => void;
+  onOpenVideoTutorial: () => void;
 }
 
 export const SettingsView: React.FC<SettingsViewProps> = ({
@@ -179,6 +181,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onDeleteInvite,
   onLeaveSharedWorkspace,
   onOpenShareApp,
+  onOpenVideoTutorial,
 }) => {
   const { t } = useTranslation();
   const [newItemInput, setNewItemInput] = useState('');
@@ -1234,6 +1237,27 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
             <ExternalLink className="h-3.5 w-3.5 shrink-0 text-slate-400 sm:h-4 sm:w-4" />
           </a>
         </div>
+
+        <button
+          type="button"
+          onClick={onOpenVideoTutorial}
+          className="mt-2.5 flex min-h-[52px] w-full items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-left transition-colors hover:border-rose-300/70 hover:bg-rose-50/40 dark:border-slate-800 dark:bg-slate-950/60 dark:hover:border-rose-900/60 dark:hover:bg-rose-950/20"
+        >
+          <span className="flex min-w-0 items-center gap-3">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600 shadow-xs dark:bg-rose-950/60 dark:text-rose-400">
+              <Play className="ml-0.5 h-[18px] w-[18px] fill-current" />
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
+                {t.settings.appGuideBtn}
+              </span>
+              <span className="block truncate text-xs text-slate-500 dark:text-slate-400">
+                {t.settings.appGuideDesc}
+              </span>
+            </span>
+          </span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+        </button>
 
         <button
           type="button"
