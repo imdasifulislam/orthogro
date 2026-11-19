@@ -444,6 +444,40 @@ function writeCelebratedMilestones(storageKey: string, keys: string[]) {
   }
 }
 
+function buildDefaultWorkspace(
+  language: AppLanguage = readStoredLanguage(),
+  currency: CurrencySymbol = readStoredOnboardingCurrency(),
+  themeMode: ThemeMode = 'system'
+): WorkspaceSettings {
+  return {
+    wallets: DEFAULT_WALLETS,
+    savingsList: DEFAULT_SAVINGS,
+    expenseCategories: DEFAULT_EXPENSE_CATS,
+    incomeCategories: DEFAULT_INCOME_CATS,
+    expenseSubCategories: DEFAULT_EXPENSE_SUBCATEGORIES,
+    categoryStyles: DEFAULT_CATEGORY_STYLES,
+    currency,
+    themeMode,
+    language,
+    gridOrder: DEFAULT_GRID_ORDER,
+    visibleGrids: DEFAULT_VISIBLE_GRIDS,
+  };
+}
+
+function clearGuestDeviceData() {
+  clearAppPin('guest');
+  try {
+    Object.values(GUEST_STORAGE_KEYS).forEach((key) => {
+      localStorage.removeItem(key);
+    });
+    localStorage.removeItem('orthogro_default_hidden_grids_v1_guest');
+    localStorage.removeItem(getFeatureGuideStorageKey(null));
+    localStorage.removeItem(getCelebratedMilestonesKey(null));
+  } catch {
+    // ignore storage errors
+  }
+}
+
 function computeTotalSavingsBalance(txList: Transaction[], savingsList: string[]): number {
   if (savingsList.length === 0) return 0;
   const savingsSet = new Set(savingsList);
@@ -868,6 +902,7 @@ function OrthoGroApp() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       try {
         if (user) {
+          const wasInGuestMode = localStorage.getItem(GUEST_STORAGE_KEYS.mode) === 'true';
           setCurrentUser(user);
           setIsGuest(false);
           localStorage.removeItem(GUEST_STORAGE_KEYS.mode);
@@ -914,10 +949,9 @@ function OrthoGroApp() {
               return cleaned;
             };
 
-            const guestWorkspace = readGuestJSON<WorkspaceSettings | null>(
-              GUEST_STORAGE_KEYS.workspace,
-              null
-            );
+            const guestWorkspace = wasInGuestMode
+              ? readGuestJSON<WorkspaceSettings | null>(GUEST_STORAGE_KEYS.workspace, null)
+              : null;
             const initialWs: WorkspaceSettings = legacyData
               ? {
                   wallets: sanitizeLegacyList(legacyData.wallets, DEFAULT_WALLETS),
@@ -1096,8 +1130,82 @@ function OrthoGroApp() {
                 }
               }
             }
+          } else if (snap && snap.exists() && wasInGuestMode) {
+            // Merge any new custom wallets, savings, categories, sub-categories, or styles created during Guest mode
+            const guestWorkspace = readGuestJSON<WorkspaceSettings | null>(
+              GUEST_STORAGE_KEYS.workspace,
+              null
+            );
+            if (guestWorkspace) {
+              const cloudData = snap.data() as Partial<WorkspaceSettings>;
+              const mergeUnique = (existing: unknown, incoming: unknown, fallback: string[]) => {
+                const base = Array.isArray(existing)
+                  ? existing.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+                  : fallback;
+                const extra = Array.isArray(incoming)
+                  ? incoming.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+                  : [];
+                const merged = Array.from(new Set([...base, ...extra])).slice(0, 50);
+                return merged.length > 0 ? merged : fallback;
+              };
 
-            // Migrate any guest records created before signing in
+              const mergedWallets = mergeUnique(cloudData.wallets, guestWorkspace.wallets, DEFAULT_WALLETS);
+              const mergedSavings = Array.from(
+                new Set([
+                  ...normalizeSavingsList(cloudData.savingsList),
+                  ...normalizeSavingsList(guestWorkspace.savingsList),
+                ])
+              ).slice(0, 50);
+              const mergedExpCats = mergeUnique(
+                cloudData.expenseCategories,
+                guestWorkspace.expenseCategories,
+                DEFAULT_EXPENSE_CATS
+              );
+              const mergedIncCats = mergeUnique(
+                cloudData.incomeCategories,
+                guestWorkspace.incomeCategories,
+                DEFAULT_INCOME_CATS
+              );
+
+              const cloudSubs = normalizeExpenseSubCategories(cloudData.expenseSubCategories);
+              const guestSubs = normalizeExpenseSubCategories(guestWorkspace.expenseSubCategories);
+              const mergedSubs: Record<string, string[]> = { ...cloudSubs };
+              Object.entries(guestSubs).forEach(([cat, list]) => {
+                if (Object.keys(mergedSubs).length >= 50 && !(cat in mergedSubs)) return;
+                mergedSubs[cat] = Array.from(new Set([...(mergedSubs[cat] || []), ...list])).slice(
+                  0,
+                  50
+                );
+              });
+
+              const cloudStyles = normalizeCategoryStyles(cloudData.categoryStyles);
+              const guestStyles = normalizeCategoryStyles(guestWorkspace.categoryStyles);
+              const mergedStyles: Record<string, CategoryStyle> = { ...cloudStyles };
+              Object.entries(guestStyles).forEach(([k, v]) => {
+                if (Object.keys(mergedStyles).length >= 200 && !(k in mergedStyles)) return;
+                if (!(k in mergedStyles)) {
+                  mergedStyles[k] = v;
+                }
+              });
+
+              try {
+                await updateDoc(userDocRef, {
+                  wallets: mergedWallets,
+                  savingsList: mergedSavings,
+                  expenseCategories: mergedExpCats,
+                  incomeCategories: mergedIncCats,
+                  expenseSubCategories: mergedSubs,
+                  categoryStyles: mergedStyles,
+                  updatedAt: serverTimestamp(),
+                });
+              } catch (err) {
+                handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+              }
+            }
+          }
+
+          // Sync guest records online ONLY when connecting Google while actively in Guest mode
+          if (wasInGuestMode) {
             const guestTxs = readGuestJSON<Transaction[]>(GUEST_STORAGE_KEYS.transactions, []);
             const guestMemos = readGuestJSON<BazarMemo[]>(GUEST_STORAGE_KEYS.memos, []);
             const guestNotes = readGuestJSON<UserNote[]>(GUEST_STORAGE_KEYS.notes, []);
@@ -1111,167 +1219,194 @@ function OrthoGroApp() {
               []
             );
 
-            if (
-              guestTxs.length > 0 ||
-              guestMemos.length > 0 ||
-              guestNotes.length > 0 ||
-              guestBudgets.length > 0 ||
-              guestSavingGoals.length > 0 ||
-              guestRecurringBills.length > 0
-            ) {
-              const batch = writeBatch(db);
-              let count = 0;
+            const migrationLang: AppLanguage = readStoredLanguage();
+            type BatchOp = { path: [string, string, string, string]; data: Record<string, unknown> };
+            const ops: BatchOp[] = [];
 
-              guestTxs.slice(0, 200).forEach((t) => {
-                const id = generateSafeId('tx');
-                const payload: Record<string, unknown> = {
-                  ownerId: user.uid,
-                  title: String(t.title || 'Transaction').slice(0, 200),
-                  amount: Number(t.amount) || 0,
-                  type: t.type,
-                  rawDate: t.rawDate || getTodayISO(),
-                  date: t.date || formatDisplayDate(getTodayISO(), initialLang),
-                  resolved: Boolean(t.resolved),
-                  createdAt: serverTimestamp(),
-                  updatedAt: serverTimestamp(),
-                };
-                if (t.category) payload.category = String(t.category).slice(0, 100);
-                if (t.subCategory) payload.subCategory = String(t.subCategory).slice(0, 100);
-                if (t.wallet) payload.wallet = String(t.wallet).slice(0, 100);
-                if (t.fromWallet) payload.fromWallet = String(t.fromWallet).slice(0, 100);
-                if (t.toWallet) payload.toWallet = String(t.toWallet).slice(0, 100);
-                if (typeof t.charge === 'number' && t.charge >= 0) payload.charge = t.charge;
-                if (typeof t.remainingBalance === 'number' && t.remainingBalance >= 0) {
-                  payload.remainingBalance = t.remainingBalance;
+            const guestTxIdMap = new Map<string, string>();
+            guestTxs.forEach((tx) => {
+              const newId = generateSafeId('tx');
+              if (tx.id) {
+                guestTxIdMap.set(String(tx.id), newId);
+              }
+            });
+
+            guestTxs.forEach((tx) => {
+              const id = (tx.id && guestTxIdMap.get(String(tx.id))) || generateSafeId('tx');
+              const rawDateStr =
+                typeof tx.rawDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(tx.rawDate)
+                  ? tx.rawDate
+                  : getTodayISO();
+              const payload: Record<string, unknown> = {
+                ownerId: user.uid,
+                title: String(tx.title || 'Transaction').trim().slice(0, 200) || 'Transaction',
+                amount: Number.isFinite(Number(tx.amount)) ? Number(tx.amount) : 0,
+                type: tx.type,
+                rawDate: rawDateStr,
+                date:
+                  (typeof tx.date === 'string' && tx.date.trim().slice(0, 40)) ||
+                  formatDisplayDate(rawDateStr, migrationLang),
+                resolved: Boolean(tx.resolved),
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              };
+              if (tx.category) payload.category = String(tx.category).slice(0, 100);
+              if (tx.subCategory) payload.subCategory = String(tx.subCategory).slice(0, 100);
+              if (tx.wallet) payload.wallet = String(tx.wallet).slice(0, 100);
+              if (tx.fromWallet) payload.fromWallet = String(tx.fromWallet).slice(0, 100);
+              if (tx.toWallet) payload.toWallet = String(tx.toWallet).slice(0, 100);
+              if (typeof tx.charge === 'number' && tx.charge >= 0) payload.charge = tx.charge;
+              if (typeof tx.remainingBalance === 'number' && tx.remainingBalance >= 0) {
+                payload.remainingBalance = tx.remainingBalance;
+              }
+              if (tx.parentId) {
+                const mappedParent = guestTxIdMap.get(String(tx.parentId));
+                if (mappedParent && /^[a-zA-Z0-9_-]{1,128}$/.test(mappedParent)) {
+                  payload.parentId = mappedParent;
                 }
-                if (t.note) payload.note = String(t.note).slice(0, 2000);
-                batch.set(doc(db, 'users', user.uid, 'transactions', id), payload);
-                count++;
-              });
+              }
+              if (tx.parentTitle) payload.parentTitle = String(tx.parentTitle).slice(0, 200);
+              if (typeof tx.isLendPay === 'boolean') payload.isLendPay = tx.isLendPay;
+              if (tx.note) payload.note = String(tx.note).slice(0, 2000);
+              ops.push({ path: ['users', user.uid, 'transactions', id], data: payload });
+            });
 
-              guestMemos.slice(0, 100).forEach((m) => {
-                if (!m.items || m.items.length === 0) return;
-                const id = generateSafeId('memo');
-                const memoPayload: Record<string, unknown> = {
-                  ownerId: user.uid,
-                  date: m.date || getTodayISO(),
-                  category: m.category || 'Others',
-                  wallet: m.wallet || 'Cash',
-                  note: (m.note || '').slice(0, 500),
-                  items: m.items.slice(0, 200),
-                  total: Number(m.total) || 0,
-                  createdAt: serverTimestamp(),
-                  updatedAt: serverTimestamp(),
-                };
-                if (typeof m.subCategory === 'string' && m.subCategory.trim()) {
-                  memoPayload.subCategory = m.subCategory.trim().slice(0, 100);
-                }
-                batch.set(doc(db, 'users', user.uid, 'memos', id), memoPayload);
-                count++;
-              });
+            guestMemos.forEach((m) => {
+              if (!m.items || m.items.length === 0) return;
+              const id = generateSafeId('memo');
+              const memoDate =
+                typeof m.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(m.date)
+                  ? m.date
+                  : getTodayISO();
+              const memoPayload: Record<string, unknown> = {
+                ownerId: user.uid,
+                date: memoDate,
+                category: String(m.category || 'Others').slice(0, 100),
+                wallet: String(m.wallet || 'Cash').slice(0, 100),
+                note: (m.note || '').slice(0, 500),
+                items: m.items.slice(0, 200),
+                total: Number.isFinite(Number(m.total)) && Number(m.total) >= 0 ? Number(m.total) : 0,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              };
+              if (typeof m.subCategory === 'string' && m.subCategory.trim()) {
+                memoPayload.subCategory = m.subCategory.trim().slice(0, 100);
+              }
+              ops.push({ path: ['users', user.uid, 'memos', id], data: memoPayload });
+            });
 
-              guestNotes.slice(0, 100).forEach((n) => {
-                const id = generateSafeId('note');
-                batch.set(doc(db, 'users', user.uid, 'notes', id), {
+            guestNotes.forEach((n) => {
+              const id = generateSafeId('note');
+              const noteDate =
+                typeof n.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(n.date)
+                  ? n.date
+                  : getTodayISO();
+              ops.push({
+                path: ['users', user.uid, 'notes', id],
+                data: {
                   ownerId: user.uid,
-                  title: (n.title || 'Untitled').slice(0, 200),
+                  title: (n.title || 'Untitled').trim().slice(0, 200) || 'Untitled',
                   content: (n.content || '').slice(0, 20000),
-                  date: n.date || getTodayISO(),
+                  date: noteDate,
                   createdAt: serverTimestamp(),
                   updatedAt: serverTimestamp(),
-                });
-                count++;
+                },
               });
+            });
 
-              guestBudgets.slice(0, 50).forEach((b) => {
-                const limit = Number(b.monthlyLimit);
-                const category = String(b.category || '').trim().slice(0, 100);
-                if (!category || !Number.isFinite(limit) || limit <= 0) return;
-                const id = generateSafeId('budget');
-                batch.set(doc(db, 'users', user.uid, 'budgets', id), {
+            guestBudgets.forEach((b) => {
+              const limit = Number(b.monthlyLimit);
+              const category = String(b.category || '').trim().slice(0, 100);
+              if (!category || !Number.isFinite(limit) || limit <= 0) return;
+              const id = generateSafeId('budget');
+              ops.push({
+                path: ['users', user.uid, 'budgets', id],
+                data: {
                   ownerId: user.uid,
                   category,
                   monthlyLimit: limit,
                   createdAt: serverTimestamp(),
                   updatedAt: serverTimestamp(),
-                });
-                count++;
+                },
               });
+            });
 
-              guestSavingGoals.slice(0, 50).forEach((sg) => {
-                const targetAmount = Number(sg.targetAmount);
-                const title = String(sg.title || '').trim().slice(0, 100);
-                const periodType: SavingGoalPeriodType =
-                  sg.periodType === 'period' ? 'period' : 'monthly';
-                if (!title || !Number.isFinite(targetAmount) || targetAmount <= 0) return;
-                const id = generateSafeId('savgoal');
-                const payload: Record<string, unknown> = {
-                  ownerId: user.uid,
-                  title,
-                  periodType,
-                  targetAmount,
-                  createdAt: serverTimestamp(),
-                  updatedAt: serverTimestamp(),
-                };
-                if (sg.account && typeof sg.account === 'string') {
-                  payload.account = sg.account.slice(0, 100);
-                }
-                if (periodType === 'period' && sg.startDate && /^\d{4}-\d{2}-\d{2}$/.test(sg.startDate)) {
-                  payload.startDate = sg.startDate;
-                }
-                if (periodType === 'period' && sg.endDate && /^\d{4}-\d{2}-\d{2}$/.test(sg.endDate)) {
-                  payload.endDate = sg.endDate;
-                }
-                batch.set(doc(db, 'users', user.uid, 'savingGoals', id), payload);
-                count++;
-              });
-
-              guestRecurringBills.slice(0, 100).forEach((rb) => {
-                const amt = Number(rb.amount);
-                const title = String(rb.title || '').trim().slice(0, 100);
-                const dueDay = Math.min(31, Math.max(1, Math.round(Number(rb.dueDay) || 1)));
-                const billType: RecurringBillType = rb.type === 'income' ? 'income' : 'expense';
-                if (!title || !Number.isFinite(amt) || amt <= 0) return;
-                const id = generateSafeId('bill');
-                const payload: Record<string, unknown> = {
-                  ownerId: user.uid,
-                  title,
-                  type: billType,
-                  amount: amt,
-                  category: String(rb.category || 'Others').slice(0, 100),
-                  wallet: String(rb.wallet || 'Cash').slice(0, 100),
-                  dueDay,
-                  createdAt: serverTimestamp(),
-                  updatedAt: serverTimestamp(),
-                };
-                if (billType === 'expense' && typeof rb.subCategory === 'string' && rb.subCategory.trim()) {
-                  payload.subCategory = rb.subCategory.trim().slice(0, 100);
-                }
-                if (typeof rb.lastPaidMonth === 'string' && /^[0-9]{4}-[0-9]{2}$/.test(rb.lastPaidMonth)) {
-                  payload.lastPaidMonth = rb.lastPaidMonth;
-                }
-                if (typeof rb.lastPaidDate === 'string' && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(rb.lastPaidDate)) {
-                  payload.lastPaidDate = rb.lastPaidDate;
-                }
-                batch.set(doc(db, 'users', user.uid, 'recurringBills', id), payload);
-                count++;
-              });
-
-              if (count > 0) {
-                try {
-                  await batch.commit();
-                  localStorage.removeItem(GUEST_STORAGE_KEYS.transactions);
-                  localStorage.removeItem(GUEST_STORAGE_KEYS.memos);
-                  localStorage.removeItem(GUEST_STORAGE_KEYS.notes);
-                  localStorage.removeItem(GUEST_STORAGE_KEYS.budgets);
-                  localStorage.removeItem(GUEST_STORAGE_KEYS.savingGoals);
-                  localStorage.removeItem(GUEST_STORAGE_KEYS.recurringBills);
-                  localStorage.removeItem(GUEST_STORAGE_KEYS.workspace);
-                } catch (err) {
-                  handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
-                }
+            guestSavingGoals.forEach((sg) => {
+              const targetAmount = Number(sg.targetAmount);
+              const title = String(sg.title || '').trim().slice(0, 100);
+              const periodType: SavingGoalPeriodType =
+                sg.periodType === 'period' ? 'period' : 'monthly';
+              if (!title || !Number.isFinite(targetAmount) || targetAmount <= 0) return;
+              const id = generateSafeId('savgoal');
+              const payload: Record<string, unknown> = {
+                ownerId: user.uid,
+                title,
+                periodType,
+                targetAmount,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              };
+              if (sg.account && typeof sg.account === 'string') {
+                payload.account = sg.account.slice(0, 100);
               }
+              if (periodType === 'period' && sg.startDate && /^\d{4}-\d{2}-\d{2}$/.test(sg.startDate)) {
+                payload.startDate = sg.startDate;
+              }
+              if (periodType === 'period' && sg.endDate && /^\d{4}-\d{2}-\d{2}$/.test(sg.endDate)) {
+                payload.endDate = sg.endDate;
+              }
+              ops.push({ path: ['users', user.uid, 'savingGoals', id], data: payload });
+            });
+
+            guestRecurringBills.forEach((rb) => {
+              const amt = Number(rb.amount);
+              const title = String(rb.title || '').trim().slice(0, 100);
+              const dueDay = Math.min(31, Math.max(1, Math.round(Number(rb.dueDay) || 1)));
+              const billType: RecurringBillType = rb.type === 'income' ? 'income' : 'expense';
+              if (!title || !Number.isFinite(amt) || amt <= 0) return;
+              const id = generateSafeId('bill');
+              const payload: Record<string, unknown> = {
+                ownerId: user.uid,
+                title,
+                type: billType,
+                amount: amt,
+                category: String(rb.category || 'Others').slice(0, 100),
+                wallet: String(rb.wallet || 'Cash').slice(0, 100),
+                dueDay,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              };
+              if (billType === 'expense' && typeof rb.subCategory === 'string' && rb.subCategory.trim()) {
+                payload.subCategory = rb.subCategory.trim().slice(0, 100);
+              }
+              if (typeof rb.lastPaidMonth === 'string' && /^[0-9]{4}-[0-9]{2}$/.test(rb.lastPaidMonth)) {
+                payload.lastPaidMonth = rb.lastPaidMonth;
+              }
+              if (typeof rb.lastPaidDate === 'string' && /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(rb.lastPaidDate)) {
+                payload.lastPaidDate = rb.lastPaidDate;
+              }
+              ops.push({ path: ['users', user.uid, 'recurringBills', id], data: payload });
+            });
+
+            if (ops.length > 0) {
+              try {
+                const CHUNK_SIZE = 400;
+                for (let start = 0; start < ops.length; start += CHUNK_SIZE) {
+                  const batch = writeBatch(db);
+                  ops.slice(start, start + CHUNK_SIZE).forEach((op) => {
+                    batch.set(doc(db, op.path[0], op.path[1], op.path[2], op.path[3]), op.data);
+                  });
+                  await batch.commit();
+                }
+                clearGuestDeviceData();
+              } catch (err) {
+                handleFirestoreError(err, OperationType.WRITE, `users/${user.uid}`);
+              }
+            } else {
+              clearGuestDeviceData();
             }
+          } else {
+            clearGuestDeviceData();
           }
         } else {
           setCurrentUser(null);
@@ -2222,7 +2357,7 @@ function OrthoGroApp() {
     }
     setWorkspace((prev) => {
       const next = { ...prev, currency: nextCurrency };
-      if (!currentUser) {
+      if (!currentUser && isGuest) {
         try {
           localStorage.setItem(GUEST_STORAGE_KEYS.workspace, JSON.stringify(next));
         } catch {
@@ -2265,29 +2400,70 @@ function OrthoGroApp() {
   };
 
   const handleGoogleLogout = () => {
-    setConfirmDialog({
-      title: isGuest ? t.toasts.exitGuestTitle : t.toasts.signOutTitle,
-      message: isGuest ? t.toasts.exitGuestMsg : t.toasts.signOutMsg,
-      confirmLabel: isGuest ? t.settings.exitGuest : t.settings.signOut,
-      onConfirm: async () => {
-        setUnlockedAccountKey(null);
-        if (isGuest) {
-          localStorage.removeItem(GUEST_STORAGE_KEYS.mode);
+    if (isGuest) {
+      setConfirmDialog({
+        title: t.toasts.exitGuestTitle,
+        message: t.toasts.exitGuestMsg,
+        showCloseButton: true,
+        cancelLabel: t.settings.exitGuest,
+        cancelDestructive: true,
+        onCancelAction: () => {
+          clearGuestDeviceData();
+          setUnlockedAccountKey(null);
+          setPinRecordVersion((v) => v + 1);
           setIsGuest(false);
           setCurrentUser(null);
-        } else {
-          await signOut(auth);
           setActiveSharedWorkspace(null);
-          setOutgoingInvites([]);
-          setIncomingEmailInvites([]);
-          setAcceptedShareDocs([]);
           setTransactions([]);
           setMemos([]);
           setNotes([]);
           setBudgetGoals([]);
           setSavingGoals([]);
           setRecurringBills([]);
-        }
+          setWorkspace(
+            buildDefaultWorkspace(
+              currentLanguage,
+              readStoredOnboardingCurrency(),
+              workspace.themeMode
+            )
+          );
+          setFeatureGuideState({ dismissed: [], used: [] });
+          setActiveTab('home');
+          setSettingsView('menu');
+        },
+        confirmLabel: t.settings.connectGoogle,
+        destructive: false,
+        onConfirm: async () => {
+          await handleGoogleLogin(false);
+        },
+      });
+      return;
+    }
+
+    setConfirmDialog({
+      title: t.toasts.signOutTitle,
+      message: t.toasts.signOutMsg,
+      confirmLabel: t.settings.signOut,
+      onConfirm: async () => {
+        setUnlockedAccountKey(null);
+        await signOut(auth);
+        setActiveSharedWorkspace(null);
+        setOutgoingInvites([]);
+        setIncomingEmailInvites([]);
+        setAcceptedShareDocs([]);
+        setTransactions([]);
+        setMemos([]);
+        setNotes([]);
+        setBudgetGoals([]);
+        setSavingGoals([]);
+        setRecurringBills([]);
+        setWorkspace(
+          buildDefaultWorkspace(
+            currentLanguage,
+            readStoredOnboardingCurrency(),
+            workspace.themeMode
+          )
+        );
       },
     });
   };
