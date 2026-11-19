@@ -184,10 +184,14 @@ export interface ConfirmDialogState {
   title: string;
   message: string;
   confirmLabel?: string;
+  cancelLabel?: string;
   destructive?: boolean;
+  cancelDestructive?: boolean;
+  showCloseButton?: boolean;
   requireConfirmationText?: string;
   confirmationHint?: string;
   keepOpenOnConfirm?: boolean;
+  onCancelAction?: () => void | Promise<void>;
   onConfirm: () => void | Promise<void>;
 }
 
