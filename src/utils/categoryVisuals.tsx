@@ -230,6 +230,7 @@ export const DEFAULT_CATEGORY_STYLES: Record<string, CategoryStyle> = {
 
   // Savings & Investments
   'sav:Emergency Fund': { icon: 'shield-check', color: '#D94848' },
+  'sav:Wishlist': { icon: 'sparkles', color: '#7C3AED' },
   'sav:Hobby/Want': { icon: 'gamepad-2', color: '#7C3AED' },
   'sav:Invest': { icon: 'trending-up', color: '#16845B' },
   'sav:Saving': { icon: 'piggy-bank', color: '#0D9488' },

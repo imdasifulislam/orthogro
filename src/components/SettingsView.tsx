@@ -10,6 +10,7 @@ import {
   ExternalLink,
   FileBarChart2,
   FolderKanban,
+  GitMerge,
   GripVertical,
   Landmark,
   Languages,
@@ -95,6 +96,8 @@ interface SettingsViewProps {
   onAddSubCategory: (parentCat: string, subName: string) => void;
   onRenameSubCategory: (parentCat: string, oldSub: string) => void;
   onDeleteSubCategory: (parentCat: string, subName: string) => void;
+  onMergeCategory: (type: 'exp_cat' | 'inc_cat', item: string) => void;
+  onMergeSubCategory: (parentCat: string, subName: string) => void;
   onOpenBudgetGoals: () => void;
   onOpenSavingGoals: () => void;
   onOpenRecurringBills: () => void;
@@ -157,6 +160,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onAddSubCategory,
   onRenameSubCategory,
   onDeleteSubCategory,
+  onMergeCategory,
+  onMergeSubCategory,
   onOpenBudgetGoals,
   onOpenSavingGoals,
   onOpenRecurringBills,
@@ -412,6 +417,17 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
 
                   <div className="flex shrink-0 items-center gap-1">
+                    {(type === 'exp_cat' || type === 'inc_cat') && items.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => onMergeCategory(type, item)}
+                        aria-label={`${t.modals.mergeCategoryOption}: ${item}`}
+                        title={t.modals.mergeCategoryOption}
+                        className="flex h-9 w-9 items-center justify-center rounded-lg text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/50"
+                      >
+                        <GitMerge className="h-4 w-4" />
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => onEditListItem(type, item)}
@@ -472,6 +488,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                                 </span>
                               </div>
                               <div className="flex shrink-0 items-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => onMergeSubCategory(item, sub)}
+                                  aria-label={`${t.modals.mergeCategoryOption}: ${sub}`}
+                                  title={t.modals.mergeCategoryOption}
+                                  className="flex h-7 w-7 items-center justify-center rounded-md text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/50"
+                                >
+                                  <GitMerge className="h-3.5 w-3.5" />
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => onRenameSubCategory(item, sub)}
