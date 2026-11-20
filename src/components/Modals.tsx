@@ -7,6 +7,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  CornerDownRight,
   GitMerge,
   GripVertical,
   History,
@@ -47,6 +48,7 @@ import {
   CategoryIconBadge,
   formatCategoryStyleTargetLabel,
   getCategoryStyle,
+  getSubCategoryTargetName,
 } from '../utils/categoryVisuals';
 import {
   computeSavingGoalProgress,
@@ -665,10 +667,13 @@ export const DrilldownModal: React.FC<{
   customDateFrom: string;
   customDateTo: string;
   onStartBalanceCorrection: (accountName: string) => void;
+  onEditAccount?: (type: 'wallet' | 'savings', accountName: string) => void;
   onInspectDebt: (tx: Transaction) => void;
   onEditTransaction: (tx: Transaction) => void;
   onDeleteTransaction: (id: string) => void;
   onSelectDrilldown?: (type: DrilldownType, key?: string | null) => void;
+  onEditBudgetGoal?: (goalId: string) => void;
+  onEditSavingGoal?: (goalId: string) => void;
   isReadOnly?: boolean;
   onClose: () => void;
 }> = ({
@@ -686,10 +691,13 @@ export const DrilldownModal: React.FC<{
   customDateFrom,
   customDateTo,
   onStartBalanceCorrection,
+  onEditAccount,
   onInspectDebt,
   onEditTransaction,
   onDeleteTransaction,
   onSelectDrilldown,
+  onEditBudgetGoal,
+  onEditSavingGoal,
   isReadOnly = false,
   onClose,
 }) => {
@@ -761,6 +769,12 @@ export const DrilldownModal: React.FC<{
   const UNSPECIFIED_SUB_KEY = '__general__';
   const isCategoryDrilldown =
     drilldownType === 'expense_category' || drilldownType === 'income_category';
+  const isSavingGoalDrilldown = drilldownType === 'saving_goal';
+  const savingTargetAccounts = isSavingGoalDrilldown
+    ? drilldownPeriodContext?.savingGoalAccount
+      ? new Set([drilldownPeriodContext.savingGoalAccount])
+      : new Set(savingsList)
+    : null;
 
   let periodFiltered = transactions.filter((tx) => {
     if (drilldownType === 'wallet' || drilldownType === 'savings') {
@@ -769,6 +783,17 @@ export const DrilldownModal: React.FC<{
         (tx.type === 'transfer' &&
           (tx.fromWallet === drilldownKey || tx.toWallet === drilldownKey))
       );
+    }
+    if (drilldownType === 'saving_goal' && savingTargetAccounts) {
+      if (tx.type === 'transfer') {
+        const toTarget = Boolean(tx.toWallet && savingTargetAccounts.has(tx.toWallet));
+        const fromTarget = Boolean(tx.fromWallet && savingTargetAccounts.has(tx.fromWallet));
+        return toTarget !== fromTarget;
+      }
+      if (tx.type === 'income' || tx.type === 'expense') {
+        return Boolean(tx.wallet && savingTargetAccounts.has(tx.wallet));
+      }
+      return false;
     }
     if (drilldownType === 'income') {
       return tx.type === 'income' || (tx.type === 'adjustment' && tx.amount > 0);
@@ -788,6 +813,9 @@ export const DrilldownModal: React.FC<{
   });
 
   const now = new Date();
+  const hasExplicitGoalRange = Boolean(
+    drilldownPeriodContext?.startDate || drilldownPeriodContext?.endDate
+  );
   if (drilldownFilter === 'monthly' && drilldownPeriodContext?.monthOffset !== undefined) {
     const target = new Date(
       now.getFullYear(),
@@ -806,6 +834,15 @@ export const DrilldownModal: React.FC<{
     periodFiltered = periodFiltered.filter((tx) => {
       if (!tx.rawDate) return false;
       return parseLocalDate(tx.rawDate).getFullYear() === targetYear;
+    });
+  } else if (drilldownFilter === 'custom' && hasExplicitGoalRange) {
+    const start = drilldownPeriodContext?.startDate;
+    const end = drilldownPeriodContext?.endDate;
+    periodFiltered = periodFiltered.filter((tx) => {
+      if (!tx.rawDate) return false;
+      if (start && tx.rawDate < start) return false;
+      if (end && tx.rawDate > end) return false;
+      return true;
     });
   } else if (
     drilldownFilter === 'custom' &&
@@ -829,6 +866,32 @@ export const DrilldownModal: React.FC<{
       customDateTo
     );
   }
+
+  const getSavingGoalTxDelta = (tx: Transaction, accountSet: Set<string>): number => {
+    if (tx.type === 'transfer') {
+      const toTarget = Boolean(tx.toWallet && accountSet.has(tx.toWallet));
+      const fromTarget = Boolean(tx.fromWallet && accountSet.has(tx.fromWallet));
+      if (toTarget && !fromTarget) return tx.amount;
+      if (fromTarget && !toTarget) return -(tx.amount + (tx.charge || 0));
+      return 0;
+    }
+    if (tx.type === 'income' && tx.wallet && accountSet.has(tx.wallet)) return tx.amount;
+    if (tx.type === 'expense' && tx.wallet && accountSet.has(tx.wallet)) return -tx.amount;
+    return 0;
+  };
+
+  const getSavingGoalTxAccount = (tx: Transaction, accountSet: Set<string>): string | null => {
+    if (tx.type === 'transfer') {
+      if (tx.toWallet && accountSet.has(tx.toWallet)) return tx.toWallet;
+      if (tx.fromWallet && accountSet.has(tx.fromWallet)) return tx.fromWallet;
+      return null;
+    }
+    if (tx.wallet && accountSet.has(tx.wallet)) return tx.wallet;
+    return null;
+  };
+
+  const isMultiAccountSavingGoal =
+    isSavingGoalDrilldown && !drilldownPeriodContext?.savingGoalAccount && Boolean(savingTargetAccounts);
 
   const subCategoryBuckets = isCategoryDrilldown
     ? (() => {
@@ -856,10 +919,27 @@ export const DrilldownModal: React.FC<{
           return b.total - a.total;
         });
       })()
+    : isMultiAccountSavingGoal && savingTargetAccounts
+    ? (() => {
+        const map = new Map<string, { key: string; label: string; total: number; isGeneral: boolean }>();
+        for (const tx of periodFiltered) {
+          const acc = getSavingGoalTxAccount(tx, savingTargetAccounts);
+          if (!acc) continue;
+          const delta = getSavingGoalTxDelta(tx, new Set([acc]));
+          const existing = map.get(acc);
+          if (existing) {
+            existing.total += delta;
+          } else {
+            map.set(acc, { key: acc, label: acc, total: delta, isGeneral: false });
+          }
+        }
+        return Array.from(map.values()).sort((a, b) => b.total - a.total);
+      })()
     : [];
 
-  const hasSubCategoryStrip =
-    isCategoryDrilldown && subCategoryBuckets.some((bucket) => !bucket.isGeneral);
+  const hasSubCategoryStrip = isCategoryDrilldown
+    ? subCategoryBuckets.some((bucket) => !bucket.isGeneral)
+    : isMultiAccountSavingGoal && subCategoryBuckets.length > 1;
 
   const activeSubKey =
     hasSubCategoryStrip &&
@@ -876,6 +956,8 @@ export const DrilldownModal: React.FC<{
             ? rawSub.length === 0
             : rawSub === activeSubKey;
         })
+      : isMultiAccountSavingGoal && activeSubKey !== null && savingTargetAccounts
+      ? periodFiltered.filter((tx) => getSavingGoalTxAccount(tx, savingTargetAccounts) === activeSubKey)
       : periodFiltered;
 
   const typeTitle =
@@ -885,6 +967,8 @@ export const DrilldownModal: React.FC<{
       ? t.common.income
       : drilldownType === 'expense' || drilldownType === 'expense_category'
       ? t.common.expense
+      : drilldownType === 'saving_goal'
+      ? drilldownPeriodContext?.savingGoalAccount || t.dashboard.allSavingsLabel
       : drilldownType === 'lend'
       ? t.common.lend
       : drilldownType === 'borrow'
@@ -894,8 +978,22 @@ export const DrilldownModal: React.FC<{
   const activePeriodLabel =
     drilldownPeriodContext?.periodLabel ||
     getPeriodLabel(drilldownFilter, customDateFrom, customDateTo, lang);
-  const categoryTotal = periodFiltered.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
-  const displayedTotal = filtered.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  const categoryTotal =
+    isSavingGoalDrilldown && savingTargetAccounts
+      ? periodFiltered.reduce((sum, tx) => sum + getSavingGoalTxDelta(tx, savingTargetAccounts), 0)
+      : periodFiltered.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
+  const displayedTotal =
+    isSavingGoalDrilldown && savingTargetAccounts
+      ? filtered.reduce(
+          (sum, tx) =>
+            sum +
+            getSavingGoalTxDelta(
+              tx,
+              activeSubKey ? new Set([activeSubKey]) : savingTargetAccounts
+            ),
+          0
+        )
+      : filtered.reduce((sum, tx) => sum + Math.abs(tx.amount), 0);
   const activeSubLabel =
     activeSubKey === null
       ? null
@@ -903,13 +1001,21 @@ export const DrilldownModal: React.FC<{
       ? t.common.general
       : activeSubKey;
   const headerTitle =
-    isCategoryDrilldown && drilldownKey
+    (isCategoryDrilldown || isMultiAccountSavingGoal) && drilldownKey
       ? activeSubLabel
         ? `${drilldownKey} › ${activeSubLabel}`
         : drilldownKey
       : drilldownKey || typeTitle;
   const isExpenseStyle =
     drilldownType === 'expense_category' || drilldownType === 'expense';
+  const showGoalTargetInSubtitle =
+    Boolean(drilldownPeriodContext?.goalTargetAmount) &&
+    activeSubKey === null &&
+    ((isSavingGoalDrilldown &&
+      (drilldownFilter === 'monthly' || (drilldownFilter === 'custom' && hasExplicitGoalRange))) ||
+      (drilldownType === 'expense_category' &&
+        Boolean(drilldownPeriodContext?.budgetGoalId) &&
+        drilldownFilter === 'monthly'));
 
   const monthlyOptionLabel =
     drilldownFilter === 'monthly' &&
@@ -925,6 +1031,12 @@ export const DrilldownModal: React.FC<{
     drilldownPeriodContext.periodLabel
       ? String(now.getFullYear() + drilldownPeriodContext.yearOffset)
       : t.common.thisYear;
+  const customOptionLabel =
+    hasExplicitGoalRange && drilldownPeriodContext?.periodLabel
+      ? drilldownPeriodContext.periodLabel
+      : hasExplicitGoalRange
+      ? t.modals.savingGoalPeriodOption
+      : t.common.custom;
 
   const isNetWorthDrilldown = drilldownType === 'netWorth';
   const showNetWorthSummary = isNetWorthDrilldown && netWorthView === 'summary';
@@ -994,6 +1106,8 @@ export const DrilldownModal: React.FC<{
                   ? 'text-[#102A43] dark:text-slate-100'
                   : isExpenseStyle
                   ? 'text-[#D94848] dark:text-rose-400'
+                  : isSavingGoalDrilldown
+                  ? 'text-sky-600 dark:text-sky-400'
                   : 'text-[#16845B] dark:text-emerald-400'
               }`}
             >
@@ -1001,14 +1115,21 @@ export const DrilldownModal: React.FC<{
             </h3>
             {!isNetWorthDrilldown &&
               (isCategoryDrilldown ||
+                isSavingGoalDrilldown ||
                 drilldownType === 'income' ||
                 drilldownType === 'expense') && (
                 <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
-                  {isCategoryDrilldown ? `${typeTitle} · ` : ''}
+                  {isCategoryDrilldown || isSavingGoalDrilldown ? `${typeTitle} · ` : ''}
                   {activePeriodLabel} ·{' '}
                   <span className="font-mono-num font-semibold text-[#102A43] dark:text-slate-200">
                     {formatMoney(displayedTotal, currency)}
                   </span>
+                  {showGoalTargetInSubtitle && drilldownPeriodContext?.goalTargetAmount && (
+                    <span className="font-mono-num text-slate-400 dark:text-slate-500">
+                      {' / '}
+                      {formatMoney(drilldownPeriodContext.goalTargetAmount, currency)}
+                    </span>
+                  )}
                 </p>
               )}
           </div>
@@ -1022,8 +1143,10 @@ export const DrilldownModal: React.FC<{
               <option value="monthly">{monthlyOptionLabel}</option>
               <option value="previous_month">{t.common.prevMonthShort}</option>
               <option value="yearly">{yearlyOptionLabel}</option>
-              {(drilldownFilter === 'custom' || (Boolean(customDateFrom) && Boolean(customDateTo))) && (
-                <option value="custom">{t.common.custom}</option>
+              {(drilldownFilter === 'custom' ||
+                hasExplicitGoalRange ||
+                (Boolean(customDateFrom) && Boolean(customDateTo))) && (
+                <option value="custom">{customOptionLabel}</option>
               )}
             </select>
           ) : (
@@ -1368,15 +1491,31 @@ export const DrilldownModal: React.FC<{
               </div>
             )}
 
-            {(drilldownType === 'wallet' || drilldownType === 'savings') && drilldownKey && (
-              <button
-                type="button"
-                onClick={() => onStartBalanceCorrection(drilldownKey)}
-                className="mb-3 min-h-[40px] w-full rounded-xl border border-dashed border-slate-300 bg-slate-50 py-2 text-xs font-bold text-[#102A43] hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100"
-              >
-                {t.modals.correctAccountBalance}
-              </button>
-            )}
+            {(drilldownType === 'wallet' || drilldownType === 'savings') &&
+              drilldownKey &&
+              !isReadOnly && (
+                <div className="mb-3 flex shrink-0 items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => onStartBalanceCorrection(drilldownKey)}
+                    className="min-h-[40px] flex-1 cursor-pointer rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs font-bold text-[#102A43] transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700/80"
+                  >
+                    {t.modals.correctAccountBalance}
+                  </button>
+                  {onEditAccount && (
+                    <button
+                      type="button"
+                      onClick={() => onEditAccount(drilldownType, drilldownKey)}
+                      aria-label={`${t.common.edit} ${drilldownKey}`}
+                      title={t.common.edit}
+                      className="inline-flex min-h-[40px] shrink-0 cursor-pointer items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-bold text-[#102A43] transition-colors hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800"
+                    >
+                      <Pencil className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
+                      <span>{t.common.edit}</span>
+                    </button>
+                  )}
+                </div>
+              )}
 
             <div className="no-scrollbar min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
               {filtered.length === 0 ? (
@@ -1405,13 +1544,42 @@ export const DrilldownModal: React.FC<{
           </>
         )}
 
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-4 min-h-[42px] w-full shrink-0 rounded-xl bg-[#16845B] py-2 text-xs font-bold text-white hover:bg-[#126B4A]"
-        >
-          {t.common.close}
-        </button>
+        {!isReadOnly &&
+        ((drilldownPeriodContext?.budgetGoalId && onEditBudgetGoal) ||
+          (drilldownPeriodContext?.savingGoalId && onEditSavingGoal)) ? (
+          <div className="mt-4 flex shrink-0 items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                if (drilldownPeriodContext?.budgetGoalId && onEditBudgetGoal) {
+                  onEditBudgetGoal(drilldownPeriodContext.budgetGoalId);
+                } else if (drilldownPeriodContext?.savingGoalId && onEditSavingGoal) {
+                  onEditSavingGoal(drilldownPeriodContext.savingGoalId);
+                }
+              }}
+              className="min-h-[42px] flex-1 cursor-pointer rounded-xl border border-slate-200 bg-slate-50 py-2 text-xs font-bold text-[#102A43] transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700/80"
+            >
+              {drilldownPeriodContext?.budgetGoalId
+                ? t.modals.editBudgetGoal
+                : t.modals.editSavingGoal}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="min-h-[42px] flex-1 cursor-pointer rounded-xl bg-[#16845B] py-2 text-xs font-bold text-white transition-colors hover:bg-[#126B4A]"
+            >
+              {t.common.close}
+            </button>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={onClose}
+            className="mt-4 min-h-[42px] w-full shrink-0 rounded-xl bg-[#16845B] py-2 text-xs font-bold text-white hover:bg-[#126B4A]"
+          >
+            {t.common.close}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1776,51 +1944,87 @@ export const EditNameModal: React.FC<{
   );
 };
 
-/* --- Merge Category Modal --- */
-export const MergeCategoryModal: React.FC<{
-  mergeTarget: {
-    listType: 'exp_cat' | 'inc_cat';
-    categoryName: string;
-    txCount: number;
-  } | null;
-  targetCategory: string;
-  setTargetCategory: (cat: string) => void;
-  availableCategories: string[];
-  categoryStyles?: Record<string, CategoryStyle>;
-  onConfirmMerge: () => void;
+/* --- Add New Wallet / Savings Account Modal (Home Quick Add) --- */
+export const AddAccountModal: React.FC<{
+  accountType: 'wallet' | 'savings' | null;
+  currency: CurrencySymbol;
+  onSave: (
+    type: 'wallet' | 'savings',
+    name: string,
+    openingBalance: number | null,
+    style?: CategoryStyle
+  ) => Promise<boolean>;
   onClose: () => void;
-}> = ({
-  mergeTarget,
-  targetCategory,
-  setTargetCategory,
-  availableCategories,
-  categoryStyles,
-  onConfirmMerge,
-  onClose,
-}) => {
+}> = ({ accountType, currency, onSave, onClose }) => {
   const { t } = useTranslation();
-  if (!mergeTarget) return null;
+  const [name, setName] = useState('');
+  const [openingBalance, setOpeningBalance] = useState('');
+  const [showStylePicker, setShowStylePicker] = useState(false);
+  const [customStyle, setCustomStyle] = useState<CategoryStyle | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const kind: CategoryKind = mergeTarget.listType === 'exp_cat' ? 'exp' : 'inc';
-  const sourceStyle = getCategoryStyle(categoryStyles, kind, mergeTarget.categoryName);
-  const destinationStyle = targetCategory
-    ? getCategoryStyle(categoryStyles, kind, targetCategory)
-    : null;
+  useEffect(() => {
+    if (accountType) {
+      setName('');
+      setOpeningBalance('');
+      setShowStylePicker(false);
+      setCustomStyle(null);
+      setIsSaving(false);
+    }
+  }, [accountType]);
+
+  if (!accountType) return null;
+
+  const isSavings = accountType === 'savings';
+  const kind: CategoryKind = isSavings ? 'sav' : 'wal';
+  const defaultStyle = getCategoryStyle(
+    undefined,
+    kind,
+    name.trim() || (isSavings ? 'Saving' : 'Wallet')
+  );
+  const activeStyle = customStyle || defaultStyle;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = name.trim();
+    if (!cleanName || isSaving) return;
+
+    const rawBal = openingBalance.trim();
+    const parsedBal = rawBal === '' ? null : Number.parseFloat(rawBal);
+    if (rawBal !== '' && (parsedBal === null || !Number.isFinite(parsedBal))) {
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const ok = await onSave(accountType, cleanName, parsedBal, customStyle || undefined);
+      if (ok) {
+        onClose();
+      }
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
       onClick={onClose}
     >
-      <div
-        className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
+      <form
+        onSubmit={handleSubmit}
+        className="flex max-h-[88vh] w-full max-w-sm flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="mb-3 flex items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-2">
-            <GitMerge className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
+            {isSavings ? (
+              <PiggyBank className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
+            ) : (
+              <Wallet className="h-4 w-4 shrink-0 text-[#16845B] dark:text-emerald-400" />
+            )}
             <h3 className="truncate text-base font-bold text-[#102A43] dark:text-slate-100">
-              {t.modals.mergeCategoryTitle}
+              {isSavings ? t.modals.addSavingsTitle : t.modals.addWalletTitle}
             </h3>
           </div>
           <button
@@ -1833,59 +2037,435 @@ export const MergeCategoryModal: React.FC<{
           </button>
         </div>
 
-        <div className="mb-3 flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-950/60">
-          <CategoryIconBadge style={sourceStyle} size="sm" />
-          <span className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
-            {mergeTarget.categoryName}
-          </span>
+        <div className="no-scrollbar flex-1 space-y-3.5 overflow-y-auto pr-0.5">
+          {/* Account Name + Live Icon Preview */}
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
+              {t.modals.accountNameLabel}
+            </label>
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowStylePicker((prev) => !prev)}
+                title={t.modals.customizeIconColor}
+                aria-label={t.modals.customizeIconColor}
+                className="shrink-0 cursor-pointer rounded-xl transition-transform hover:scale-105 active:scale-95"
+              >
+                <CategoryIconBadge style={activeStyle} size="md" />
+              </button>
+              <input
+                type="text"
+                autoFocus
+                maxLength={100}
+                placeholder={
+                  isSavings ? t.settings.newSavingsPlaceholder : t.settings.newWalletPlaceholder
+                }
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-[#102A43] focus:border-[#16845B] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              />
+            </div>
+          </div>
+
+          {/* Optional Opening Balance */}
+          <div>
+            <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
+              {t.modals.openingBalanceLabel} ({currency})
+            </label>
+            <input
+              type="number"
+              step="any"
+              inputMode="decimal"
+              placeholder="0"
+              value={openingBalance}
+              onChange={(e) => setOpeningBalance(e.target.value)}
+              className="font-mono-num w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-semibold text-[#102A43] focus:border-[#16845B] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            />
+            <p className="mt-1 text-[11px] leading-snug text-slate-400 dark:text-slate-500">
+              {t.modals.openingBalanceHint}
+            </p>
+          </div>
+
+          {/* Expandable Icon & Color Customizer */}
+          <div className="rounded-xl border border-slate-200 bg-slate-50/70 dark:border-slate-800 dark:bg-slate-950/50">
+            <button
+              type="button"
+              onClick={() => setShowStylePicker((prev) => !prev)}
+              aria-expanded={showStylePicker}
+              className="flex min-h-[40px] w-full cursor-pointer items-center justify-between gap-2 px-3 py-2 text-xs font-semibold text-[#102A43] dark:text-slate-200"
+            >
+              <span className="flex items-center gap-2">
+                <Palette className="h-3.5 w-3.5 text-[#16845B] dark:text-emerald-400" />
+                <span>{t.modals.customizeIconColor}</span>
+              </span>
+              <ChevronDown
+                className={`h-4 w-4 text-slate-400 transition-transform ${
+                  showStylePicker ? 'rotate-180' : ''
+                }`}
+              />
+            </button>
+
+            {showStylePicker && (
+              <div className="space-y-3 border-t border-slate-200 px-3 py-3 dark:border-slate-800">
+                <div className="flex flex-wrap gap-1.5">
+                  {CATEGORY_COLORS.map((hex) => {
+                    const selected = activeStyle.color.toLowerCase() === hex.toLowerCase();
+                    return (
+                      <button
+                        key={hex}
+                        type="button"
+                        onClick={() =>
+                          setCustomStyle({ icon: activeStyle.icon, color: hex })
+                        }
+                        aria-label={`Color ${hex}`}
+                        style={{ backgroundColor: hex }}
+                        className={`flex h-6 w-6 cursor-pointer items-center justify-center rounded-full transition-transform ${
+                          selected ? 'scale-110 ring-2 ring-slate-900 ring-offset-1 dark:ring-white dark:ring-offset-slate-900' : 'hover:scale-105'
+                        }`}
+                      >
+                        {selected && <Check className="h-3 w-3 text-white" />}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="grid max-h-36 grid-cols-6 gap-1.5 overflow-y-auto pr-0.5">
+                  {CATEGORY_ICONS.map((opt) => {
+                    const IconComp = opt.icon;
+                    const selected = activeStyle.icon === opt.key;
+                    return (
+                      <button
+                        key={opt.key}
+                        type="button"
+                        title={opt.label}
+                        onClick={() =>
+                          setCustomStyle({ icon: opt.key, color: activeStyle.color })
+                        }
+                        className={`flex h-9 cursor-pointer items-center justify-center rounded-lg border transition-colors ${
+                          selected
+                            ? 'border-[#16845B] bg-emerald-50 text-[#16845B] dark:border-emerald-400 dark:bg-emerald-950/50 dark:text-emerald-300'
+                            : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800'
+                        }`}
+                      >
+                        <IconComp className="h-4 w-4" />
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
-        {mergeTarget.txCount > 0 ? (
+        <div className="mt-4 flex shrink-0 justify-end gap-2">
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-[40px] cursor-pointer rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
+          >
+            {t.common.cancel}
+          </button>
+          <button
+            type="submit"
+            disabled={!name.trim() || isSaving}
+            className={`min-h-[40px] cursor-pointer rounded-xl px-5 py-2 text-xs font-bold text-white disabled:opacity-50 ${
+              isSavings
+                ? 'bg-sky-600 hover:bg-sky-700'
+                : 'bg-[#16845B] hover:bg-[#126B4A]'
+            }`}
+          >
+            {t.modals.addAccountBtn}
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
+/* --- Merge / Move Category & Sub-category Modal --- */
+export const MergeCategoryModal: React.FC<{
+  mergeTarget: {
+    listType: 'exp_cat' | 'inc_cat' | 'sub_cat';
+    categoryName: string;
+    parentCategory?: string;
+    txCount: number;
+    triggeredByDelete?: boolean;
+  } | null;
+  mergeMode: 'merge' | 'as_sub';
+  setMergeMode: (mode: 'merge' | 'as_sub') => void;
+  targetCategory: string;
+  setTargetCategory: (cat: string) => void;
+  targetSubCategory: string;
+  setTargetSubCategory: (sub: string) => void;
+  availableCategories: string[];
+  expenseSubCategories?: Record<string, string[]>;
+  categoryStyles?: Record<string, CategoryStyle>;
+  onConfirmMerge: () => void;
+  onClose: () => void;
+}> = ({
+  mergeTarget,
+  mergeMode,
+  setMergeMode,
+  targetCategory,
+  setTargetCategory,
+  targetSubCategory,
+  setTargetSubCategory,
+  availableCategories,
+  expenseSubCategories = {},
+  categoryStyles,
+  onConfirmMerge,
+  onClose,
+}) => {
+  const { t } = useTranslation();
+  if (!mergeTarget) return null;
+
+  const isSub = mergeTarget.listType === 'sub_cat';
+  const isExp = mergeTarget.listType === 'exp_cat';
+  const isInc = mergeTarget.listType === 'inc_cat';
+  const parentCat = mergeTarget.parentCategory || '';
+
+  const sourceStyle = isSub
+    ? getCategoryStyle(
+        categoryStyles,
+        'sub',
+        getSubCategoryTargetName(parentCat, mergeTarget.categoryName)
+      )
+    : getCategoryStyle(categoryStyles, isExp ? 'exp' : 'inc', mergeTarget.categoryName);
+
+  const canSaveAsSub =
+    (isExp && availableCategories.some((c) => c !== mergeTarget.categoryName)) ||
+    (isSub && availableCategories.some((c) => c !== parentCat));
+
+  const effectiveMode: 'merge' | 'as_sub' = !isInc && canSaveAsSub ? mergeMode : 'merge';
+
+  const selectableCategories = availableCategories.filter((cat) => {
+    if (isExp || isInc) return cat !== mergeTarget.categoryName;
+    if (isSub && effectiveMode === 'as_sub') return cat !== parentCat;
+    return true;
+  });
+
+  const resolvedTargetCategory = selectableCategories.includes(targetCategory)
+    ? targetCategory
+    : selectableCategories[0] || '';
+
+  const targetSubOptions =
+    isSub && effectiveMode === 'merge' && resolvedTargetCategory
+      ? (expenseSubCategories[resolvedTargetCategory] || []).filter(
+          (sub) => !(resolvedTargetCategory === parentCat && sub === mergeTarget.categoryName)
+        )
+      : [];
+
+  const destinationKind: CategoryKind = isInc ? 'inc' : 'exp';
+  const destinationStyle = resolvedTargetCategory
+    ? isSub && effectiveMode === 'merge' && targetSubCategory
+      ? getCategoryStyle(
+          categoryStyles,
+          'sub',
+          getSubCategoryTargetName(resolvedTargetCategory, targetSubCategory)
+        )
+      : getCategoryStyle(categoryStyles, destinationKind, resolvedTargetCategory)
+    : null;
+
+  const isInvalidAction =
+    !resolvedTargetCategory ||
+    ((isExp || isInc) && resolvedTargetCategory === mergeTarget.categoryName) ||
+    (isSub && effectiveMode === 'as_sub' && resolvedTargetCategory === parentCat) ||
+    (isSub &&
+      effectiveMode === 'merge' &&
+      resolvedTargetCategory === parentCat &&
+      targetSubCategory === mergeTarget.categoryName);
+
+  const handleModeSwitch = (nextMode: 'merge' | 'as_sub') => {
+    setMergeMode(nextMode);
+    setTargetSubCategory('');
+    const nextValidCats = availableCategories.filter((cat) => {
+      if (isExp || isInc) return cat !== mergeTarget.categoryName;
+      if (isSub && nextMode === 'as_sub') return cat !== parentCat;
+      return true;
+    });
+    if (!nextValidCats.includes(targetCategory)) {
+      setTargetCategory(nextValidCats[0] || '');
+    }
+  };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            {effectiveMode === 'as_sub' ? (
+              <CornerDownRight className="h-4 w-4 shrink-0 text-[#16845B] dark:text-emerald-400" />
+            ) : (
+              <GitMerge className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
+            )}
+            <h3 className="truncate text-base font-bold text-[#102A43] dark:text-slate-100">
+              {isSub ? t.modals.mergeSubCategoryTitle : t.modals.mergeCategoryTitle}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t.common.close}
+            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Source Badge */}
+        <div className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 dark:border-slate-800 dark:bg-slate-950/60">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <CategoryIconBadge style={sourceStyle} size="sm" />
+            <div className="min-w-0">
+              {isSub && parentCat && (
+                <div className="truncate text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                  {parentCat}
+                </div>
+              )}
+              <div className="truncate text-sm font-bold text-[#102A43] dark:text-slate-100">
+                {mergeTarget.categoryName}
+              </div>
+            </div>
+          </div>
+          {mergeTarget.txCount > 0 && (
+            <span className="font-mono-num shrink-0 rounded-lg bg-slate-200/80 px-2 py-0.5 text-[11px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              {mergeTarget.txCount} {t.settings.transactionsCount}
+            </span>
+          )}
+        </div>
+
+        {/* Mode Switcher: Merge into Category vs Save as Sub-category */}
+        {!isInc && canSaveAsSub && (
+          <div className="mb-3 grid grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800/80">
+            <button
+              type="button"
+              onClick={() => handleModeSwitch('merge')}
+              className={`min-h-[34px] cursor-pointer rounded-lg px-2 py-1.5 text-[11px] font-bold transition-colors ${
+                effectiveMode === 'merge'
+                  ? 'bg-white text-sky-700 shadow-xs dark:bg-slate-900 dark:text-sky-400'
+                  : 'text-slate-500 hover:text-[#102A43] dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              {t.modals.mergeModeMergeTab}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleModeSwitch('as_sub')}
+              className={`min-h-[34px] cursor-pointer rounded-lg px-2 py-1.5 text-[11px] font-bold transition-colors ${
+                effectiveMode === 'as_sub'
+                  ? 'bg-white text-[#16845B] shadow-xs dark:bg-slate-900 dark:text-emerald-400'
+                  : 'text-slate-500 hover:text-[#102A43] dark:text-slate-400 dark:hover:text-slate-200'
+              }`}
+            >
+              {t.modals.mergeModeAsSubTab}
+            </button>
+          </div>
+        )}
+
+        {mergeTarget.triggeredByDelete && mergeTarget.txCount > 0 ? (
           <p className="rounded-xl border border-amber-200 bg-amber-50/70 px-3 py-2.5 text-xs leading-relaxed text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
             <strong>"{mergeTarget.categoryName}"</strong> {t.modals.mergeInUseWarningPrefix}{' '}
             <strong>{mergeTarget.txCount}</strong> {t.modals.mergeInUseWarningSuffix}
           </p>
         ) : (
           <p className="text-xs leading-relaxed text-slate-600 dark:text-slate-300">
-            {t.modals.mergeGenericDesc} <strong>"{mergeTarget.categoryName}"</strong>.
+            {isSub ? (
+              effectiveMode === 'as_sub' ? (
+                t.modals.mergeSubMoveDesc
+              ) : (
+                t.modals.mergeSubIntoDesc
+              )
+            ) : effectiveMode === 'as_sub' ? (
+              <>
+                {t.modals.mergeAsSubDesc} <strong>"{mergeTarget.categoryName}"</strong>.
+              </>
+            ) : (
+              <>
+                {t.modals.mergeGenericDesc} <strong>"{mergeTarget.categoryName}"</strong>.
+              </>
+            )}
           </p>
         )}
 
+        {/* Target Category Selector */}
         <div className="mt-4">
           <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
-            {t.modals.mergeIntoLabel}
+            {effectiveMode === 'as_sub'
+              ? t.modals.saveUnderCategoryLabel
+              : t.modals.mergeIntoLabel}
           </label>
           <div className="flex items-center gap-2">
             {destinationStyle && <CategoryIconBadge style={destinationStyle} size="md" />}
             <select
-              value={targetCategory}
-              onChange={(e) => setTargetCategory(e.target.value)}
+              value={resolvedTargetCategory}
+              onChange={(e) => {
+                setTargetCategory(e.target.value);
+                setTargetSubCategory('');
+              }}
               className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-[#102A43] focus:border-[#16845B] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             >
-              {availableCategories
-                .filter((cat) => cat !== mergeTarget.categoryName)
-                .map((cat) => (
-                  <option key={cat} value={cat}>
-                    {cat}
-                  </option>
-                ))}
+              {selectableCategories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
             </select>
           </div>
         </div>
 
+        {/* Optional Target Sub-category when merging a sub-category */}
+        {isSub && effectiveMode === 'merge' && targetSubOptions.length > 0 && (
+          <div className="mt-3">
+            <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">
+              {t.modals.targetSubCategoryLabel}
+            </label>
+            <select
+              value={targetSubCategory}
+              onChange={(e) => setTargetSubCategory(e.target.value)}
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-medium text-[#102A43] focus:border-[#16845B] focus:outline-none dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+            >
+              <option value="">{t.modals.targetSubNoneOption}</option>
+              {targetSubOptions.map((sub) => (
+                <option key={sub} value={sub}>
+                  {sub}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Result Preview */}
+        {effectiveMode === 'as_sub' && resolvedTargetCategory && (
+          <div className="mt-3 flex items-center gap-2 rounded-xl border border-emerald-200/80 bg-emerald-50/70 px-3 py-2 text-xs font-semibold text-[#16845B] dark:border-emerald-900/50 dark:bg-emerald-950/30 dark:text-emerald-300">
+            <CornerDownRight className="h-3.5 w-3.5 shrink-0" />
+            <span className="truncate">
+              {resolvedTargetCategory} › {mergeTarget.categoryName}
+            </span>
+          </div>
+        )}
+
         <div className="mt-5 space-y-2">
           <button
             type="button"
-            disabled={!targetCategory || targetCategory === mergeTarget.categoryName}
+            disabled={isInvalidAction}
             onClick={onConfirmMerge}
-            className="min-h-[42px] w-full rounded-xl bg-sky-700 py-2 text-xs font-bold text-white hover:bg-sky-800 disabled:opacity-50"
+            className={`min-h-[42px] w-full cursor-pointer rounded-xl py-2 text-xs font-bold text-white disabled:opacity-50 ${
+              effectiveMode === 'as_sub'
+                ? 'bg-[#16845B] hover:bg-[#126B4A]'
+                : 'bg-sky-700 hover:bg-sky-800'
+            }`}
           >
-            {t.modals.mergeAndDeleteBtn}
+            {effectiveMode === 'as_sub' ? t.modals.saveAsSubBtn : t.modals.mergeAndDeleteBtn}
           </button>
           <button
             type="button"
             onClick={onClose}
-            className="min-h-[40px] w-full rounded-xl bg-slate-200 py-2 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200"
+            className="min-h-[40px] w-full cursor-pointer rounded-xl bg-slate-200 py-2 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200"
           >
             {t.common.cancel}
           </button>

@@ -208,6 +208,7 @@ export type DrilldownType =
   | 'expense'
   | 'expense_category'
   | 'income_category'
+  | 'saving_goal'
   | 'lend'
   | 'borrow';
 
@@ -216,6 +217,12 @@ export interface DrilldownPeriodContext {
   yearOffset?: number;
   customOffset?: number;
   periodLabel?: string;
+  startDate?: string;
+  endDate?: string;
+  budgetGoalId?: string;
+  savingGoalId?: string;
+  savingGoalAccount?: string;
+  goalTargetAmount?: number;
 }
 
 export type ShareRole = 'viewer' | 'editor';

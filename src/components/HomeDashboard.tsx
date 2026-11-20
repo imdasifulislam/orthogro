@@ -5,6 +5,7 @@ import {
   ChevronRight,
   PieChart,
   PiggyBank,
+  Plus,
   Search,
   Target,
   TrendingDown,
@@ -476,6 +477,8 @@ interface HomeDashboardProps {
   onResolveDebt: (tx: Transaction) => void;
   onInspectDebt: (tx: Transaction) => void;
   onStartAddingTx: () => void;
+  onAddAccount?: (type: 'wallet' | 'savings') => void;
+  isReadOnly?: boolean;
 }
 
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({
@@ -502,6 +505,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   onResolveDebt,
   onInspectDebt,
   onStartAddingTx,
+  onAddAccount,
+  isReadOnly = false,
 }) => {
   const { lang, t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
@@ -1184,31 +1189,50 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             title={t.dashboard.wallets}
             icon={<Wallet className="h-4 w-4 shrink-0 text-[#16845B] dark:text-emerald-400" />}
           >
-            {(wasDragging) =>
-              wallets.map((w) => {
-                const style = getCategoryStyle(categoryStyles, 'wal', w);
-                return (
+            {(wasDragging) => (
+              <>
+                {wallets.map((w) => {
+                  const style = getCategoryStyle(categoryStyles, 'wal', w);
+                  return (
+                    <button
+                      key={w}
+                      type="button"
+                      onClick={() => {
+                        if (!wasDragging()) onOpenDrilldown('wallet', w, 'all');
+                      }}
+                      className="w-[calc((100%-16px)/3)] shrink-0 snap-start rounded-2xl border border-slate-200 bg-white p-2.5 text-left shadow-sm transition-colors hover:border-[#16845B]/50 sm:w-[calc((100%-24px)/3)] sm:p-4 dark:border-slate-800 dark:bg-slate-900"
+                    >
+                      <div className="flex items-center gap-1.5 sm:gap-2">
+                        <CategoryIconBadge style={style} size="xs" />
+                        <span className="truncate text-[11px] font-bold text-slate-700 sm:text-xs dark:text-slate-200">
+                          {w}
+                        </span>
+                      </div>
+                      <div className="font-mono-num mt-1.5 truncate text-sm font-extrabold text-[#16845B] sm:mt-2 sm:text-base dark:text-emerald-400">
+                        {formatMoney(walletBalances[w] || 0, currency)}
+                      </div>
+                    </button>
+                  );
+                })}
+                {onAddAccount && !isReadOnly && (
                   <button
-                    key={w}
                     type="button"
                     onClick={() => {
-                      if (!wasDragging()) onOpenDrilldown('wallet', w, 'all');
+                      if (!wasDragging()) onAddAccount('wallet');
                     }}
-                    className="w-[calc((100%-16px)/3)] shrink-0 snap-start rounded-2xl border border-slate-200 bg-white p-2.5 text-left shadow-sm transition-colors hover:border-[#16845B]/50 sm:w-[calc((100%-24px)/3)] sm:p-4 dark:border-slate-800 dark:bg-slate-900"
+                    aria-label={t.dashboard.addWallet}
+                    className="flex w-[calc((100%-16px)/3)] shrink-0 snap-start cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-[#16845B]/45 bg-emerald-50/40 p-2.5 text-center transition-colors hover:border-[#16845B] hover:bg-emerald-50 sm:w-[calc((100%-24px)/3)] sm:gap-1.5 sm:p-4 dark:border-emerald-700/60 dark:bg-emerald-950/20 dark:hover:border-emerald-500 dark:hover:bg-emerald-950/40"
                   >
-                    <div className="flex items-center gap-1.5 sm:gap-2">
-                      <CategoryIconBadge style={style} size="xs" />
-                      <span className="truncate text-[11px] font-bold text-slate-700 sm:text-xs dark:text-slate-200">
-                        {w}
-                      </span>
-                    </div>
-                    <div className="font-mono-num mt-1.5 truncate text-sm font-extrabold text-[#16845B] sm:mt-2 sm:text-base dark:text-emerald-400">
-                      {formatMoney(walletBalances[w] || 0, currency)}
-                    </div>
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-100 text-[#16845B] sm:h-7 sm:w-7 dark:bg-emerald-900/60 dark:text-emerald-300">
+                      <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    </span>
+                    <span className="max-w-full truncate text-[11px] font-bold text-[#16845B] sm:text-xs dark:text-emerald-300">
+                      {t.dashboard.addWallet}
+                    </span>
                   </button>
-                );
-              })
-            }
+                )}
+              </>
+            )}
           </SwipeableAccountStrip>
         );
 
@@ -1219,31 +1243,50 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             title={t.dashboard.savingsInvestments}
             icon={<PiggyBank className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />}
           >
-            {(wasDragging) =>
-              savingsList.map((s) => {
-                const style = getCategoryStyle(categoryStyles, 'sav', s);
-                return (
+            {(wasDragging) => (
+              <>
+                {savingsList.map((s) => {
+                  const style = getCategoryStyle(categoryStyles, 'sav', s);
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => {
+                        if (!wasDragging()) onOpenDrilldown('savings', s, 'all');
+                      }}
+                      className="w-[calc((100%-16px)/3)] shrink-0 snap-start rounded-2xl border border-slate-200 bg-white p-2.5 text-left shadow-sm transition-colors hover:border-sky-500/50 sm:w-[calc((100%-24px)/3)] sm:p-4 dark:border-slate-800 dark:bg-slate-900"
+                    >
+                      <div className="flex items-center gap-1.5 sm:gap-2">
+                        <CategoryIconBadge style={style} size="xs" />
+                        <span className="truncate text-[11px] font-bold text-slate-700 sm:text-xs dark:text-slate-200">
+                          {s}
+                        </span>
+                      </div>
+                      <div className="font-mono-num mt-1.5 truncate text-sm font-extrabold text-sky-700 sm:mt-2 sm:text-base dark:text-sky-400">
+                        {formatMoney(walletBalances[s] || 0, currency)}
+                      </div>
+                    </button>
+                  );
+                })}
+                {onAddAccount && !isReadOnly && (
                   <button
-                    key={s}
                     type="button"
                     onClick={() => {
-                      if (!wasDragging()) onOpenDrilldown('savings', s, 'all');
+                      if (!wasDragging()) onAddAccount('savings');
                     }}
-                    className="w-[calc((100%-16px)/3)] shrink-0 snap-start rounded-2xl border border-slate-200 bg-white p-2.5 text-left shadow-sm transition-colors hover:border-sky-500/50 sm:w-[calc((100%-24px)/3)] sm:p-4 dark:border-slate-800 dark:bg-slate-900"
+                    aria-label={t.dashboard.addSavingsAccount}
+                    className="flex w-[calc((100%-16px)/3)] shrink-0 snap-start cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-dashed border-sky-500/45 bg-sky-50/40 p-2.5 text-center transition-colors hover:border-sky-500 hover:bg-sky-50 sm:w-[calc((100%-24px)/3)] sm:gap-1.5 sm:p-4 dark:border-sky-700/60 dark:bg-sky-950/20 dark:hover:border-sky-500 dark:hover:bg-sky-950/40"
                   >
-                    <div className="flex items-center gap-1.5 sm:gap-2">
-                      <CategoryIconBadge style={style} size="xs" />
-                      <span className="truncate text-[11px] font-bold text-slate-700 sm:text-xs dark:text-slate-200">
-                        {s}
-                      </span>
-                    </div>
-                    <div className="font-mono-num mt-1.5 truncate text-sm font-extrabold text-sky-700 sm:mt-2 sm:text-base dark:text-sky-400">
-                      {formatMoney(walletBalances[s] || 0, currency)}
-                    </div>
+                    <span className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-100 text-sky-700 sm:h-7 sm:w-7 dark:bg-sky-900/60 dark:text-sky-300">
+                      <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                    </span>
+                    <span className="max-w-full truncate text-[11px] font-bold text-sky-700 sm:text-xs dark:text-sky-300">
+                      {t.dashboard.addSavingsAccount}
+                    </span>
                   </button>
-                );
-              })
-            }
+                )}
+              </>
+            )}
           </SwipeableAccountStrip>
         );
 
@@ -1595,7 +1638,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (!didGoalSwipeRef.current) onOpenBudgetGoalsModal(goal);
+                                if (!didGoalSwipeRef.current) {
+                                  onOpenDrilldown('expense_category', goal.category, 'monthly', {
+                                    monthOffset: 0,
+                                    budgetGoalId: goal.id,
+                                    goalTargetAmount: goal.monthlyLimit,
+                                  });
+                                }
                               }}
                               className="block w-full cursor-pointer rounded-xl px-2 py-1.5 -mx-2 text-left transition-colors hover:bg-slate-50/90 dark:hover:bg-slate-800/40"
                             >
@@ -1730,7 +1779,24 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                if (!didGoalSwipeRef.current) onOpenSavingGoalsModal(goal);
+                                if (!didGoalSwipeRef.current) {
+                                  onOpenDrilldown(
+                                    'saving_goal',
+                                    goal.title,
+                                    goal.periodType === 'monthly' ? 'monthly' : 'custom',
+                                    {
+                                      monthOffset: goal.periodType === 'monthly' ? 0 : undefined,
+                                      startDate:
+                                        goal.periodType === 'period' ? goal.startDate : undefined,
+                                      endDate:
+                                        goal.periodType === 'period' ? goal.endDate : undefined,
+                                      periodLabel: progress.periodLabel,
+                                      savingGoalId: goal.id,
+                                      savingGoalAccount: goal.account || undefined,
+                                      goalTargetAmount: goal.targetAmount,
+                                    }
+                                  );
+                                }
                               }}
                               className="block w-full cursor-pointer rounded-xl px-2 py-1.5 -mx-2 text-left transition-colors hover:bg-slate-50/90 dark:hover:bg-slate-800/40"
                             >

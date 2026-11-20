@@ -41,6 +41,7 @@ import { CalculatorView } from './components/CalculatorView';
 import { HomeDashboard } from './components/HomeDashboard';
 import { MemoNotepad } from './components/MemoNotepad';
 import {
+  AddAccountModal,
   BudgetGoalsModal,
   CategoryStyleModal,
   ConfirmModal,
@@ -1021,11 +1022,16 @@ function OrthoGroApp() {
   const [transferTargetAccount, setTransferTargetAccount] = useState('');
 
   const [mergeCategoryTarget, setMergeCategoryTarget] = useState<{
-    listType: 'exp_cat' | 'inc_cat';
+    listType: 'exp_cat' | 'inc_cat' | 'sub_cat';
     categoryName: string;
+    parentCategory?: string;
     txCount: number;
+    triggeredByDelete?: boolean;
   } | null>(null);
+  const [mergeMode, setMergeMode] = useState<'merge' | 'as_sub'>('merge');
   const [mergeIntoCategory, setMergeIntoCategory] = useState('');
+  const [mergeIntoSubCategory, setMergeIntoSubCategory] = useState('');
+  const [addingAccountType, setAddingAccountType] = useState<'wallet' | 'savings' | null>(null);
 
   const notify = useCallback((type: ToastMessage['type'], message: string) => {
     const id = generateSafeId('toast');
@@ -2049,6 +2055,7 @@ function OrthoGroApp() {
       showSavingGoalsModal ||
       showBudgetGoalsModal ||
       mergeCategoryTarget ||
+      addingAccountType ||
       editingItem ||
       accountToDelete ||
       walletToCorrect ||
@@ -2081,6 +2088,7 @@ function OrthoGroApp() {
     showSavingGoalsModal,
     showBudgetGoalsModal,
     mergeCategoryTarget,
+    addingAccountType,
     editingItem,
     accountToDelete,
     walletToCorrect,
@@ -2110,6 +2118,7 @@ function OrthoGroApp() {
     showSavingGoalsModal,
     showBudgetGoalsModal,
     mergeCategoryTarget,
+    addingAccountType,
     editingItem,
     accountToDelete,
     walletToCorrect,
@@ -2152,6 +2161,7 @@ function OrthoGroApp() {
     showSavingGoalsModal,
     showBudgetGoalsModal,
     mergeCategoryTarget,
+    addingAccountType,
     editingItem,
     accountToDelete,
     walletToCorrect,
@@ -2236,7 +2246,13 @@ function OrthoGroApp() {
       }
       if (state.mergeCategoryTarget) {
         setMergeCategoryTarget(null);
+        setMergeMode('merge');
         setMergeIntoCategory('');
+        setMergeIntoSubCategory('');
+        return;
+      }
+      if (state.addingAccountType) {
+        setAddingAccountType(null);
         return;
       }
       if (state.editingItem) {
@@ -3688,6 +3704,63 @@ function OrthoGroApp() {
     return true;
   };
 
+  const handleAddAccountFromHome = async (
+    type: 'wallet' | 'savings',
+    name: string,
+    openingBalance: number | null,
+    style?: CategoryStyle
+  ): Promise<boolean> => {
+    const clean = name.trim().slice(0, 100);
+    if (!clean) return false;
+    const created = await handleAddListItem(type, clean, style);
+    if (!created) return false;
+
+    if (openingBalance !== null && Number.isFinite(openingBalance) && openingBalance !== 0) {
+      const id = generateSafeId('corr');
+      const rawDate = getTodayISO();
+      const date = formatDisplayDate(rawDate, currentLanguage);
+      const title = `${t.toasts.balanceCorrection} (${clean})`.slice(0, 200);
+
+      if (currentUser && activeOwnerId) {
+        const uid = activeOwnerId;
+        try {
+          await setDoc(doc(db, 'users', uid, 'transactions', id), {
+            ownerId: uid,
+            title,
+            amount: openingBalance,
+            type: 'correction',
+            category: 'General',
+            wallet: clean,
+            date,
+            rawDate,
+            resolved: true,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        } catch (err) {
+          handleFirestoreError(err, OperationType.CREATE, `users/${uid}/transactions/${id}`);
+        }
+      } else {
+        setTransactions((prev) => [
+          {
+            id,
+            title,
+            amount: openingBalance,
+            type: 'correction',
+            category: 'General',
+            wallet: clean,
+            date,
+            rawDate,
+            resolved: true,
+          },
+          ...prev,
+        ]);
+      }
+    }
+
+    return true;
+  };
+
   const handleReorderList = async (
     type: 'wallet' | 'savings' | 'exp_cat' | 'inc_cat',
     updated: string[]
@@ -3864,8 +3937,7 @@ function OrthoGroApp() {
         ? txCountByExpCategory[item] || 0
         : txCountByIncCategory[item] || 0;
     if (cnt > 0) {
-      setMergeCategoryTarget({ listType: type, categoryName: item, txCount: cnt });
-      setMergeIntoCategory(list.find((c) => c !== item) || '');
+      openMergeCategoryModal(type, item, true);
       return;
     }
 
@@ -4064,51 +4136,74 @@ function OrthoGroApp() {
 
       if (currentUser && activeOwnerId) {
         const uid = activeOwnerId;
-        const batch = writeBatch(db);
-        batch.update(doc(db, 'users', uid), {
-          ...wsPatch,
-          updatedAt: serverTimestamp(),
-        });
-        transactions.forEach((t) => {
-          if (t.wallet === oldName || t.fromWallet === oldName || t.toWallet === oldName) {
+        type BatchOp = (batch: ReturnType<typeof writeBatch>) => void;
+        const ops: BatchOp[] = [
+          (batch) =>
+            batch.update(doc(db, 'users', uid), {
+              ...wsPatch,
+              updatedAt: serverTimestamp(),
+            }),
+        ];
+        transactions.forEach((tx) => {
+          if (tx.wallet === oldName || tx.fromWallet === oldName || tx.toWallet === oldName) {
             const txPatch: Record<string, unknown> = { updatedAt: serverTimestamp() };
-            if (t.wallet === oldName) txPatch.wallet = newName;
-            if (t.fromWallet === oldName) txPatch.fromWallet = newName;
-            if (t.toWallet === oldName) txPatch.toWallet = newName;
-            batch.update(doc(db, 'users', uid, 'transactions', t.id), txPatch);
+            if (tx.wallet === oldName) txPatch.wallet = newName;
+            if (tx.fromWallet === oldName) txPatch.fromWallet = newName;
+            if (tx.toWallet === oldName) txPatch.toWallet = newName;
+            ops.push((batch) =>
+              batch.update(doc(db, 'users', uid, 'transactions', tx.id), txPatch)
+            );
           }
         });
         if (listType === 'savings') {
           savingGoals.forEach((sg) => {
             if (sg.account === oldName) {
-              batch.update(doc(db, 'users', uid, 'savingGoals', sg.id), {
-                account: newName,
-                updatedAt: serverTimestamp(),
-              });
+              ops.push((batch) =>
+                batch.update(doc(db, 'users', uid, 'savingGoals', sg.id), {
+                  account: newName,
+                  updatedAt: serverTimestamp(),
+                })
+              );
             }
           });
         }
+        memos.forEach((m) => {
+          if (m.wallet === oldName) {
+            ops.push((batch) =>
+              batch.update(doc(db, 'users', uid, 'memos', m.id), {
+                wallet: newName,
+                updatedAt: serverTimestamp(),
+              })
+            );
+          }
+        });
         recurringBills.forEach((rb) => {
           if (rb.wallet === oldName) {
-            batch.update(doc(db, 'users', uid, 'recurringBills', rb.id), {
-              wallet: newName,
-              updatedAt: serverTimestamp(),
-            });
+            ops.push((batch) =>
+              batch.update(doc(db, 'users', uid, 'recurringBills', rb.id), {
+                wallet: newName,
+                updatedAt: serverTimestamp(),
+              })
+            );
           }
         });
         try {
-          await batch.commit();
+          for (let i = 0; i < ops.length; i += 400) {
+            const batch = writeBatch(db);
+            ops.slice(i, i + 400).forEach((applyOp) => applyOp(batch));
+            await batch.commit();
+          }
         } catch (err) {
           handleFirestoreError(err, OperationType.WRITE, `users/${uid}`);
         }
       } else {
         await updateWorkspace(wsPatch);
         setTransactions((prev) =>
-          prev.map((t) => ({
-            ...t,
-            wallet: t.wallet === oldName ? newName : t.wallet,
-            fromWallet: t.fromWallet === oldName ? newName : t.fromWallet,
-            toWallet: t.toWallet === oldName ? newName : t.toWallet,
+          prev.map((tx) => ({
+            ...tx,
+            wallet: tx.wallet === oldName ? newName : tx.wallet,
+            fromWallet: tx.fromWallet === oldName ? newName : tx.fromWallet,
+            toWallet: tx.toWallet === oldName ? newName : tx.toWallet,
           }))
         );
         if (listType === 'savings') {
@@ -4116,9 +4211,19 @@ function OrthoGroApp() {
             prev.map((sg) => (sg.account === oldName ? { ...sg, account: newName } : sg))
           );
         }
+        setMemos((prev) =>
+          prev.map((m) => (m.wallet === oldName ? { ...m, wallet: newName } : m))
+        );
         setRecurringBills((prev) =>
           prev.map((rb) => (rb.wallet === oldName ? { ...rb, wallet: newName } : rb))
         );
+      }
+
+      if (
+        (listType === 'wallet' && drilldownType === 'wallet' && drilldownKey === oldName) ||
+        (listType === 'savings' && drilldownType === 'savings' && drilldownKey === oldName)
+      ) {
+        setDrilldownKey(newName);
       }
     } else {
       const targetList =
@@ -4322,33 +4427,467 @@ function OrthoGroApp() {
     notify('success', `${t.toasts.movedHistoryTo} ${newAcc} ${t.toasts.andDeleted} "${oldAcc}".`);
   };
 
+  const openMergeCategoryModal = (
+    listType: 'exp_cat' | 'inc_cat',
+    categoryName: string,
+    triggeredByDelete = false
+  ) => {
+    const list =
+      listType === 'exp_cat' ? workspace.expenseCategories : workspace.incomeCategories;
+    const txCount =
+      listType === 'exp_cat'
+        ? txCountByExpCategory[categoryName] || 0
+        : txCountByIncCategory[categoryName] || 0;
+    setMergeMode('merge');
+    setMergeIntoSubCategory('');
+    setMergeCategoryTarget({ listType, categoryName, txCount, triggeredByDelete });
+    setMergeIntoCategory(list.find((c) => c !== categoryName) || '');
+  };
+
+  const openMergeSubCategoryModal = (parentCategory: string, subName: string) => {
+    const txCount = transactions.filter(
+      (tx) =>
+        tx.type === 'expense' &&
+        tx.category === parentCategory &&
+        (tx.subCategory || '') === subName
+    ).length;
+    setMergeMode('merge');
+    setMergeIntoSubCategory('');
+    setMergeCategoryTarget({
+      listType: 'sub_cat',
+      categoryName: subName,
+      parentCategory,
+      txCount,
+      triggeredByDelete: false,
+    });
+    setMergeIntoCategory(parentCategory);
+  };
+
   const handleConfirmMergeCategory = async () => {
     if (isReadOnlyPartner) {
       notify('info', t.sharing.readOnlyToast);
       return;
     }
-    if (!mergeCategoryTarget || !mergeIntoCategory) return;
-    const { listType, categoryName: sourceCat } = mergeCategoryTarget;
-    const targetCat = mergeIntoCategory;
+    if (!mergeCategoryTarget) return;
+
+    const { listType, categoryName: sourceCat, parentCategory: rawParentCat } = mergeCategoryTarget;
+    const isSub = listType === 'sub_cat';
+    const isExp = listType === 'exp_cat';
+    const isInc = listType === 'inc_cat';
+    const parentCat = rawParentCat || '';
+
+    const baseList = isInc ? workspace.incomeCategories : workspace.expenseCategories;
+    const canSaveAsSub =
+      (isExp && baseList.some((c) => c !== sourceCat)) ||
+      (isSub && baseList.some((c) => c !== parentCat));
+    const effectiveMode: 'merge' | 'as_sub' = !isInc && canSaveAsSub ? mergeMode : 'merge';
+
+    const selectableCategories = baseList.filter((cat) => {
+      if (isExp || isInc) return cat !== sourceCat;
+      if (isSub && effectiveMode === 'as_sub') return cat !== parentCat;
+      return true;
+    });
+    const targetCat = selectableCategories.includes(mergeIntoCategory)
+      ? mergeIntoCategory
+      : selectableCategories[0] || '';
+    if (!targetCat) return;
+
+    const nextStyles = { ...normalizeCategoryStyles(workspace.categoryStyles) };
+    const nextSubsMap = { ...normalizeExpenseSubCategories(workspace.expenseSubCategories) };
+
+    const resetMergeModal = () => {
+      setMergeCategoryTarget(null);
+      setMergeMode('merge');
+      setMergeIntoCategory('');
+      setMergeIntoSubCategory('');
+    };
+
+    // Case 1: Sub-category -> Merge into another category/sub-category OR Move/Save under another category
+    if (isSub) {
+      if (!parentCat) return;
+      const sourceSub = sourceCat;
+
+      if (effectiveMode === 'as_sub' && targetCat === parentCat) return;
+
+      let targetSub = '';
+      if (effectiveMode === 'as_sub') {
+        const targetSubs = [...(nextSubsMap[targetCat] || [])];
+        const existingMatch = targetSubs.find(
+          (s) => s.toLowerCase() === sourceSub.toLowerCase()
+        );
+        targetSub = existingMatch || sourceSub;
+        if (!existingMatch) {
+          targetSubs.push(targetSub);
+          nextSubsMap[targetCat] = targetSubs;
+        }
+        const srcSubKey = getCategoryStyleKey('sub', getSubCategoryTargetName(parentCat, sourceSub));
+        const dstSubKey = getCategoryStyleKey('sub', getSubCategoryTargetName(targetCat, targetSub));
+        if (!nextStyles[dstSubKey]) {
+          nextStyles[dstSubKey] =
+            nextStyles[srcSubKey] ||
+            getCategoryStyle(
+              workspace.categoryStyles,
+              'sub',
+              getSubCategoryTargetName(parentCat, sourceSub)
+            );
+        }
+        delete nextStyles[srcSubKey];
+      } else {
+        const rawTargetSub = mergeIntoSubCategory.trim();
+        const validTargetSubs = (nextSubsMap[targetCat] || []).filter(
+          (s) => !(targetCat === parentCat && s === sourceSub)
+        );
+        targetSub = rawTargetSub && validTargetSubs.includes(rawTargetSub) ? rawTargetSub : '';
+        if (targetCat === parentCat && targetSub === sourceSub) return;
+        delete nextStyles[
+          getCategoryStyleKey('sub', getSubCategoryTargetName(parentCat, sourceSub))
+        ];
+      }
+
+      const remainingParentSubs = (nextSubsMap[parentCat] || []).filter((s) => s !== sourceSub);
+      if (remainingParentSubs.length > 0) {
+        nextSubsMap[parentCat] = remainingParentSubs;
+      } else {
+        delete nextSubsMap[parentCat];
+      }
+
+      const wsPatch = {
+        expenseSubCategories: nextSubsMap,
+        categoryStyles: nextStyles,
+      };
+
+      const matchingTxs = transactions.filter(
+        (tx) =>
+          tx.type === 'expense' &&
+          tx.category === parentCat &&
+          (tx.subCategory || '') === sourceSub
+      );
+      const matchingMemos = memos.filter(
+        (m) => m.category === parentCat && (m.subCategory || '') === sourceSub
+      );
+      const matchingBills = recurringBills.filter(
+        (rb) =>
+          rb.type === 'expense' &&
+          rb.category === parentCat &&
+          (rb.subCategory || '') === sourceSub
+      );
+
+      if (currentUser && activeOwnerId) {
+        const uid = activeOwnerId;
+        type BatchOp = (batch: ReturnType<typeof writeBatch>) => void;
+        const ops: BatchOp[] = [
+          (batch) =>
+            batch.update(doc(db, 'users', uid), {
+              ...wsPatch,
+              updatedAt: serverTimestamp(),
+            }),
+        ];
+
+        matchingTxs.forEach((tx) => {
+          ops.push((batch) =>
+            batch.update(doc(db, 'users', uid, 'transactions', tx.id), {
+              category: targetCat,
+              subCategory: targetSub,
+              updatedAt: serverTimestamp(),
+            })
+          );
+        });
+
+        matchingMemos.forEach((memo) => {
+          ops.push((batch) =>
+            batch.update(doc(db, 'users', uid, 'memos', memo.id), {
+              category: targetCat,
+              subCategory: targetSub,
+              updatedAt: serverTimestamp(),
+            })
+          );
+        });
+
+        matchingBills.forEach((rb) => {
+          ops.push((batch) =>
+            batch.update(doc(db, 'users', uid, 'recurringBills', rb.id), {
+              category: targetCat,
+              subCategory: targetSub,
+              updatedAt: serverTimestamp(),
+            })
+          );
+        });
+
+        try {
+          for (let i = 0; i < ops.length; i += 400) {
+            const batch = writeBatch(db);
+            ops.slice(i, i + 400).forEach((applyOp) => applyOp(batch));
+            await batch.commit();
+          }
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, `users/${uid}`);
+        }
+      } else {
+        await updateWorkspace(wsPatch);
+        if (matchingTxs.length > 0) {
+          setTransactions((prev) =>
+            prev.map((tx) =>
+              tx.type === 'expense' &&
+              tx.category === parentCat &&
+              (tx.subCategory || '') === sourceSub
+                ? { ...tx, category: targetCat, subCategory: targetSub || undefined }
+                : tx
+            )
+          );
+        }
+        if (matchingMemos.length > 0) {
+          setMemos((prev) =>
+            prev.map((m) =>
+              m.category === parentCat && (m.subCategory || '') === sourceSub
+                ? { ...m, category: targetCat, subCategory: targetSub || undefined }
+                : m
+            )
+          );
+        }
+        if (matchingBills.length > 0) {
+          setRecurringBills((prev) =>
+            prev.map((rb) =>
+              rb.type === 'expense' &&
+              rb.category === parentCat &&
+              (rb.subCategory || '') === sourceSub
+                ? { ...rb, category: targetCat, subCategory: targetSub || undefined }
+                : rb
+            )
+          );
+        }
+      }
+
+      resetMergeModal();
+      if (effectiveMode === 'as_sub') {
+        notify(
+          'success',
+          `${t.toasts.savedAsSubPrefix} "${sourceSub}" ${t.toasts.savedAsSubUnderText} "${targetCat} › ${targetSub}".`
+        );
+      } else {
+        const destLabel = targetSub ? `${targetCat} › ${targetSub}` : targetCat;
+        notify(
+          'success',
+          `${t.toasts.mergedPrefix} "${sourceSub}" ${t.toasts.mergedIntoText} "${destLabel}".`
+        );
+      }
+      return;
+    }
+
+    // Case 2: Expense Category -> Save as Sub-category under another Expense Category
     if (sourceCat === targetCat) return;
 
-    const isExp = listType === 'exp_cat';
+    if (isExp && effectiveMode === 'as_sub') {
+      const targetSubs = [...(nextSubsMap[targetCat] || [])];
+      const existingSameSub = targetSubs.find(
+        (s) => s.toLowerCase() === sourceCat.toLowerCase()
+      );
+      const finalSubName = existingSameSub || sourceCat;
+      if (!existingSameSub) {
+        targetSubs.push(finalSubName);
+      }
+
+      const srcCatKey = getCategoryStyleKey('exp', sourceCat);
+      const dstSubKey = getCategoryStyleKey(
+        'sub',
+        getSubCategoryTargetName(targetCat, finalSubName)
+      );
+      if (!nextStyles[dstSubKey]) {
+        nextStyles[dstSubKey] =
+          nextStyles[srcCatKey] ||
+          getCategoryStyle(workspace.categoryStyles, 'exp', sourceCat);
+      }
+      delete nextStyles[srcCatKey];
+
+      const sourceSubs = nextSubsMap[sourceCat] || [];
+      const subCasingMap = new Map<string, string>();
+      sourceSubs.forEach((sub) => {
+        const existing = targetSubs.find((s) => s.toLowerCase() === sub.toLowerCase());
+        const canonical = existing || sub;
+        subCasingMap.set(sub, canonical);
+        if (!existing) {
+          targetSubs.push(canonical);
+        }
+        const srcSubKey = getCategoryStyleKey('sub', getSubCategoryTargetName(sourceCat, sub));
+        const migratedDstKey = getCategoryStyleKey(
+          'sub',
+          getSubCategoryTargetName(targetCat, canonical)
+        );
+        if (nextStyles[srcSubKey]) {
+          if (!nextStyles[migratedDstKey]) {
+            nextStyles[migratedDstKey] = nextStyles[srcSubKey];
+          }
+          delete nextStyles[srcSubKey];
+        }
+      });
+
+      nextSubsMap[targetCat] = targetSubs;
+      delete nextSubsMap[sourceCat];
+
+      const wsPatch = {
+        expenseCategories: workspace.expenseCategories.filter((c) => c !== sourceCat),
+        expenseSubCategories: nextSubsMap,
+        categoryStyles: nextStyles,
+      };
+
+      const resolveMigratedSub = (existingSub?: string) => {
+        const trimmed = (existingSub || '').trim();
+        if (!trimmed) return finalSubName;
+        return subCasingMap.get(trimmed) || trimmed;
+      };
+
+      const matchingTxs = transactions.filter(
+        (tx) => tx.type === 'expense' && tx.category === sourceCat
+      );
+      const matchingMemos = memos.filter((m) => m.category === sourceCat);
+      const matchingBills = recurringBills.filter(
+        (rb) => rb.type === 'expense' && rb.category === sourceCat
+      );
+      const sourceGoals = budgetGoals.filter((g) => g.category === sourceCat);
+      const hasTargetGoal = budgetGoals.some((g) => g.category === targetCat);
+
+      if (currentUser && activeOwnerId) {
+        const uid = activeOwnerId;
+        type BatchOp = (batch: ReturnType<typeof writeBatch>) => void;
+        const ops: BatchOp[] = [
+          (batch) =>
+            batch.update(doc(db, 'users', uid), {
+              ...wsPatch,
+              updatedAt: serverTimestamp(),
+            }),
+        ];
+
+        matchingTxs.forEach((tx) => {
+          ops.push((batch) =>
+            batch.update(doc(db, 'users', uid, 'transactions', tx.id), {
+              category: targetCat,
+              subCategory: resolveMigratedSub(tx.subCategory),
+              updatedAt: serverTimestamp(),
+            })
+          );
+        });
+
+        matchingMemos.forEach((memo) => {
+          ops.push((batch) =>
+            batch.update(doc(db, 'users', uid, 'memos', memo.id), {
+              category: targetCat,
+              subCategory: resolveMigratedSub(memo.subCategory),
+              updatedAt: serverTimestamp(),
+            })
+          );
+        });
+
+        sourceGoals.forEach((goal, index) => {
+          if (hasTargetGoal || index > 0) {
+            ops.push((batch) => batch.delete(doc(db, 'users', uid, 'budgets', goal.id)));
+          } else {
+            ops.push((batch) =>
+              batch.update(doc(db, 'users', uid, 'budgets', goal.id), {
+                category: targetCat,
+                updatedAt: serverTimestamp(),
+              })
+            );
+          }
+        });
+
+        matchingBills.forEach((rb) => {
+          ops.push((batch) =>
+            batch.update(doc(db, 'users', uid, 'recurringBills', rb.id), {
+              category: targetCat,
+              subCategory: resolveMigratedSub(rb.subCategory),
+              updatedAt: serverTimestamp(),
+            })
+          );
+        });
+
+        try {
+          for (let i = 0; i < ops.length; i += 400) {
+            const batch = writeBatch(db);
+            ops.slice(i, i + 400).forEach((applyOp) => applyOp(batch));
+            await batch.commit();
+          }
+        } catch (err) {
+          handleFirestoreError(err, OperationType.WRITE, `users/${uid}`);
+        }
+      } else {
+        await updateWorkspace(wsPatch);
+        if (matchingTxs.length > 0) {
+          setTransactions((prev) =>
+            prev.map((tx) =>
+              tx.type === 'expense' && tx.category === sourceCat
+                ? { ...tx, category: targetCat, subCategory: resolveMigratedSub(tx.subCategory) }
+                : tx
+            )
+          );
+        }
+        if (matchingMemos.length > 0) {
+          setMemos((prev) =>
+            prev.map((m) =>
+              m.category === sourceCat
+                ? { ...m, category: targetCat, subCategory: resolveMigratedSub(m.subCategory) }
+                : m
+            )
+          );
+        }
+        if (sourceGoals.length > 0) {
+          setBudgetGoals((prev) => {
+            if (hasTargetGoal) {
+              return prev.filter((g) => g.category !== sourceCat);
+            }
+            let migratedFirst = false;
+            return prev.reduce<BudgetGoal[]>((acc, g) => {
+              if (g.category === sourceCat) {
+                if (!migratedFirst) {
+                  migratedFirst = true;
+                  acc.push({ ...g, category: targetCat });
+                }
+              } else {
+                acc.push(g);
+              }
+              return acc;
+            }, []);
+          });
+        }
+        if (matchingBills.length > 0) {
+          setRecurringBills((prev) =>
+            prev.map((rb) =>
+              rb.type === 'expense' && rb.category === sourceCat
+                ? { ...rb, category: targetCat, subCategory: resolveMigratedSub(rb.subCategory) }
+                : rb
+            )
+          );
+        }
+      }
+
+      resetMergeModal();
+      notify(
+        'success',
+        `${t.toasts.savedAsSubPrefix} "${sourceCat}" ${t.toasts.savedAsSubUnderText} "${targetCat} › ${finalSubName}".`
+      );
+      return;
+    }
+
+    // Case 3: Expense or Income Category -> Merge into another Category
     const kind: CategoryKind = isExp ? 'exp' : 'inc';
-    const nextStyles = { ...normalizeCategoryStyles(workspace.categoryStyles) };
     delete nextStyles[getCategoryStyleKey(kind, sourceCat)];
 
-    const nextSubsMap = { ...normalizeExpenseSubCategories(workspace.expenseSubCategories) };
+    const subCasingMap = new Map<string, string>();
     if (isExp) {
       const sourceSubs = nextSubsMap[sourceCat] || [];
       const targetSubs = nextSubsMap[targetCat] || [];
       if (sourceSubs.length > 0) {
         const mergedSubs = [...targetSubs];
         sourceSubs.forEach((sub) => {
-          if (!mergedSubs.some((s) => s.toLowerCase() === sub.toLowerCase())) {
-            mergedSubs.push(sub);
+          const existing = mergedSubs.find((s) => s.toLowerCase() === sub.toLowerCase());
+          const canonical = existing || sub;
+          subCasingMap.set(sub, canonical);
+          if (!existing) {
+            mergedSubs.push(canonical);
           }
           const srcSubKey = getCategoryStyleKey('sub', getSubCategoryTargetName(sourceCat, sub));
-          const dstSubKey = getCategoryStyleKey('sub', getSubCategoryTargetName(targetCat, sub));
+          const dstSubKey = getCategoryStyleKey(
+            'sub',
+            getSubCategoryTargetName(targetCat, canonical)
+          );
           if (nextStyles[srcSubKey]) {
             if (!nextStyles[dstSubKey]) {
               nextStyles[dstSubKey] = nextStyles[srcSubKey];
@@ -4379,6 +4918,12 @@ function OrthoGroApp() {
     const sourceGoals = isExp ? budgetGoals.filter((g) => g.category === sourceCat) : [];
     const hasTargetGoal = isExp && budgetGoals.some((g) => g.category === targetCat);
 
+    const resolveMergedSub = (existingSub?: string) => {
+      const trimmed = (existingSub || '').trim();
+      if (!trimmed) return undefined;
+      return subCasingMap.get(trimmed) || trimmed;
+    };
+
     if (currentUser && activeOwnerId) {
       const uid = activeOwnerId;
       type BatchOp = (batch: ReturnType<typeof writeBatch>) => void;
@@ -4391,18 +4936,22 @@ function OrthoGroApp() {
       ];
 
       matchingTxs.forEach((tx) => {
+        const nextSub = isExp ? resolveMergedSub(tx.subCategory) : undefined;
         ops.push((batch) =>
           batch.update(doc(db, 'users', uid, 'transactions', tx.id), {
             category: targetCat,
+            ...(nextSub ? { subCategory: nextSub } : {}),
             updatedAt: serverTimestamp(),
           })
         );
       });
 
       matchingMemos.forEach((memo) => {
+        const nextSub = resolveMergedSub(memo.subCategory);
         ops.push((batch) =>
           batch.update(doc(db, 'users', uid, 'memos', memo.id), {
             category: targetCat,
+            ...(nextSub ? { subCategory: nextSub } : {}),
             updatedAt: serverTimestamp(),
           })
         );
@@ -4423,9 +4972,11 @@ function OrthoGroApp() {
 
       recurringBills.forEach((rb) => {
         if ((isExp ? rb.type === 'expense' : rb.type === 'income') && rb.category === sourceCat) {
+          const nextSub = isExp ? resolveMergedSub(rb.subCategory) : undefined;
           ops.push((batch) =>
             batch.update(doc(db, 'users', uid, 'recurringBills', rb.id), {
               category: targetCat,
+              ...(nextSub ? { subCategory: nextSub } : {}),
               updatedAt: serverTimestamp(),
             })
           );
@@ -4445,16 +4996,22 @@ function OrthoGroApp() {
       await updateWorkspace(wsPatch);
       if (matchingTxs.length > 0) {
         setTransactions((prev) =>
-          prev.map((tx) =>
-            (isExp ? tx.type === 'expense' : tx.type === 'income') && tx.category === sourceCat
-              ? { ...tx, category: targetCat }
-              : tx
-          )
+          prev.map((tx) => {
+            if ((isExp ? tx.type === 'expense' : tx.type === 'income') && tx.category === sourceCat) {
+              const nextSub = isExp ? resolveMergedSub(tx.subCategory) : tx.subCategory;
+              return { ...tx, category: targetCat, ...(isExp ? { subCategory: nextSub } : {}) };
+            }
+            return tx;
+          })
         );
       }
       if (matchingMemos.length > 0) {
         setMemos((prev) =>
-          prev.map((m) => (m.category === sourceCat ? { ...m, category: targetCat } : m))
+          prev.map((m) =>
+            m.category === sourceCat
+              ? { ...m, category: targetCat, subCategory: resolveMergedSub(m.subCategory) }
+              : m
+          )
         );
       }
       if (sourceGoals.length > 0) {
@@ -4477,16 +5034,17 @@ function OrthoGroApp() {
         });
       }
       setRecurringBills((prev) =>
-        prev.map((rb) =>
-          (isExp ? rb.type === 'expense' : rb.type === 'income') && rb.category === sourceCat
-            ? { ...rb, category: targetCat }
-            : rb
-        )
+        prev.map((rb) => {
+          if ((isExp ? rb.type === 'expense' : rb.type === 'income') && rb.category === sourceCat) {
+            const nextSub = isExp ? resolveMergedSub(rb.subCategory) : rb.subCategory;
+            return { ...rb, category: targetCat, ...(isExp ? { subCategory: nextSub } : {}) };
+          }
+          return rb;
+        })
       );
     }
 
-    setMergeCategoryTarget(null);
-    setMergeIntoCategory('');
+    resetMergeModal();
     notify('success', `${t.toasts.mergedPrefix} "${sourceCat}" ${t.toasts.mergedIntoText} "${targetCat}".`);
   };
 
@@ -5620,6 +6178,14 @@ function OrthoGroApp() {
                 }
                 setShowTxTypeDrawer(true);
               }}
+              onAddAccount={(type) => {
+                if (isReadOnlyPartner) {
+                  notify('info', t.sharing.readOnlyToast);
+                  return;
+                }
+                setAddingAccountType(type);
+              }}
+              isReadOnly={isReadOnlyPartner}
             />
           )}
 
@@ -5687,11 +6253,13 @@ function OrthoGroApp() {
                 setEditInputVal(item);
               }}
               onOpenCategoryStyle={(kind, name) => setEditingStyleTarget({ kind, name })}
+              onMergeCategory={(type, item) => openMergeCategoryModal(type, item, false)}
               onAddSubCategory={handleAddSubCategory}
               onRenameSubCategory={(parentCat, oldSub) => {
                 setEditingItem({ listType: 'sub_cat', oldName: oldSub, parentCategory: parentCat });
                 setEditInputVal(oldSub);
               }}
+              onMergeSubCategory={(parentCat, sub) => openMergeSubCategoryModal(parentCat, sub)}
               onDeleteSubCategory={handleDeleteSubCategory}
               onOpenBudgetGoals={() => {
                 setEditingBudgetGoal(null);
@@ -5843,7 +6411,25 @@ function OrthoGroApp() {
         drilldownFilter={drilldownFilter}
         drilldownPeriodContext={drilldownPeriodContext}
         setDrilldownFilter={(nextFilter) => {
-          setDrilldownPeriodContext(null);
+          setDrilldownPeriodContext((prev) => {
+            if (
+              prev &&
+              (prev.budgetGoalId || prev.savingGoalId || prev.savingGoalAccount || prev.goalTargetAmount)
+            ) {
+              return {
+                budgetGoalId: prev.budgetGoalId,
+                savingGoalId: prev.savingGoalId,
+                savingGoalAccount: prev.savingGoalAccount,
+                goalTargetAmount: prev.goalTargetAmount,
+                startDate: prev.startDate,
+                endDate: prev.endDate,
+                ...(nextFilter === 'custom' && (prev.startDate || prev.endDate)
+                  ? { periodLabel: prev.periodLabel }
+                  : {}),
+              };
+            }
+            return null;
+          });
           setDrilldownFilter(nextFilter);
         }}
         transactions={transactions}
@@ -5860,6 +6446,20 @@ function OrthoGroApp() {
           setDrilldownType(nextType);
           setDrilldownKey(nextKey ?? null);
         }}
+        onEditBudgetGoal={(goalId) => {
+          const matched = budgetGoals.find((g) => g.id === goalId) ?? null;
+          setDrilldownType(null);
+          setDrilldownPeriodContext(null);
+          setEditingBudgetGoal(matched);
+          setShowBudgetGoalsModal(true);
+        }}
+        onEditSavingGoal={(goalId) => {
+          const matched = savingGoals.find((g) => g.id === goalId) ?? null;
+          setDrilldownType(null);
+          setDrilldownPeriodContext(null);
+          setEditingSavingGoal(matched);
+          setShowSavingGoalsModal(true);
+        }}
         onStartBalanceCorrection={(accountName) => {
           if (isReadOnlyPartner) {
             notify('info', t.sharing.readOnlyToast);
@@ -5867,6 +6467,14 @@ function OrthoGroApp() {
           }
           setWalletToCorrect(accountName);
           setCorrectBalanceInput(String(walletBalances[accountName] || 0));
+        }}
+        onEditAccount={(accountType, accountName) => {
+          if (isReadOnlyPartner) {
+            notify('info', t.sharing.readOnlyToast);
+            return;
+          }
+          setEditingItem({ listType: accountType, oldName: accountName });
+          setEditInputVal(accountName);
         }}
         onInspectDebt={(tx) => setHistoryModalItem(tx)}
         onEditTransaction={(tx) => {
@@ -5988,24 +6596,17 @@ function OrthoGroApp() {
         }
         onStartMerge={
           editingItem &&
-          (editingItem.listType === 'exp_cat' || editingItem.listType === 'inc_cat') &&
-          (editingItem.listType === 'exp_cat'
-            ? workspace.expenseCategories.length > 1
-            : workspace.incomeCategories.length > 1)
+          ((editingItem.listType === 'exp_cat' && workspace.expenseCategories.length > 1) ||
+            (editingItem.listType === 'inc_cat' && workspace.incomeCategories.length > 1) ||
+            (editingItem.listType === 'sub_cat' && Boolean(editingItem.parentCategory)))
             ? () => {
-                const listType = editingItem.listType as 'exp_cat' | 'inc_cat';
-                const catName = editingItem.oldName;
-                const list =
-                  listType === 'exp_cat'
-                    ? workspace.expenseCategories
-                    : workspace.incomeCategories;
-                const txCount =
-                  listType === 'exp_cat'
-                    ? txCountByExpCategory[catName] || 0
-                    : txCountByIncCategory[catName] || 0;
+                const { listType, oldName, parentCategory } = editingItem;
                 setEditingItem(null);
-                setMergeCategoryTarget({ listType, categoryName: catName, txCount });
-                setMergeIntoCategory(list.find((c) => c !== catName) || '');
+                if (listType === 'sub_cat' && parentCategory) {
+                  openMergeSubCategoryModal(parentCategory, oldName);
+                } else if (listType === 'exp_cat' || listType === 'inc_cat') {
+                  openMergeCategoryModal(listType, oldName, false);
+                }
               }
             : undefined
         }
@@ -6013,20 +6614,34 @@ function OrthoGroApp() {
         onClose={() => setEditingItem(null)}
       />
 
+      <AddAccountModal
+        accountType={addingAccountType}
+        currency={workspace.currency}
+        onSave={handleAddAccountFromHome}
+        onClose={() => setAddingAccountType(null)}
+      />
+
       <MergeCategoryModal
         mergeTarget={mergeCategoryTarget}
+        mergeMode={mergeMode}
+        setMergeMode={setMergeMode}
         targetCategory={mergeIntoCategory}
         setTargetCategory={setMergeIntoCategory}
+        targetSubCategory={mergeIntoSubCategory}
+        setTargetSubCategory={setMergeIntoSubCategory}
         availableCategories={
-          mergeCategoryTarget?.listType === 'exp_cat'
-            ? workspace.expenseCategories
-            : workspace.incomeCategories
+          mergeCategoryTarget?.listType === 'inc_cat'
+            ? workspace.incomeCategories
+            : workspace.expenseCategories
         }
+        expenseSubCategories={workspace.expenseSubCategories}
         categoryStyles={workspace.categoryStyles}
         onConfirmMerge={handleConfirmMergeCategory}
         onClose={() => {
           setMergeCategoryTarget(null);
+          setMergeMode('merge');
           setMergeIntoCategory('');
+          setMergeIntoSubCategory('');
         }}
       />
 
@@ -6362,6 +6977,7 @@ function OrthoGroApp() {
           !resolvingTx &&
           !walletToCorrect &&
           !editingItem &&
+          !addingAccountType &&
           !mergeCategoryTarget &&
           !accountToDelete &&
           !showBudgetGoalsModal &&

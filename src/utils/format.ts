@@ -321,13 +321,10 @@ export function computeSavingGoalProgress(
       savedAmount += t.amount;
     } else if (t.type === 'expense' && t.wallet && targetAccounts.has(t.wallet)) {
       savedAmount -= t.amount;
-    } else if (
-      (t.type === 'correction' || t.type === 'adjustment') &&
-      t.wallet &&
-      targetAccounts.has(t.wallet)
-    ) {
-      savedAmount += t.amount;
     }
+    // Note: 'correction' and 'adjustment' entries (e.g., setting an existing opening balance)
+    // update the account's total balance and Net Worth, but are intentionally excluded from
+    // periodic Saving Goal progress so pre-existing savings do not inflate goal percentages.
   });
 
   const pct = goal.targetAmount > 0 ? (savedAmount / goal.targetAmount) * 100 : 0;
