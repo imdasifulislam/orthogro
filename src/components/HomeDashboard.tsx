@@ -516,6 +516,8 @@ interface HomeDashboardProps {
   isReadOnly?: boolean;
 }
 
+let hasRevealedGoalsBarsInSession = false;
+
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   transactions,
   wallets,
@@ -551,7 +553,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [pieView, setPieView] = useState<'expense' | 'income'>('expense');
   const [pieLegendExpanded, setPieLegendExpanded] = useState(false);
   const [pieRevealed, setPieRevealed] = useState(false);
-  const [goalsBarsRevealed, setGoalsBarsRevealed] = useState(false);
+  const [goalsBarsRevealed, setGoalsBarsRevealed] = useState(
+    () => hasRevealedGoalsBarsInSession
+  );
   const goalsCardRef = useRef<HTMLDivElement | null>(null);
   const [pieMonthOffset, setPieMonthOffset] = useState(0);
   const [pieYearOffset, setPieYearOffset] = useState(0);
@@ -594,23 +598,59 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const isLongPressRef = useRef(false);
 
   useEffect(() => {
+    if (goalsBarsRevealed || hasRevealedGoalsBarsInSession) return;
     const el = goalsCardRef.current;
-    if (!el || goalsBarsRevealed) return;
-    if (typeof IntersectionObserver === 'undefined') {
+    if (!el) return;
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReducedMotion || typeof IntersectionObserver === 'undefined') {
+      hasRevealedGoalsBarsInSession = true;
       setGoalsBarsRevealed(true);
       return;
     }
+
+    let revealTimer: number | null = null;
+    let revealRaf: number | null = null;
+
+    const clearPendingReveal = () => {
+      if (revealTimer !== null) {
+        window.clearTimeout(revealTimer);
+        revealTimer = null;
+      }
+      if (revealRaf !== null) {
+        cancelAnimationFrame(revealRaf);
+        revealRaf = null;
+      }
+    };
+
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries.some((entry) => entry.isIntersecting)) {
-          requestAnimationFrame(() => setGoalsBarsRevealed(true));
-          observer.disconnect();
+        const isVisible = entries.some((entry) => entry.isIntersecting);
+        if (isVisible) {
+          if (revealTimer === null) {
+            revealTimer = window.setTimeout(() => {
+              revealTimer = null;
+              revealRaf = requestAnimationFrame(() => {
+                revealRaf = null;
+                hasRevealedGoalsBarsInSession = true;
+                setGoalsBarsRevealed(true);
+                observer.disconnect();
+              });
+            }, 110);
+          }
+        } else {
+          clearPendingReveal();
         }
       },
-      { threshold: 0.15 }
+      { threshold: 0.2 }
     );
     observer.observe(el);
-    return () => observer.disconnect();
+    return () => {
+      clearPendingReveal();
+      observer.disconnect();
+    };
   }, [goalsBarsRevealed, visibleGrids.budgetGoals, budgetGoals.length, savingGoals.length]);
 
   const handlePressEnd = () => {
@@ -1199,15 +1239,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       case 'netWorth': {
         const isNegativeNetWorth = metrics.absoluteNetWorth < 0;
         const trendPct = metrics.netWorthTrendPct;
-        const absTrendPct = trendPct !== null ? Math.abs(trendPct) : 0;
-        const trendLabel =
-          trendPct !== null
-            ? absTrendPct > 999
-              ? '999%+'
-              : absTrendPct >= 10
-              ? `${Math.round(absTrendPct)}%`
-              : `${Number(absTrendPct.toFixed(1))}%`
-            : null;
         const isTrendPositive = trendPct !== null && trendPct > 0;
 
         return (
@@ -1257,18 +1288,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     variant="netWorth"
                   />
                 </div>
-                {trendLabel && (
+                {trendPct !== null && (
                   <span
-                    className={`inline-flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap tabular-nums ${
+                    aria-hidden="true"
+                    className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-md text-[10px] leading-none ${
                       isTrendPositive
                         ? 'bg-emerald-400/15 text-emerald-300'
                         : 'bg-[#ff6b6b]/15 text-[#ff6b6b]'
                     }`}
                   >
-                    <span aria-hidden="true" className="text-[9px] leading-none">
-                      {isTrendPositive ? '▲' : '▼'}
-                    </span>
-                    <span>{trendLabel}</span>
+                    {isTrendPositive ? '▲' : '▼'}
                   </span>
                 )}
               </div>
@@ -1498,7 +1527,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               handlePressEnd();
               onOpenFilterCard('incExp');
             }}
-            className="select-none overflow-hidden rounded-3xl border border-[#E3E9EC] bg-white pb-3.5 shadow-[0_1px_2px_rgba(17,42,70,0.06),0_6px_20px_rgba(17,42,70,0.06)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-sm"
+            className="select-none overflow-hidden rounded-2xl border border-slate-200 bg-white p-3 shadow-xs dark:border-slate-800 dark:bg-slate-900"
           >
             <div
               style={{
@@ -1507,7 +1536,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               className={!isSwipingIncExp ? 'transition-transform duration-200 ease-out' : ''}
             >
               {/* Header: Month / Period Dropdown */}
-              <div className="flex items-center justify-between px-2 pt-1 sm:px-3">
+              <div className="mb-1.5 flex items-center justify-between">
                 <button
                   type="button"
                   onTouchStart={(e) => e.stopPropagation()}
@@ -1519,15 +1548,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   }}
                   aria-label={t.modals.selectTimePeriod}
                   title={t.modals.selectTimePeriod}
-                  className="inline-flex min-h-[44px] min-w-0 cursor-pointer items-center gap-1.5 rounded-xl px-2 text-[15px] font-medium text-[#112A46] transition-colors hover:bg-slate-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] sm:text-base dark:text-slate-100 dark:hover:bg-slate-800/70"
+                  className="inline-flex min-h-[28px] min-w-0 cursor-pointer items-center gap-1 rounded-lg px-1 text-xs font-semibold text-[#112A46] transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] sm:text-[13px] dark:text-slate-100 dark:hover:bg-slate-800"
                 >
                   <span className="truncate">{incExpSummary.filterButtonLabel}</span>
-                  <ChevronDown className="h-4 w-4 shrink-0 text-[#5B6B7F] dark:text-slate-400" />
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-[#5B6B7F] dark:text-slate-400" />
                 </button>
               </div>
 
               {/* 3-Column Tiles: Income | Expense | Left / Over by */}
-              <div className="grid grid-cols-[1fr_1fr_1.2fr] gap-1.5 px-4 sm:gap-2">
+              <div className="grid grid-cols-[1fr_1fr_1.2fr] gap-1.5 sm:gap-2">
                 {/* Tile 1: Income (Value or Dashed + Add CTA) */}
                 {hasIncome ? (
                   <button
@@ -1625,7 +1654,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
               {/* Progress Bar with Today Pace Marker OR No-Income Hint */}
               {hasIncome ? (
-                <div className="px-5 pt-3">
+                <div className="pt-3">
                   <div className="relative h-2.5 w-full rounded-[5px] bg-[#E8EDF0] dark:bg-slate-800">
                     <div
                       className={`h-2.5 rounded-[5px] transition-all duration-300 ${barFillTheme}`}
@@ -1645,7 +1674,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     </span>
                     {clampedTodayLabelPct !== null && (
                       <span
-                        className="absolute top-0 -translate-x-1/2 bg-white px-1 font-medium text-[#112A46] dark:bg-slate-900 dark:text-slate-200"
+                        className="absolute top-0 -translate-x-1/2 rounded bg-white px-1 font-medium text-[#112A46] dark:bg-slate-900 dark:text-slate-200"
                         style={{ left: `${clampedTodayLabelPct}%` }}
                       >
                         {t.dashboard.todayLabel}
@@ -1654,7 +1683,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   </div>
                 </div>
               ) : (
-                <p className="px-5 pt-2.5 text-xs text-[#5B6B7F] dark:text-slate-400">
+                <p className="pt-2.5 text-xs text-[#5B6B7F] dark:text-slate-400">
                   {incExpSummary.isCurrentMonthView
                     ? t.dashboard.addIncomeHint
                     : t.dashboard.addPeriodIncomeHint}
@@ -1701,30 +1730,36 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         const fmtPlainAmount = (val: number) =>
           Math.abs(val).toLocaleString(undefined, { maximumFractionDigits: 2 });
 
-        const budgetPct = Math.round(budgetSummary.totalPct);
         const budgetOverCount = budgetSummary.sortedGoals.filter((g) => g.pct > 100).length;
         const budgetIsOver = budgetSummary.totalPct > 100 || budgetOverCount > 0;
         const budgetIsNear = !budgetIsOver && budgetSummary.totalPct >= 80;
-        const budgetStatusText =
-          budgetOverCount > 0
-            ? `${budgetOverCount} ${t.dashboard.overLimitCount}`
-            : `${budgetSummary.sortedGoals.length} ${t.dashboard.onTrackCount}`;
 
-        const savingPct = Math.max(0, Math.round(savingSummary.totalPct));
-        const savingReachedCount = savingSummary.items.filter(
-          (item) => item.progress.pct >= 100
-        ).length;
-        const allSavingsReached =
-          hasSavings && savingReachedCount === savingSummary.items.length;
-        const savingStatusText = allSavingsReached
-          ? t.dashboard.allGoalsReached
-          : savingReachedCount > 0
-          ? `${savingReachedCount}/${savingSummary.items.length} ${t.dashboard.reachedLabel}`
-          : `${savingSummary.items.length} ${
-              savingSummary.items.length === 1
-                ? t.dashboard.activeGoalsSingular
-                : t.dashboard.activeGoalsPlural
-            }`;
+        const budgetBarColor = budgetIsOver
+          ? budgetSummary.totalPct >= 115
+            ? 'bg-rose-700 dark:bg-rose-600'
+            : 'bg-rose-600 dark:bg-rose-500'
+          : budgetIsNear
+          ? budgetSummary.totalPct >= 90
+            ? 'bg-amber-600 dark:bg-amber-500'
+            : 'bg-amber-400 dark:bg-amber-400'
+          : budgetSummary.totalPct < 25
+          ? 'bg-emerald-300 dark:bg-emerald-300/80'
+          : budgetSummary.totalPct < 50
+          ? 'bg-emerald-400 dark:bg-emerald-400'
+          : budgetSummary.totalPct < 65
+          ? 'bg-emerald-500 dark:bg-emerald-500'
+          : 'bg-emerald-600 dark:bg-emerald-600';
+
+        const savingBarColor =
+          savingSummary.totalPct < 25
+            ? 'bg-emerald-300 dark:bg-emerald-300/80'
+            : savingSummary.totalPct < 50
+            ? 'bg-emerald-400 dark:bg-emerald-400'
+            : savingSummary.totalPct < 75
+            ? 'bg-emerald-500 dark:bg-emerald-500'
+            : savingSummary.totalPct < 95
+            ? 'bg-emerald-600 dark:bg-emerald-600'
+            : 'bg-emerald-700 dark:bg-emerald-700';
 
         const openOverview = (tab: 'budget' | 'saving') => {
           if (onOpenGoalsOverview) {
@@ -1736,9 +1771,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           }
         };
 
-        const defaultOverviewTab: 'budget' | 'saving' =
-          !hasBudgets && hasSavings ? 'saving' : 'budget';
-
         const budgetBarWidth = goalsBarsRevealed
           ? Math.min(100, Math.max(0, budgetSummary.totalPct))
           : 0;
@@ -1747,35 +1779,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           : 0;
 
         return (
-          <div
-            key="budgetGoals"
-            ref={goalsCardRef}
-            className="overflow-hidden rounded-3xl border border-[#E3E9EC] bg-white pb-4 shadow-[0_1px_2px_rgba(17,42,70,0.06),0_6px_20px_rgba(17,42,70,0.06)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-sm"
-          >
-            {/* Minimal Card Header */}
-            <div className="flex items-center justify-between gap-2 px-4 pt-3.5 pb-2.5">
-              <h3 className="truncate text-[15px] font-bold text-[#112A46] sm:text-base dark:text-slate-100">
-                {t.dashboard.goalsOverview}
-              </h3>
-
-              <button
-                type="button"
-                onClick={() => openOverview(defaultOverviewTab)}
-                className="inline-flex min-h-[32px] shrink-0 cursor-pointer items-center gap-0.5 rounded-xl px-2 text-xs font-semibold text-[#5B6B7F] transition-colors hover:bg-slate-100 hover:text-[#112A46] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E9E6A] dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-              >
-                <span>{t.dashboard.detailsBtn}</span>
-                <ChevronRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-
+          <div key="budgetGoals" ref={goalsCardRef}>
             {/* Side-by-Side 2-Tile Overview: Monthly Budget | Saving Goals */}
-            <div className="grid grid-cols-2 gap-2.5 px-4">
+            <div className="grid grid-cols-2 gap-2.5">
               {/* Tile 1: Monthly Budget */}
               {hasBudgets ? (
                 <button
                   type="button"
                   onClick={() => openOverview('budget')}
-                  className="flex min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border border-slate-200/80 bg-[#FAFBFB] p-3 text-left transition-colors hover:border-slate-300/90 hover:bg-[#F4F7F6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E9E6A] dark:border-slate-800 dark:bg-slate-800/50 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
+                  className="flex min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border border-slate-200/80 bg-white p-3 text-left shadow-sm transition-colors hover:border-slate-300/90 hover:bg-[#FAFBFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E9E6A] dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
                 >
                   <div>
                     {/* Soft Icon Badge + Label */}
@@ -1797,58 +1809,24 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     </div>
 
                     {/* Same-Line Spent / Expected Amount */}
-                    <div className="font-mono-num mt-3 flex items-baseline gap-1 overflow-hidden whitespace-nowrap tabular-nums">
-                      <span className="shrink-0 text-[14px] font-extrabold tracking-tight text-[#112A46] sm:text-[15px] dark:text-slate-100">
+                    <div className="font-mono-num mt-2.5 flex items-baseline gap-1 overflow-hidden whitespace-nowrap text-[13px] tabular-nums sm:text-sm">
+                      <span className="shrink-0 font-bold tracking-tight text-[#112A46] dark:text-slate-100">
                         {formatMoney(budgetSummary.totalSpent, currency)}
                       </span>
-                      <span className="truncate text-[11px] font-medium text-slate-400 sm:text-xs dark:text-slate-500">
+                      <span className="truncate font-medium text-slate-400 dark:text-slate-500">
                         / {fmtPlainAmount(budgetSummary.totalLimit)}
                       </span>
                     </div>
                   </div>
 
-                  <div className="mt-2.5">
-                    {/* Animated Progress Bar + Inline Percentage */}
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200/85 dark:bg-slate-700/85">
-                        <div
-                          className={`goal-bar-fill h-full rounded-full ${
-                            budgetIsOver
-                              ? 'bg-[#EF4444] dark:bg-rose-400'
-                              : budgetIsNear
-                              ? 'bg-[#E8A317] dark:bg-amber-400'
-                              : 'bg-[#10B981] dark:bg-emerald-400'
-                          }`}
-                          style={{ width: `${budgetBarWidth}%` }}
-                        />
-                      </div>
-                      <span className="font-mono-num shrink-0 text-[11px] font-semibold tabular-nums text-slate-600 sm:text-xs dark:text-slate-300">
-                        {budgetPct}%
-                      </span>
-                    </div>
-
-                    {/* Status Dot + Label */}
-                    <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-medium">
-                      <span
-                        aria-hidden="true"
-                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                          budgetIsOver
-                            ? 'bg-[#EF4444] dark:bg-rose-400'
-                            : budgetIsNear
-                            ? 'bg-[#E8A317] dark:bg-amber-400'
-                            : 'bg-[#10B981] dark:bg-emerald-400'
-                        }`}
-                      />
-                      <span
-                        className={`truncate ${
-                          budgetOverCount > 0
-                            ? 'text-slate-600 dark:text-slate-300'
-                            : 'text-[#5B6B7F] dark:text-slate-400'
-                        }`}
-                      >
-                        {budgetStatusText}
-                      </span>
-                    </div>
+                  {/* Animated Progressive-Shade Progress Bar */}
+                  <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div
+                      className={`${
+                        goalsBarsRevealed ? 'goal-bar-fill' : 'transition-none'
+                      } h-full rounded-full ${budgetBarColor}`}
+                      style={{ width: `${budgetBarWidth}%` }}
+                    />
                   </div>
                 </button>
               ) : (
@@ -1858,7 +1836,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     if (isReadOnly) openOverview('budget');
                     else onOpenBudgetGoalsModal();
                   }}
-                  className="flex min-h-[126px] min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border-[1.5px] border-dashed border-[#1E9E6A]/75 bg-white p-3 text-left transition-colors hover:bg-[#E4F3EA]/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E9E6A] dark:border-emerald-500/60 dark:bg-slate-900 dark:hover:bg-emerald-950/30"
+                  className="flex min-h-[96px] min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border-[1.5px] border-dashed border-[#1E9E6A]/75 bg-white p-3 text-left transition-colors hover:bg-[#E4F3EA]/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E9E6A] dark:border-emerald-500/60 dark:bg-slate-900 dark:hover:bg-emerald-950/30"
                 >
                   <div className="flex items-center gap-2">
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400">
@@ -1886,7 +1864,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 <button
                   type="button"
                   onClick={() => openOverview('saving')}
-                  className="flex min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border border-slate-200/80 bg-[#FAFBFB] p-3 text-left transition-colors hover:border-slate-300/90 hover:bg-[#F4F7F6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] dark:border-slate-800 dark:bg-slate-800/50 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
+                  className="flex min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border border-slate-200/80 bg-white p-3 text-left shadow-sm transition-colors hover:border-slate-300/90 hover:bg-[#FAFBFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
                 >
                   <div>
                     {/* Soft Icon Badge + Label */}
@@ -1900,46 +1878,24 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     </div>
 
                     {/* Same-Line Saved / Expected Target Amount */}
-                    <div className="font-mono-num mt-3 flex items-baseline gap-1 overflow-hidden whitespace-nowrap tabular-nums">
-                      <span className="shrink-0 text-[14px] font-extrabold tracking-tight text-[#112A46] sm:text-[15px] dark:text-slate-100">
+                    <div className="font-mono-num mt-2.5 flex items-baseline gap-1 overflow-hidden whitespace-nowrap text-[13px] tabular-nums sm:text-sm">
+                      <span className="shrink-0 font-bold tracking-tight text-[#112A46] dark:text-slate-100">
                         {formatMoney(savingSummary.totalSaved, currency)}
                       </span>
-                      <span className="truncate text-[11px] font-medium text-slate-400 sm:text-xs dark:text-slate-500">
+                      <span className="truncate font-medium text-slate-400 dark:text-slate-500">
                         / {fmtPlainAmount(savingSummary.totalTarget)}
                       </span>
                     </div>
                   </div>
 
-                  <div className="mt-2.5">
-                    {/* Animated Progress Bar + Inline Percentage */}
-                    <div className="flex items-center gap-2">
-                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200/85 dark:bg-slate-700/85">
-                        <div
-                          className="goal-bar-fill h-full rounded-full bg-[#10B981] dark:bg-emerald-400"
-                          style={{ width: `${savingBarWidth}%` }}
-                        />
-                      </div>
-                      <span className="font-mono-num shrink-0 text-[11px] font-semibold tabular-nums text-slate-600 sm:text-xs dark:text-slate-300">
-                        {savingPct}%
-                      </span>
-                    </div>
-
-                    {/* Status Dot + Label */}
-                    <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-medium">
-                      <span
-                        aria-hidden="true"
-                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#10B981] dark:bg-emerald-400"
-                      />
-                      <span
-                        className={`truncate ${
-                          allSavingsReached
-                            ? 'text-[#0F6B45] dark:text-emerald-400'
-                            : 'text-[#5B6B7F] dark:text-slate-400'
-                        }`}
-                      >
-                        {savingStatusText}
-                      </span>
-                    </div>
+                  {/* Animated Progressive-Shade Progress Bar */}
+                  <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div
+                      className={`${
+                        goalsBarsRevealed ? 'goal-bar-fill' : 'transition-none'
+                      } h-full rounded-full ${savingBarColor}`}
+                      style={{ width: `${savingBarWidth}%` }}
+                    />
                   </div>
                 </button>
               ) : (
@@ -1949,7 +1905,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     if (isReadOnly) openOverview('saving');
                     else onOpenSavingGoalsModal();
                   }}
-                  className="flex min-h-[126px] min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border-[1.5px] border-dashed border-[#10B981]/75 bg-white p-3 text-left transition-colors hover:bg-emerald-50/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] dark:border-emerald-500/60 dark:bg-slate-900 dark:hover:bg-emerald-950/30"
+                  className="flex min-h-[96px] min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border-[1.5px] border-dashed border-[#10B981]/75 bg-white p-3 text-left transition-colors hover:bg-emerald-50/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] dark:border-emerald-500/60 dark:bg-slate-900 dark:hover:bg-emerald-950/30"
                 >
                   <div className="flex items-center gap-2">
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[#10B981] dark:bg-emerald-950/60 dark:text-emerald-400">
