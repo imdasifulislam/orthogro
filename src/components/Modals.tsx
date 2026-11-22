@@ -651,6 +651,258 @@ const DrilldownTxRow: React.FC<{
   );
 };
 
+/* --- Horizontal Swipeable Strip for Net Worth Breakdown Rows --- */
+const SwipeableBreakdownStrip: React.FC<{
+  children: React.ReactNode;
+}> = ({ children }) => {
+  const stripRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const mouseDragRef = useRef({
+    active: false,
+    startX: 0,
+    startScrollLeft: 0,
+    moved: false,
+  });
+  const touchDragRef = useRef<{
+    active: boolean;
+    startX: number;
+    startY: number;
+    startScrollLeft: number;
+    lastX: number;
+    lastTime: number;
+    velocity: number;
+    axis: 'x' | 'y' | null;
+    moved: boolean;
+  }>({
+    active: false,
+    startX: 0,
+    startY: 0,
+    startScrollLeft: 0,
+    lastX: 0,
+    lastTime: 0,
+    velocity: 0,
+    axis: null,
+    moved: false,
+  });
+  const suppressClickRef = useRef(false);
+  const momentumRafRef = useRef<number | null>(null);
+
+  const stopMomentum = () => {
+    if (momentumRafRef.current !== null) {
+      cancelAnimationFrame(momentumRafRef.current);
+      momentumRafRef.current = null;
+    }
+  };
+
+  const updateScrollFades = () => {
+    const el = stripRef.current;
+    if (!el) return;
+    const maxScroll = el.scrollWidth - el.clientWidth;
+    setCanScrollLeft(el.scrollLeft > 4);
+    setCanScrollRight(maxScroll - el.scrollLeft > 4);
+  };
+
+  useEffect(() => {
+    const el = stripRef.current;
+    if (!el) return;
+
+    updateScrollFades();
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length !== 1) return;
+      stopMomentum();
+      const touch = e.touches[0];
+      touchDragRef.current = {
+        active: true,
+        startX: touch.clientX,
+        startY: touch.clientY,
+        startScrollLeft: el.scrollLeft,
+        lastX: touch.clientX,
+        lastTime: performance.now(),
+        velocity: 0,
+        axis: null,
+        moved: false,
+      };
+      suppressClickRef.current = false;
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      const state = touchDragRef.current;
+      if (!state.active || e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      const dx = touch.clientX - state.startX;
+      const dy = touch.clientY - state.startY;
+
+      if (!state.axis && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
+        state.axis = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
+      }
+
+      if (state.axis !== 'x') return;
+
+      const hasOverflow = el.scrollWidth > el.clientWidth + 1;
+      if (!hasOverflow) return;
+
+      if (e.cancelable) {
+        e.preventDefault();
+      }
+      e.stopPropagation();
+
+      if (Math.abs(dx) > 6) {
+        state.moved = true;
+        suppressClickRef.current = true;
+      }
+
+      const now = performance.now();
+      const dt = Math.max(1, now - state.lastTime);
+      const stepDx = touch.clientX - state.lastX;
+      state.velocity = stepDx / dt;
+      state.lastX = touch.clientX;
+      state.lastTime = now;
+
+      el.scrollLeft = state.startScrollLeft - dx;
+      updateScrollFades();
+    };
+
+    const handleTouchEnd = () => {
+      const state = touchDragRef.current;
+      if (!state.active) return;
+      state.active = false;
+      const wasHorizontal = state.axis === 'x';
+      const moved = state.moved;
+      const isRecentMove = performance.now() - state.lastTime < 90;
+      let velocity = isRecentMove ? state.velocity : 0;
+      state.axis = null;
+      state.moved = false;
+
+      if (wasHorizontal && Math.abs(velocity) > 0.12) {
+        let lastFrame = performance.now();
+        const step = (now: number) => {
+          const dt = Math.min(32, now - lastFrame);
+          lastFrame = now;
+          el.scrollLeft -= velocity * dt;
+          updateScrollFades();
+          velocity *= Math.pow(0.92, dt / 16);
+          const maxScroll = el.scrollWidth - el.clientWidth;
+          if (
+            Math.abs(velocity) > 0.03 &&
+            el.scrollLeft > 0 &&
+            el.scrollLeft < maxScroll
+          ) {
+            momentumRafRef.current = requestAnimationFrame(step);
+          } else {
+            momentumRafRef.current = null;
+          }
+        };
+        momentumRafRef.current = requestAnimationFrame(step);
+      }
+
+      if (moved) {
+        window.setTimeout(() => {
+          suppressClickRef.current = false;
+        }, 80);
+      }
+    };
+
+    el.addEventListener('touchstart', handleTouchStart, { passive: true });
+    el.addEventListener('touchmove', handleTouchMove, { passive: false });
+    el.addEventListener('touchend', handleTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', handleTouchEnd, { passive: true });
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined') {
+      resizeObserver = new ResizeObserver(updateScrollFades);
+      resizeObserver.observe(el);
+    }
+
+    return () => {
+      stopMomentum();
+      el.removeEventListener('touchstart', handleTouchStart);
+      el.removeEventListener('touchmove', handleTouchMove);
+      el.removeEventListener('touchend', handleTouchEnd);
+      el.removeEventListener('touchcancel', handleTouchEnd);
+      resizeObserver?.disconnect();
+    };
+  }, [children]);
+
+  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = stripRef.current;
+    if (!el || e.button !== 0) return;
+    stopMomentum();
+    mouseDragRef.current = {
+      active: true,
+      startX: e.clientX,
+      startScrollLeft: el.scrollLeft,
+      moved: false,
+    };
+    suppressClickRef.current = false;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const el = stripRef.current;
+    if (!el || !mouseDragRef.current.active) return;
+    const dx = e.clientX - mouseDragRef.current.startX;
+    if (Math.abs(dx) > 6) {
+      mouseDragRef.current.moved = true;
+      suppressClickRef.current = true;
+    }
+    if (mouseDragRef.current.moved) {
+      el.scrollLeft = mouseDragRef.current.startScrollLeft - dx;
+      updateScrollFades();
+    }
+  };
+
+  const handleMouseEnd = () => {
+    if (!mouseDragRef.current.active) return;
+    const moved = mouseDragRef.current.moved;
+    mouseDragRef.current.active = false;
+    mouseDragRef.current.moved = false;
+    if (moved) {
+      window.setTimeout(() => {
+        suppressClickRef.current = false;
+      }, 60);
+    }
+  };
+
+  const handleClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (suppressClickRef.current) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  };
+
+  return (
+    <div className="relative">
+      <div
+        ref={stripRef}
+        onDragStart={(e) => e.preventDefault()}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseEnd}
+        onMouseLeave={handleMouseEnd}
+        onScroll={updateScrollFades}
+        onClickCapture={handleClickCapture}
+        className="no-scrollbar flex cursor-grab touch-pan-y select-none gap-1.5 overflow-x-auto overscroll-x-contain pb-0.5 active:cursor-grabbing"
+      >
+        {children}
+      </div>
+      {canScrollLeft && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 left-0 w-4 bg-gradient-to-r from-white to-transparent dark:from-slate-900"
+        />
+      )}
+      {canScrollRight && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-y-0 right-0 w-5 bg-gradient-to-l from-white to-transparent dark:from-slate-900"
+        />
+      )}
+    </div>
+  );
+};
+
 /* --- Drilldown Modal --- */
 export const DrilldownModal: React.FC<{
   drilldownType: DrilldownType | null;
@@ -705,8 +957,6 @@ export const DrilldownModal: React.FC<{
   const [selectedSubCategory, setSelectedSubCategory] = useState<string | null>(null);
   const [openTxId, setOpenTxId] = useState<string | null>(null);
   const [netWorthView, setNetWorthView] = useState<'summary' | 'transactions'>('summary');
-  const [walletsExpanded, setWalletsExpanded] = useState(false);
-  const [savingsExpanded, setSavingsExpanded] = useState(false);
   const subStripRef = useRef<HTMLDivElement>(null);
   const subStripDragRef = useRef({
     active: false,
@@ -720,8 +970,6 @@ export const DrilldownModal: React.FC<{
     setSelectedSubCategory(null);
     setOpenTxId(null);
     setNetWorthView('summary');
-    setWalletsExpanded(false);
-    setSavingsExpanded(false);
     if (subStripRef.current) {
       subStripRef.current.scrollLeft = 0;
     }
@@ -1055,32 +1303,45 @@ export const DrilldownModal: React.FC<{
 
         let totalLend = 0;
         let totalBorrow = 0;
-        let lendCount = 0;
-        let borrowCount = 0;
+        const activeLendItems: Array<{ tx: Transaction; due: number }> = [];
+        const activeBorrowItems: Array<{ tx: Transaction; due: number }> = [];
+
         transactions.forEach((tx) => {
           const due = tx.remainingBalance !== undefined ? tx.remainingBalance : tx.amount;
-          if (tx.type === 'lend' && !tx.resolved) {
+          if (tx.type === 'lend' && !tx.resolved && due > 0) {
             totalLend += due;
-            lendCount += 1;
+            activeLendItems.push({ tx, due });
           }
-          if (tx.type === 'borrow' && !tx.resolved) {
+          if (tx.type === 'borrow' && !tx.resolved && due > 0) {
             totalBorrow += due;
-            borrowCount += 1;
+            activeBorrowItems.push({ tx, due });
           }
         });
 
+        activeLendItems.sort((a, b) => b.due - a.due);
+        activeBorrowItems.sort((a, b) => b.due - a.due);
+
         const totalAssets = availableCashBalance + totalSavings + totalLend;
         const netWorth = totalAssets - totalBorrow;
+
+        const grossMagnitude =
+          Math.max(0, availableCashBalance) +
+          Math.max(0, totalSavings) +
+          Math.max(0, totalLend) +
+          Math.max(0, totalBorrow);
 
         return {
           availableCashBalance,
           totalSavings,
           totalLend,
           totalBorrow,
-          lendCount,
-          borrowCount,
+          lendCount: activeLendItems.length,
+          borrowCount: activeBorrowItems.length,
+          activeLendItems,
+          activeBorrowItems,
           totalAssets,
           netWorth,
+          grossMagnitude,
         };
       })()
     : null;
@@ -1091,7 +1352,9 @@ export const DrilldownModal: React.FC<{
       onClick={onClose}
     >
       <div
-        className="flex h-[min(84vh,640px)] w-full max-w-md flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
+        className={`flex w-full max-w-md flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900 ${
+          showNetWorthSummary ? 'h-[min(88vh,700px)]' : 'h-[min(84vh,640px)]'
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         <div
@@ -1189,229 +1452,254 @@ export const DrilldownModal: React.FC<{
         )}
 
         {showNetWorthSummary && netWorthSummary ? (
-          <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto pr-0.5">
-            {/* Hero Net Worth & Available Balance Card */}
-            <div className="rounded-2xl bg-[#102A43] p-4 text-white dark:border dark:border-slate-800 dark:bg-slate-950">
-              <div className="flex items-center justify-between gap-2 text-xs font-medium text-slate-300">
-                <span>{t.dashboard.netWorth}</span>
-                <span>{formatDisplayDate(getTodayISO(), lang)}</span>
-              </div>
-              <div className="font-mono-num mt-1 text-2xl font-extrabold tracking-tight sm:text-3xl">
-                {formatMoney(netWorthSummary.netWorth, currency)}
-              </div>
-              <div className="mt-3 border-t border-white/10 pt-2.5 text-xs text-slate-300">
-                <span>
-                  {t.dashboard.availableCash}:{' '}
-                  <strong className="font-mono-num font-bold text-white">
-                    {formatMoney(netWorthSummary.availableCashBalance, currency)}
-                  </strong>
-                </span>
+          <div className="no-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+            {/* Compact Hero Net Worth & Green/Red Composition Bar */}
+            <div className="net-worth-card relative overflow-hidden rounded-2xl p-3 text-white">
+              <div className="relative z-10">
+                <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-slate-300">
+                  <span>{t.dashboard.netWorth}</span>
+                  <span>{formatDisplayDate(getTodayISO(), lang)}</span>
+                </div>
+                <div className="font-mono-num mt-0.5 text-xl font-extrabold tracking-tight sm:text-2xl">
+                  {formatMoney(netWorthSummary.netWorth, currency)}
+                </div>
+
+                {/* 2-Color Green (Assets) vs Red (Borrowed) Bar */}
+                {(() => {
+                  const positiveAssets = Math.max(0, netWorthSummary.totalAssets);
+                  const positiveBorrowed = Math.max(0, netWorthSummary.totalBorrow);
+                  const barTotal = positiveAssets + positiveBorrowed;
+                  if (barTotal <= 0) return null;
+                  return (
+                    <div className="mt-2 flex h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                      {positiveAssets > 0 && (
+                        <div
+                          style={{ width: `${(positiveAssets / barTotal) * 100}%` }}
+                          className="h-full bg-emerald-400"
+                        />
+                      )}
+                      {positiveBorrowed > 0 && (
+                        <div
+                          style={{ width: `${(positiveBorrowed / barTotal) * 100}%` }}
+                          className="h-full bg-rose-400"
+                        />
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 border-t border-white/10 pt-1.5 text-[11px] text-slate-300">
+                  <span>
+                    {t.modals.totalAssetsLabel}:{' '}
+                    <strong className="font-mono-num font-semibold text-emerald-300">
+                      +{formatMoney(netWorthSummary.totalAssets, currency)}
+                    </strong>
+                  </span>
+                  <span>
+                    {t.modals.lessBorrowedLabel}:{' '}
+                    <strong className="font-mono-num font-semibold text-rose-300">
+                      −{formatMoney(netWorthSummary.totalBorrow, currency)}
+                    </strong>
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* Collapsible At-a-Glance Balance Breakdown */}
-            <div className="mt-3 divide-y divide-slate-100 border-t border-slate-100 dark:divide-slate-800/80 dark:border-slate-800">
-              {/* Wallets Row (Minimized by default, tap to expand) */}
-              <div>
-                <button
-                  type="button"
-                  aria-expanded={walletsExpanded}
-                  onClick={() => setWalletsExpanded((prev) => !prev)}
-                  className="flex min-h-[46px] w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                >
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
-                      <Wallet className="h-3.5 w-3.5" />
-                    </span>
-                    <span className="min-w-0 truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
-                      {t.dashboard.wallets}{' '}
-                      <span className="font-medium text-slate-400 dark:text-slate-500">
-                        ({wallets.length})
-                      </span>
+            {/* Row 1: Wallets (Compact 3-up Swipeable Cards) */}
+            <div>
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
+                    <Wallet className="h-3 w-3" />
+                  </span>
+                  <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                    {t.dashboard.wallets}{' '}
+                    <span className="font-medium text-slate-400 dark:text-slate-500">
+                      ({wallets.length})
                     </span>
                   </span>
-                  <span className="flex shrink-0 items-center gap-1.5">
-                    <span className="font-mono-num text-xs font-extrabold text-[#102A43] dark:text-slate-100">
-                      +{formatMoney(netWorthSummary.availableCashBalance, currency)}
-                    </span>
-                    <ChevronDown
-                      className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${
-                        walletsExpanded ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </span>
-                </button>
-                {walletsExpanded && (
-                  <div className="divide-y divide-slate-100 pb-1.5 pl-8 dark:divide-slate-800/70">
-                    {wallets.map((w) => {
-                      const style = getCategoryStyle(categoryStyles, 'wal', w);
-                      const bal = walletBalances[w] || 0;
-                      return (
-                        <button
-                          key={w}
-                          type="button"
-                          onClick={() => onSelectDrilldown?.('wallet', w)}
-                          className="flex min-h-[40px] w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                        >
-                          <span className="flex min-w-0 items-center gap-2">
-                            <CategoryIconBadge style={style} size="xs" />
-                            <span className="truncate text-xs font-medium text-slate-700 dark:text-slate-200">
-                              {w}
-                            </span>
-                          </span>
-                          <span className="flex shrink-0 items-center gap-1">
-                            <span
-                              className={`font-mono-num text-xs font-bold ${
-                                bal < 0
-                                  ? 'text-[#D94848] dark:text-rose-400'
-                                  : 'text-[#102A43] dark:text-slate-100'
-                              }`}
-                            >
-                              {formatMoney(bal, currency)}
-                            </span>
-                            <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+                </div>
+                <span className="font-mono-num shrink-0 text-xs font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
+                  {netWorthSummary.availableCashBalance >= 0 ? '+' : ''}
+                  {formatMoney(netWorthSummary.availableCashBalance, currency)}
+                </span>
               </div>
 
-              {/* Savings & Investments Row (Minimized by default, tap to expand) */}
-              <div>
-                <button
-                  type="button"
-                  aria-expanded={savingsExpanded}
-                  onClick={() => setSavingsExpanded((prev) => !prev)}
-                  className="flex min-h-[46px] w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                >
-                  <span className="flex min-w-0 items-center gap-2.5">
-                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
-                      <PiggyBank className="h-3.5 w-3.5" />
-                    </span>
-                    <span className="min-w-0 truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
-                      {t.dashboard.savingsInvestments}{' '}
-                      <span className="font-medium text-slate-400 dark:text-slate-500">
-                        ({savingsList.length})
+              <SwipeableBreakdownStrip>
+                {wallets.map((w) => {
+                  const bal = walletBalances[w] || 0;
+                  return (
+                    <button
+                      key={w}
+                      type="button"
+                      onClick={() => onSelectDrilldown?.('wallet', w)}
+                      className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2 py-1.5 text-left transition-colors hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-emerald-500/40"
+                    >
+                      <span className="truncate text-[11px] font-medium leading-tight text-slate-600 dark:text-slate-300">
+                        {w}
                       </span>
+                      <span className="font-mono-num mt-0.5 truncate text-xs font-bold leading-tight tabular-nums text-[#102A43] dark:text-slate-100">
+                        {formatMoney(bal, currency)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </SwipeableBreakdownStrip>
+            </div>
+
+            {/* Row 2: Savings & Investments (Compact 3-up Swipeable Cards) */}
+            <div>
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-1.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
+                    <PiggyBank className="h-3 w-3" />
+                  </span>
+                  <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                    {t.dashboard.savingsInvestments}{' '}
+                    <span className="font-medium text-slate-400 dark:text-slate-500">
+                      ({savingsList.length})
                     </span>
                   </span>
-                  <span className="flex shrink-0 items-center gap-1.5">
-                    <span className="font-mono-num text-xs font-extrabold text-[#16845B] dark:text-emerald-400">
-                      +{formatMoney(netWorthSummary.totalSavings, currency)}
-                    </span>
-                    <ChevronDown
-                      className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${
-                        savingsExpanded ? 'rotate-180' : ''
-                      }`}
-                    />
-                  </span>
-                </button>
-                {savingsExpanded && (
-                  <div className="pb-1.5 pl-8">
-                    {savingsList.length === 0 ? (
-                      <p className="px-1.5 py-2 text-xs text-slate-500 dark:text-slate-400">
-                        {t.modals.noSavingsAccounts}
-                      </p>
-                    ) : (
-                      <div className="divide-y divide-slate-100 dark:divide-slate-800/70">
-                        {savingsList.map((s) => {
-                          const style = getCategoryStyle(categoryStyles, 'sav', s);
-                          const bal = walletBalances[s] || 0;
-                          return (
-                            <button
-                              key={s}
-                              type="button"
-                              onClick={() => onSelectDrilldown?.('savings', s)}
-                              className="flex min-h-[40px] w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-1.5 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
-                            >
-                              <span className="flex min-w-0 items-center gap-2">
-                                <CategoryIconBadge style={style} size="xs" />
-                                <span className="truncate text-xs font-medium text-slate-700 dark:text-slate-200">
-                                  {s}
-                                </span>
-                              </span>
-                              <span className="flex shrink-0 items-center gap-1">
-                                <span className="font-mono-num text-xs font-bold text-[#16845B] dark:text-emerald-400">
-                                  {formatMoney(bal, currency)}
-                                </span>
-                                <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                              </span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
+                </div>
+                <span className="font-mono-num shrink-0 text-xs font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
+                  +{formatMoney(netWorthSummary.totalSavings, currency)}
+                </span>
               </div>
 
-              {/* Lent (Receivable) Row */}
+              {savingsList.length === 0 ? (
+                <p className="py-0.5 text-[11px] text-slate-400 dark:text-slate-500">
+                  {t.modals.noSavingsAccounts}
+                </p>
+              ) : (
+                <SwipeableBreakdownStrip>
+                  {savingsList.map((s) => {
+                    const bal = walletBalances[s] || 0;
+                    return (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => onSelectDrilldown?.('savings', s)}
+                        className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2 py-1.5 text-left transition-colors hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-emerald-500/40"
+                      >
+                        <span className="truncate text-[11px] font-medium leading-tight text-slate-600 dark:text-slate-300">
+                          {s}
+                        </span>
+                        <span className="font-mono-num mt-0.5 truncate text-xs font-bold leading-tight tabular-nums text-[#102A43] dark:text-slate-100">
+                          {formatMoney(bal, currency)}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </SwipeableBreakdownStrip>
+              )}
+            </div>
+
+            {/* Row 3: Lent / Receivable (Compact 3-up Swipeable Cards) */}
+            <div>
               <button
                 type="button"
                 onClick={() => onSelectDrilldown?.('lend', null)}
-                className="flex min-h-[46px] w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                className="mb-1.5 flex w-full cursor-pointer items-center justify-between gap-2 text-left"
               >
-                <span className="flex min-w-0 items-center gap-2.5">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-400">
-                    <ArrowUpRight className="h-3.5 w-3.5" />
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
+                    <ArrowUpRight className="h-3 w-3" />
                   </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
-                      {t.dashboard.lentReceivable}
+                  <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                    {t.dashboard.lentReceivable}{' '}
+                    <span className="font-medium text-slate-400 dark:text-slate-500">
+                      ({netWorthSummary.lendCount})
                     </span>
-                    {netWorthSummary.lendCount > 0 && (
-                      <span className="block text-[11px] text-slate-400 dark:text-slate-500">
-                        {netWorthSummary.lendCount} {t.modals.activeRecordsSuffix}
-                      </span>
-                    )}
                   </span>
                 </span>
-                <span className="flex shrink-0 items-center gap-1.5">
-                  <span className="font-mono-num text-xs font-extrabold text-blue-700 dark:text-blue-400">
+                <span className="flex shrink-0 items-center gap-0.5">
+                  <span className="font-mono-num text-xs font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
                     +{formatMoney(netWorthSummary.totalLend, currency)}
                   </span>
-                  <ChevronRight className="h-4 w-4 text-slate-400" />
+                  <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
                 </span>
               </button>
 
-              {/* Borrowed (Payable) Row */}
+              {netWorthSummary.activeLendItems.length === 0 ? (
+                <p className="py-0.5 text-[11px] text-slate-400 dark:text-slate-500">
+                  {t.modals.noActiveLent}
+                </p>
+              ) : (
+                <SwipeableBreakdownStrip>
+                  {netWorthSummary.activeLendItems.map(({ tx, due }) => (
+                    <button
+                      key={tx.id}
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onInspectDebt(tx);
+                      }}
+                      className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2 py-1.5 text-left transition-colors hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-emerald-500/40"
+                    >
+                      <span className="truncate text-[11px] font-medium leading-tight text-slate-600 dark:text-slate-300">
+                        {tx.title || t.dashboard.lentReceivable}
+                      </span>
+                      <span className="font-mono-num mt-0.5 truncate text-xs font-bold leading-tight tabular-nums text-[#102A43] dark:text-slate-100">
+                        {formatMoney(due, currency)}
+                      </span>
+                    </button>
+                  ))}
+                </SwipeableBreakdownStrip>
+              )}
+            </div>
+
+            {/* Row 4: Borrowed / Payable (Compact 3-up Swipeable Cards) */}
+            <div>
               <button
                 type="button"
                 onClick={() => onSelectDrilldown?.('borrow', null)}
-                className="flex min-h-[46px] w-full cursor-pointer items-center justify-between gap-3 rounded-lg px-1.5 py-2 text-left transition-colors hover:bg-slate-50 dark:hover:bg-slate-800/50"
+                className="mb-1.5 flex w-full cursor-pointer items-center justify-between gap-2 text-left"
               >
-                <span className="flex min-w-0 items-center gap-2.5">
-                  <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-purple-50 text-purple-700 dark:bg-purple-950/60 dark:text-purple-400">
-                    <ArrowDownLeft className="h-3.5 w-3.5" />
+                <span className="flex min-w-0 items-center gap-1.5">
+                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-rose-50 text-[#D94848] dark:bg-rose-950/60 dark:text-rose-400">
+                    <ArrowDownLeft className="h-3 w-3" />
                   </span>
-                  <span className="min-w-0">
-                    <span className="block truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
-                      {t.dashboard.borrowedPayable}
+                  <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
+                    {t.dashboard.borrowedPayable}{' '}
+                    <span className="font-medium text-slate-400 dark:text-slate-500">
+                      ({netWorthSummary.borrowCount})
                     </span>
-                    {netWorthSummary.borrowCount > 0 && (
-                      <span className="block text-[11px] text-slate-400 dark:text-slate-500">
-                        {netWorthSummary.borrowCount} {t.modals.activeRecordsSuffix}
-                      </span>
-                    )}
                   </span>
                 </span>
-                <span className="flex shrink-0 items-center gap-1.5">
-                  <span className="font-mono-num text-xs font-extrabold text-[#D94848] dark:text-rose-400">
+                <span className="flex shrink-0 items-center gap-0.5">
+                  <span className="font-mono-num text-xs font-extrabold tabular-nums text-[#D94848] dark:text-rose-400">
                     −{formatMoney(netWorthSummary.totalBorrow, currency)}
                   </span>
-                  <ChevronRight className="h-4 w-4 text-slate-400" />
+                  <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
                 </span>
               </button>
-            </div>
 
-            {/* Net Worth Summary Total */}
-            <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-200 pt-3 text-xs font-bold text-[#102A43] dark:border-slate-800 dark:text-slate-100">
-              <span>{t.dashboard.netWorth}</span>
-              <span className="font-mono-num text-sm">
-                {formatMoney(netWorthSummary.netWorth, currency)}
-              </span>
+              {netWorthSummary.activeBorrowItems.length === 0 ? (
+                <p className="py-0.5 text-[11px] text-slate-400 dark:text-slate-500">
+                  {t.modals.noActiveBorrowed}
+                </p>
+              ) : (
+                <SwipeableBreakdownStrip>
+                  {netWorthSummary.activeBorrowItems.map(({ tx, due }) => (
+                    <button
+                      key={tx.id}
+                      type="button"
+                      onClick={() => {
+                        onClose();
+                        onInspectDebt(tx);
+                      }}
+                      className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2 py-1.5 text-left transition-colors hover:border-rose-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-rose-500/40"
+                    >
+                      <span className="truncate text-[11px] font-medium leading-tight text-slate-600 dark:text-slate-300">
+                        {tx.title || t.dashboard.borrowedPayable}
+                      </span>
+                      <span className="font-mono-num mt-0.5 truncate text-xs font-bold leading-tight tabular-nums text-[#102A43] dark:text-slate-100">
+                        {formatMoney(due, currency)}
+                      </span>
+                    </button>
+                  ))}
+                </SwipeableBreakdownStrip>
+              )}
             </div>
           </div>
         ) : (
@@ -3872,3 +4160,606 @@ export const RecurringBillsModal: React.FC<{
     </div>
   );
 };
+
+/* --- Goals Overview Modal (Budget & Saving Goals Detail Sheet) --- */
+export const GoalsOverviewModal: React.FC<{
+  activeTab: 'budget' | 'saving' | null;
+  setActiveTab: (tab: 'budget' | 'saving') => void;
+  budgetGoals: BudgetGoal[];
+  savingGoals: SavingGoal[];
+  monthlySpentByCategory: Record<string, number>;
+  transactions: Transaction[];
+  savingsList: string[];
+  categoryStyles?: Record<string, CategoryStyle>;
+  currency: CurrencySymbol;
+  isReadOnly?: boolean;
+  onInspectBudgetGoal: (goal: BudgetGoal) => void;
+  onInspectSavingGoal: (
+    goal: SavingGoal,
+    progress: ReturnType<typeof computeSavingGoalProgress>
+  ) => void;
+  onEditBudgetGoal: (goal?: BudgetGoal) => void;
+  onEditSavingGoal: (goal?: SavingGoal) => void;
+  onClose: () => void;
+}> = ({
+  activeTab,
+  setActiveTab,
+  budgetGoals,
+  savingGoals,
+  monthlySpentByCategory,
+  transactions,
+  savingsList,
+  categoryStyles,
+  currency,
+  isReadOnly = false,
+  onInspectBudgetGoal,
+  onInspectSavingGoal,
+  onEditBudgetGoal,
+  onEditSavingGoal,
+  onClose,
+}) => {
+  const { lang, t } = useTranslation();
+  const [barsReady, setBarsReady] = useState(false);
+
+  useEffect(() => {
+    if (!activeTab) {
+      setBarsReady(false);
+      return;
+    }
+    setBarsReady(false);
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(() => setBarsReady(true));
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [activeTab]);
+
+  if (!activeTab) return null;
+
+  const isBudgetTab = activeTab === 'budget';
+  const fmtPlainAmount = (val: number) =>
+    Math.abs(val).toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+  const now = new Date();
+  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
+  const todayPacePct = Math.min(100, Math.max(0, (now.getDate() / daysInMonth) * 100));
+
+  const sortedBudgetItems = [...budgetGoals]
+    .map((goal) => {
+      const spent = monthlySpentByCategory[goal.category] || 0;
+      const pct = goal.monthlyLimit > 0 ? (spent / goal.monthlyLimit) * 100 : 0;
+      return { goal, spent, pct };
+    })
+    .sort((a, b) => b.pct - a.pct);
+
+  const totalBudgetLimit = budgetGoals.reduce((sum, g) => sum + g.monthlyLimit, 0);
+  const totalBudgetSpent = budgetGoals.reduce(
+    (sum, g) => sum + (monthlySpentByCategory[g.category] || 0),
+    0
+  );
+  const totalBudgetPct = totalBudgetLimit > 0 ? (totalBudgetSpent / totalBudgetLimit) * 100 : 0;
+  const budgetOverCount = sortedBudgetItems.filter((item) => item.pct > 100).length;
+  const budgetIsOver = totalBudgetPct > 100 || budgetOverCount > 0;
+  const budgetIsNear = !budgetIsOver && totalBudgetPct >= 80;
+
+  const sortedSavingItems = savingGoals
+    .map((goal) => ({
+      goal,
+      progress: computeSavingGoalProgress(goal, transactions, savingsList, lang),
+    }))
+    .sort((a, b) => b.progress.pct - a.progress.pct);
+
+  const totalSavingTarget = savingGoals.reduce((sum, g) => sum + g.targetAmount, 0);
+  const totalSavingSaved = sortedSavingItems.reduce(
+    (sum, item) => sum + Math.max(0, item.progress.savedAmount),
+    0
+  );
+  const totalSavingPct =
+    totalSavingTarget > 0 ? (totalSavingSaved / totalSavingTarget) * 100 : 0;
+  const savingReachedCount = sortedSavingItems.filter((item) => item.progress.pct >= 100).length;
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div
+        className="flex h-[min(84vh,640px)] w-full max-w-md flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="mb-3 flex shrink-0 items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-2">
+            {isBudgetTab ? (
+              <Target className="h-4 w-4 shrink-0 text-[#1E9E6A] dark:text-emerald-400" />
+            ) : (
+              <PiggyBank className="h-4 w-4 shrink-0 text-[#10B981] dark:text-emerald-400" />
+            )}
+            <h3 className="truncate text-base font-bold text-[#102A43] dark:text-slate-100">
+              {t.dashboard.goalsOverview}
+            </h3>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t.common.close}
+            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Segmented Tab Switcher */}
+        <div className="mb-3.5 grid shrink-0 grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800/80">
+          <button
+            type="button"
+            onClick={() => setActiveTab('budget')}
+            className={`flex min-h-[38px] cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-bold transition-all ${
+              isBudgetTab
+                ? 'bg-white text-[#102A43] shadow-sm dark:bg-slate-900 dark:text-slate-100'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <Target
+              className={`h-3.5 w-3.5 shrink-0 ${
+                isBudgetTab ? 'text-sky-600 dark:text-sky-400' : ''
+              }`}
+            />
+            <span className="truncate">{t.dashboard.monthlyBudgetGoals}</span>
+            {budgetGoals.length > 0 && (
+              <span className="font-mono-num shrink-0 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                ({budgetGoals.length})
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('saving')}
+            className={`flex min-h-[38px] cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-bold transition-all ${
+              !isBudgetTab
+                ? 'bg-white text-[#102A43] shadow-sm dark:bg-slate-900 dark:text-slate-100'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <PiggyBank
+              className={`h-3.5 w-3.5 shrink-0 ${
+                !isBudgetTab ? 'text-[#10B981] dark:text-emerald-400' : ''
+              }`}
+            />
+            <span className="truncate">{t.dashboard.savingGoalsTitle}</span>
+            {savingGoals.length > 0 && (
+              <span className="font-mono-num shrink-0 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                ({savingGoals.length})
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Scrollable Content */}
+        <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto">
+          {isBudgetTab ? (
+            sortedBudgetItems.length === 0 ? (
+              <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center dark:border-slate-800 dark:bg-slate-950/40">
+                <Target className="mx-auto mb-2.5 h-7 w-7 text-[#1E9E6A]/70 dark:text-emerald-400/70" />
+                <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                  {t.dashboard.emptyBudgetDesc}
+                </p>
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => onEditBudgetGoal()}
+                    className="mt-4 inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-xl bg-[#16845B] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#126B4A]"
+                  >
+                    <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+                    <span>{t.dashboard.setFirstBudget}</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <>
+                {/* Overall Monthly Budget Summary Banner */}
+                <div className="mb-3 rounded-2xl border border-[#E3E9EC] bg-[#F4F7F6] p-3.5 dark:border-slate-800 dark:bg-slate-800/60">
+                  <span className="block text-[11px] font-semibold text-[#5B6B7F] dark:text-slate-400">
+                    {t.dashboard.totalBudgetedSpend}
+                  </span>
+
+                  {/* Same-line Spent / Expected */}
+                  <div className="font-mono-num mt-1 flex items-baseline gap-1.5 tabular-nums">
+                    <span className="text-lg font-extrabold text-[#112A46] dark:text-slate-100">
+                      {formatMoney(totalBudgetSpent, currency)}
+                    </span>
+                    <span className="text-xs font-medium text-[#5B6B7F] dark:text-slate-400">
+                      / {fmtPlainAmount(totalBudgetLimit)}
+                    </span>
+                  </div>
+
+                  {/* Animated Bar + Inline Percentage */}
+                  <div className="mt-2.5 flex items-center gap-2.5">
+                    <div className="relative h-2 flex-1 rounded-full bg-[#E3E9EC] dark:bg-slate-700">
+                      <div
+                        className={`goal-bar-fill h-full rounded-full ${
+                          budgetIsOver
+                            ? 'bg-[#EF4444] dark:bg-rose-400'
+                            : budgetIsNear
+                            ? 'bg-[#E8A317] dark:bg-amber-400'
+                            : 'bg-[#10B981] dark:bg-emerald-400'
+                        }`}
+                        style={{
+                          width: `${
+                            barsReady ? Math.min(100, Math.max(0, totalBudgetPct)) : 0
+                          }%`,
+                        }}
+                      />
+                      <span
+                        aria-hidden="true"
+                        style={{ left: `${todayPacePct}%` }}
+                        className="pointer-events-none absolute -top-[2px] h-3 w-[2px] -translate-x-1/2 rounded-full bg-[#112A46]/70 dark:bg-slate-200/80"
+                      />
+                    </div>
+                    <span
+                      className={`font-mono-num shrink-0 text-xs font-bold tabular-nums ${
+                        budgetIsOver
+                          ? 'text-[#B42318] dark:text-rose-400'
+                          : budgetIsNear
+                          ? 'text-[#8A5300] dark:text-amber-400'
+                          : 'text-[#0F6B45] dark:text-emerald-400'
+                      }`}
+                    >
+                      {Math.round(totalBudgetPct)}%
+                    </span>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between gap-2 text-[11px]">
+                    <span
+                      className={`font-medium ${
+                        budgetOverCount > 0 || totalBudgetPct > 100
+                          ? 'text-[#B42318] dark:text-rose-400'
+                          : 'text-[#5B6B7F] dark:text-slate-400'
+                      }`}
+                    >
+                      {totalBudgetPct > 100
+                        ? `${t.dashboard.exceededLimitBy} ${formatMoney(
+                            totalBudgetSpent - totalBudgetLimit,
+                            currency
+                          )}`
+                        : `${formatMoney(
+                            Math.max(0, totalBudgetLimit - totalBudgetSpent),
+                            currency
+                          )} ${t.dashboard.remainingMonth}`}
+                    </span>
+                    <span className="shrink-0 text-[10px] font-medium text-[#5B6B7F] dark:text-slate-400">
+                      {t.dashboard.todayLabel} {Math.round(todayPacePct)}%
+                    </span>
+                  </div>
+                </div>
+
+                {/* Per-Category Budget Rows */}
+                <div className="space-y-1.5">
+                  {sortedBudgetItems.map(({ goal, spent, pct }) => {
+                    const roundedPct = Math.round(pct);
+                    const isOver = pct > 100;
+                    const isNear = !isOver && pct >= 80;
+                    const remaining = Math.max(0, goal.monthlyLimit - spent);
+                    const exceeded = Math.max(0, spent - goal.monthlyLimit);
+
+                    return (
+                      <div
+                        key={goal.id}
+                        className="flex items-stretch gap-1 rounded-xl border border-slate-100 bg-white transition-colors hover:border-slate-200 hover:bg-slate-50/70 dark:border-slate-800/80 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-800/40"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => onInspectBudgetGoal(goal)}
+                          className="min-w-0 flex-1 cursor-pointer p-3 text-left"
+                        >
+                          <div className="mb-1.5 flex items-center justify-between gap-2">
+                            <div className="flex min-w-0 items-center gap-2">
+                              <CategoryIconBadge
+                                style={getCategoryStyle(categoryStyles, 'exp', goal.category)}
+                                size="xs"
+                              />
+                              <span className="truncate text-[13px] font-semibold text-[#102A43] dark:text-slate-100">
+                                {goal.category}
+                              </span>
+                            </div>
+                            <span className="font-mono-num shrink-0 text-xs tabular-nums">
+                              <span className="font-bold text-[#102A43] dark:text-slate-100">
+                                {formatMoney(spent, currency)}
+                              </span>
+                              <span className="font-normal text-slate-400 dark:text-slate-500">
+                                {' / '}
+                                {fmtPlainAmount(goal.monthlyLimit)}
+                              </span>
+                            </span>
+                          </div>
+
+                          <div className="flex items-center gap-2.5">
+                            <div
+                              className={`h-1.5 flex-1 overflow-hidden rounded-full ${
+                                isOver
+                                  ? 'bg-rose-500/15 dark:bg-rose-400/20'
+                                  : isNear
+                                  ? 'bg-amber-500/15 dark:bg-amber-400/20'
+                                  : 'bg-emerald-500/12 dark:bg-emerald-400/15'
+                              }`}
+                            >
+                              <div
+                                className={`goal-bar-fill h-full rounded-full ${
+                                  isOver
+                                    ? 'bg-[#EF4444] dark:bg-rose-400'
+                                    : isNear
+                                    ? 'bg-[#E8A317] dark:bg-amber-400'
+                                    : 'bg-[#10B981] dark:bg-emerald-400'
+                                }`}
+                                style={{
+                                  width: `${barsReady ? Math.min(100, Math.max(0, pct)) : 0}%`,
+                                }}
+                              />
+                            </div>
+                            <span
+                              className={`font-mono-num w-9 shrink-0 text-right text-[11px] font-semibold tabular-nums ${
+                                isOver
+                                  ? 'text-[#B42318] dark:text-rose-400'
+                                  : isNear
+                                  ? 'text-[#8A5300] dark:text-amber-400'
+                                  : 'text-[#0F6B45] dark:text-emerald-400'
+                              }`}
+                            >
+                              {roundedPct}%
+                            </span>
+                          </div>
+
+                          <div className="mt-1 flex items-center justify-between gap-2 text-[11px]">
+                            <span
+                              className={`font-mono-num font-medium ${
+                                isOver
+                                  ? 'text-[#B42318] dark:text-rose-400'
+                                  : 'text-slate-400 dark:text-slate-500'
+                              }`}
+                            >
+                              {isOver
+                                ? `+${formatMoney(exceeded, currency)} ${t.dashboard.overBudget}`
+                                : `${formatMoney(remaining, currency)} ${t.modals.remainingShort}`}
+                            </span>
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 dark:text-slate-600" />
+                          </div>
+                        </button>
+
+                        {!isReadOnly && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onEditBudgetGoal(goal);
+                            }}
+                            aria-label={`${t.modals.editBudgetGoal} ${goal.category}`}
+                            title={t.modals.editBudgetGoal}
+                            className="flex w-10 shrink-0 cursor-pointer items-center justify-center rounded-r-xl border-l border-slate-100 text-slate-400 transition-colors hover:bg-slate-100 hover:text-[#102A43] dark:border-slate-800/80 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>
+            )
+          ) : sortedSavingItems.length === 0 ? (
+            <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50/70 p-6 text-center dark:border-slate-800 dark:bg-slate-950/40">
+              <PiggyBank className="mx-auto mb-2.5 h-7 w-7 text-[#10B981]/70 dark:text-emerald-400/70" />
+              <p className="text-xs leading-relaxed text-slate-500 dark:text-slate-400">
+                {t.dashboard.emptySavingDesc}
+              </p>
+              {!isReadOnly && (
+                <button
+                  type="button"
+                  onClick={() => onEditSavingGoal()}
+                  className="mt-4 inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-xl bg-[#16845B] px-4 py-2 text-xs font-bold text-white transition-colors hover:bg-[#126B4A]"
+                >
+                  <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+                  <span>{t.dashboard.setFirstSaving}</span>
+                </button>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* Overall Saving Goals Summary Banner */}
+              <div className="mb-3 rounded-2xl border border-[#E3E9EC] bg-[#F4F7F6] p-3.5 dark:border-slate-800 dark:bg-slate-800/60">
+                <span className="block text-[11px] font-semibold text-[#5B6B7F] dark:text-slate-400">
+                  {t.dashboard.totalSavedTowardGoals}
+                </span>
+
+                {/* Same-line Saved / Target */}
+                <div className="font-mono-num mt-1 flex items-baseline gap-1.5 tabular-nums">
+                  <span className="text-lg font-extrabold text-[#112A46] dark:text-slate-100">
+                    {formatMoney(totalSavingSaved, currency)}
+                  </span>
+                  <span className="text-xs font-medium text-[#5B6B7F] dark:text-slate-400">
+                    / {fmtPlainAmount(totalSavingTarget)}
+                  </span>
+                </div>
+
+                {/* Animated Bar + Inline Percentage */}
+                <div className="mt-2.5 flex items-center gap-2.5">
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#E3E9EC] dark:bg-slate-700">
+                    <div
+                      className="goal-bar-fill h-full rounded-full bg-[#10B981] dark:bg-emerald-400"
+                      style={{
+                        width: `${
+                          barsReady ? Math.min(100, Math.max(0, totalSavingPct)) : 0
+                        }%`,
+                      }}
+                    />
+                  </div>
+                  <span className="font-mono-num shrink-0 text-xs font-bold tabular-nums text-[#0F6B45] dark:text-emerald-400">
+                    {Math.round(totalSavingPct)}%
+                  </span>
+                </div>
+
+                <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-[#5B6B7F] dark:text-slate-400">
+                  <span className="font-medium">
+                    {savingReachedCount === sortedSavingItems.length
+                      ? t.dashboard.allGoalsReached
+                      : savingReachedCount > 0
+                      ? `${savingReachedCount}/${sortedSavingItems.length} ${t.dashboard.reachedLabel}`
+                      : `${sortedSavingItems.length} ${
+                          sortedSavingItems.length === 1
+                            ? t.dashboard.activeGoalsSingular
+                            : t.dashboard.activeGoalsPlural
+                        }`}
+                  </span>
+                  {totalSavingTarget > totalSavingSaved && (
+                    <span className="font-mono-num shrink-0 font-medium">
+                      {formatMoney(totalSavingTarget - totalSavingSaved, currency)}{' '}
+                      {t.modals.remainingShort}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Per-Saving-Goal Rows */}
+              <div className="space-y-1.5">
+                {sortedSavingItems.map(({ goal, progress }) => {
+                  const roundedPct = Math.max(0, Math.round(progress.pct));
+                  const reached = progress.pct >= 100;
+                  const showAccountSuffix = Boolean(
+                    goal.account &&
+                      goal.account.trim().toLowerCase() !== goal.title.trim().toLowerCase()
+                  );
+                  const daysText =
+                    !reached &&
+                    goal.periodType === 'period' &&
+                    progress.daysLeft !== null &&
+                    progress.daysLeft >= 0
+                      ? progress.daysLeft === 0
+                        ? t.dashboard.endsTodayLabel
+                        : `${progress.daysLeft} ${
+                            progress.daysLeft === 1
+                              ? t.dashboard.dayLeftLabel
+                              : t.dashboard.daysLeftLabel
+                          }`
+                      : '';
+
+                  return (
+                    <div
+                      key={goal.id}
+                      className="flex items-stretch gap-1 rounded-xl border border-slate-100 bg-white transition-colors hover:border-slate-200 hover:bg-slate-50/70 dark:border-slate-800/80 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-800/40"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => onInspectSavingGoal(goal, progress)}
+                        className="min-w-0 flex-1 cursor-pointer p-3 text-left"
+                      >
+                        <div className="mb-1.5 flex items-center justify-between gap-2">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <CategoryIconBadge
+                              style={getCategoryStyle(
+                                categoryStyles,
+                                'sav',
+                                goal.account || savingsList[0] || 'Savings'
+                              )}
+                              size="xs"
+                            />
+                            <span className="truncate text-[13px] font-semibold text-[#102A43] dark:text-slate-100">
+                              {goal.title}
+                              {showAccountSuffix && (
+                                <span className="font-normal text-slate-400 dark:text-slate-500">
+                                  {' · '}
+                                  {goal.account}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                          <span className="font-mono-num shrink-0 text-xs tabular-nums">
+                            <span className="font-bold text-[#102A43] dark:text-slate-100">
+                              {formatMoney(progress.savedAmount, currency)}
+                            </span>
+                            <span className="font-normal text-slate-400 dark:text-slate-500">
+                              {' / '}
+                              {fmtPlainAmount(goal.targetAmount)}
+                            </span>
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-2.5">
+                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-emerald-500/12 dark:bg-emerald-400/15">
+                            <div
+                              className="goal-bar-fill h-full rounded-full bg-[#10B981] dark:bg-emerald-400"
+                              style={{
+                                width: `${
+                                  barsReady ? Math.min(100, Math.max(0, progress.pct)) : 0
+                                }%`,
+                              }}
+                            />
+                          </div>
+                          <span className="font-mono-num w-9 shrink-0 text-right text-[11px] font-semibold tabular-nums text-[#0F6B45] dark:text-emerald-400">
+                            {roundedPct}%
+                          </span>
+                        </div>
+
+                        <div className="mt-1 flex items-center justify-between gap-2 text-[11px]">
+                          <span
+                            className={`truncate font-medium ${
+                              reached
+                                ? 'text-[#0F6B45] dark:text-emerald-400'
+                                : 'text-slate-400 dark:text-slate-500'
+                            }`}
+                          >
+                            {reached
+                              ? t.dashboard.goalReached
+                              : daysText
+                              ? `${daysText} · ${formatMoney(progress.remaining, currency)} ${t.modals.remainingShort}`
+                              : `${formatMoney(progress.remaining, currency)} ${t.modals.remainingShort}`}
+                          </span>
+                          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 dark:text-slate-600" />
+                        </div>
+                      </button>
+
+                      {!isReadOnly && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEditSavingGoal(goal);
+                          }}
+                          aria-label={`${t.modals.editSavingGoal} ${goal.title}`}
+                          title={t.modals.editSavingGoal}
+                          className="flex w-10 shrink-0 cursor-pointer items-center justify-center rounded-r-xl border-l border-slate-100 text-slate-400 transition-colors hover:bg-slate-100 hover:text-[#102A43] dark:border-slate-800/80 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="mt-4 flex shrink-0 items-center gap-2.5">
+          {!isReadOnly && (
+            <button
+              type="button"
+              onClick={() => (isBudgetTab ? onEditBudgetGoal() : onEditSavingGoal())}
+              className="inline-flex min-h-[42px] flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-[#102A43] transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700/80"
+            >
+              <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
+              <span>{isBudgetTab ? t.modals.addBudgetBtn : t.modals.addSavingGoalBtn}</span>
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="min-h-[42px] flex-1 cursor-pointer rounded-xl bg-[#16845B] py-2 text-xs font-bold text-white transition-colors hover:bg-[#126B4A]"
+          >
+            {t.common.close}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+

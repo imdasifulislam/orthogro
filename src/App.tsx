@@ -51,6 +51,7 @@ import {
   DrilldownModal,
   EditNameModal,
   FilterPeriodModal,
+  GoalsOverviewModal,
   MergeCategoryModal,
   RecurringBillsModal,
   ResolveDebtModal,
@@ -1032,6 +1033,7 @@ function OrthoGroApp() {
   const [mergeIntoCategory, setMergeIntoCategory] = useState('');
   const [mergeIntoSubCategory, setMergeIntoSubCategory] = useState('');
   const [addingAccountType, setAddingAccountType] = useState<'wallet' | 'savings' | null>(null);
+  const [goalsOverviewTab, setGoalsOverviewTab] = useState<'budget' | 'saving' | null>(null);
 
   const notify = useCallback((type: ToastMessage['type'], message: string) => {
     const id = generateSafeId('toast');
@@ -2062,6 +2064,7 @@ function OrthoGroApp() {
       resolvingTx ||
       historyModalItem ||
       drilldownType ||
+      goalsOverviewTab ||
       activeFilterCard ||
       showCustomizeModal ||
       isAssistantOpen ||
@@ -2095,6 +2098,7 @@ function OrthoGroApp() {
     resolvingTx,
     historyModalItem,
     drilldownType,
+    goalsOverviewTab,
     activeFilterCard,
     showCustomizeModal,
     isAssistantOpen,
@@ -2125,6 +2129,7 @@ function OrthoGroApp() {
     resolvingTx,
     historyModalItem,
     drilldownType,
+    goalsOverviewTab,
     activeFilterCard,
     showCustomizeModal,
     isAssistantOpen,
@@ -2168,6 +2173,7 @@ function OrthoGroApp() {
     resolvingTx,
     historyModalItem,
     drilldownType,
+    goalsOverviewTab,
     activeFilterCard,
     showCustomizeModal,
     isAssistantOpen,
@@ -2277,6 +2283,10 @@ function OrthoGroApp() {
       }
       if (state.drilldownType) {
         setDrilldownType(null);
+        return;
+      }
+      if (state.goalsOverviewTab) {
+        setGoalsOverviewTab(null);
         return;
       }
       if (state.activeFilterCard) {
@@ -6156,6 +6166,7 @@ function OrthoGroApp() {
                 setEditingSavingGoal(goal || null);
                 setShowSavingGoalsModal(true);
               }}
+              onOpenGoalsOverview={(tab) => setGoalsOverviewTab(tab)}
               onDeleteTx={handleDeleteTx}
               onEditTx={handleEditTx}
               onResolveDebt={(tx) => {
@@ -6177,6 +6188,25 @@ function OrthoGroApp() {
                   return;
                 }
                 setShowTxTypeDrawer(true);
+              }}
+              onStartAddingIncome={() => {
+                if (isReadOnlyPartner) {
+                  notify('info', t.sharing.readOnlyToast);
+                  return;
+                }
+                setPendingRecurringBillId(null);
+                setEntries([
+                  {
+                    ...defaultEntry,
+                    type: 'income',
+                    category: workspace.incomeCategories[0] || 'Salary',
+                    subCategory: '',
+                    title: '',
+                  },
+                ]);
+                setTxSubTab('new');
+                setShowTxTypeDrawer(false);
+                setShowTxFormDrawer(true);
               }}
               onAddAccount={(type) => {
                 if (isReadOnlyPartner) {
@@ -6403,6 +6433,60 @@ function OrthoGroApp() {
           setActiveFilterCard(null);
         }}
         onClose={() => setActiveFilterCard(null)}
+      />
+
+      <GoalsOverviewModal
+        activeTab={goalsOverviewTab}
+        setActiveTab={(tab) => setGoalsOverviewTab(tab)}
+        budgetGoals={budgetGoals}
+        savingGoals={savingGoals}
+        monthlySpentByCategory={monthlySpentByCategory}
+        transactions={transactions}
+        savingsList={workspace.savingsList}
+        categoryStyles={normalizeCategoryStyles(workspace.categoryStyles)}
+        currency={workspace.currency}
+        isReadOnly={isReadOnlyPartner}
+        onInspectBudgetGoal={(goal) => {
+          setDrilldownType('expense_category');
+          setDrilldownKey(goal.category);
+          setDrilldownFilter('monthly');
+          setDrilldownPeriodContext({
+            monthOffset: 0,
+            budgetGoalId: goal.id,
+            goalTargetAmount: goal.monthlyLimit,
+          });
+        }}
+        onInspectSavingGoal={(goal, progress) => {
+          setDrilldownType('saving_goal');
+          setDrilldownKey(goal.title);
+          setDrilldownFilter(goal.periodType === 'monthly' ? 'monthly' : 'custom');
+          setDrilldownPeriodContext({
+            monthOffset: goal.periodType === 'monthly' ? 0 : undefined,
+            startDate: goal.periodType === 'period' ? goal.startDate : undefined,
+            endDate: goal.periodType === 'period' ? goal.endDate : undefined,
+            periodLabel: progress.periodLabel,
+            savingGoalId: goal.id,
+            savingGoalAccount: goal.account || undefined,
+            goalTargetAmount: goal.targetAmount,
+          });
+        }}
+        onEditBudgetGoal={(goal) => {
+          if (isReadOnlyPartner) {
+            notify('info', t.sharing.readOnlyToast);
+            return;
+          }
+          setEditingBudgetGoal(goal || null);
+          setShowBudgetGoalsModal(true);
+        }}
+        onEditSavingGoal={(goal) => {
+          if (isReadOnlyPartner) {
+            notify('info', t.sharing.readOnlyToast);
+            return;
+          }
+          setEditingSavingGoal(goal || null);
+          setShowSavingGoalsModal(true);
+        }}
+        onClose={() => setGoalsOverviewTab(null)}
       />
 
       <DrilldownModal
@@ -6982,6 +7066,7 @@ function OrthoGroApp() {
           !accountToDelete &&
           !showBudgetGoalsModal &&
           !showSavingGoalsModal &&
+          !goalsOverviewTab &&
           !showRecurringBillsModal &&
           !showNotificationsModal &&
           !showAppLockModal &&
