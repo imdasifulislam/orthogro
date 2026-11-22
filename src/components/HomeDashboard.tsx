@@ -1,5 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertCircle,
+  AlertTriangle,
+  Check,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -134,7 +137,8 @@ const AnimatedMoneyValue: React.FC<{
   value: number;
   currency: CurrencySymbol;
   durationMs?: number;
-}> = ({ value, currency, durationMs = 740 }) => {
+  variant?: 'default' | 'netWorth';
+}> = ({ value, currency, durationMs = 740, variant = 'default' }) => {
   const ref = useRef<HTMLSpanElement | null>(null);
   const [reducedMotion] = useState(
     () =>
@@ -213,6 +217,35 @@ const AnimatedMoneyValue: React.FC<{
     rafId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafId);
   }, [value, inView, reducedMotion, durationMs]);
+
+  if (variant === 'netWorth') {
+    const targetHasDecimals = Math.abs(value - Math.round(value)) > 0.001;
+    const formatOpts: Intl.NumberFormatOptions = targetHasDecimals
+      ? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+      : { maximumFractionDigits: 0 };
+    const isNegative = displayValue < 0 || (displayValue === 0 && value < 0);
+    const absFormatted = Math.abs(displayValue).toLocaleString(undefined, formatOpts);
+    const finalFormatted = Math.abs(value).toLocaleString(undefined, formatOpts);
+    return (
+      <span ref={ref} className="inline-grid items-baseline tabular-nums">
+        <span
+          aria-hidden="true"
+          className="invisible col-start-1 row-start-1 inline-flex items-baseline whitespace-nowrap"
+        >
+          {value < 0 && <span className="mr-0.5">-</span>}
+          <span className="mr-1 text-[17px] font-semibold sm:text-[20px]">{currency}</span>
+          <span>{finalFormatted}</span>
+        </span>
+        <span className="col-start-1 row-start-1 inline-flex items-baseline whitespace-nowrap">
+          {isNegative && <span className="mr-0.5 text-[#ff6b6b]">-</span>}
+          <span className="mr-1 text-[17px] font-semibold text-white/95 sm:text-[20px]">
+            {currency}
+          </span>
+          <span>{absFormatted}</span>
+        </span>
+      </span>
+    );
+  }
 
   return (
     <span ref={ref} className="tabular-nums">
@@ -472,11 +505,13 @@ interface HomeDashboardProps {
   ) => void;
   onOpenBudgetGoalsModal: (goal?: BudgetGoal) => void;
   onOpenSavingGoalsModal: (goal?: SavingGoal) => void;
+  onOpenGoalsOverview?: (tab: 'budget' | 'saving') => void;
   onDeleteTx: (id: string) => void;
   onEditTx: (tx: Transaction) => void;
   onResolveDebt: (tx: Transaction) => void;
   onInspectDebt: (tx: Transaction) => void;
   onStartAddingTx: () => void;
+  onStartAddingIncome?: () => void;
   onAddAccount?: (type: 'wallet' | 'savings') => void;
   isReadOnly?: boolean;
 }
@@ -500,34 +535,24 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   onOpenDrilldown,
   onOpenBudgetGoalsModal,
   onOpenSavingGoalsModal,
+  onOpenGoalsOverview,
   onDeleteTx,
   onEditTx,
   onResolveDebt,
   onInspectDebt,
   onStartAddingTx,
+  onStartAddingIncome,
   onAddAccount,
   isReadOnly = false,
 }) => {
   const { lang, t } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [openTxId, setOpenTxId] = useState<string | null>(null);
-  const [goalView, setGoalView] = useState<'budget' | 'saving'>(() =>
-    budgetGoals.length === 0 && savingGoals.length > 0 ? 'saving' : 'budget'
-  );
-  const hasUserSelectedGoalViewRef = useRef(false);
-  const selectGoalView = (view: 'budget' | 'saving') => {
-    hasUserSelectedGoalViewRef.current = true;
-    setGoalView(view);
-  };
-  useEffect(() => {
-    if (hasUserSelectedGoalViewRef.current) return;
-    setGoalView(budgetGoals.length === 0 && savingGoals.length > 0 ? 'saving' : 'budget');
-  }, [budgetGoals.length, savingGoals.length]);
-  const [goalSwipeX, setGoalSwipeX] = useState(0);
-  const [isSwipingGoal, setIsSwipingGoal] = useState(false);
   const [pieView, setPieView] = useState<'expense' | 'income'>('expense');
   const [pieLegendExpanded, setPieLegendExpanded] = useState(false);
   const [pieRevealed, setPieRevealed] = useState(false);
+  const [goalsBarsRevealed, setGoalsBarsRevealed] = useState(false);
+  const goalsCardRef = useRef<HTMLDivElement | null>(null);
   const [pieMonthOffset, setPieMonthOffset] = useState(0);
   const [pieYearOffset, setPieYearOffset] = useState(0);
   const [pieCustomOffset, setPieCustomOffset] = useState(0);
@@ -543,13 +568,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [isSwipingIncExp, setIsSwipingIncExp] = useState(false);
   const [activeExpenseChartCategory, setActiveExpenseChartCategory] = useState<string | null>(null);
   const [activeIncomeChartCategory, setActiveIncomeChartCategory] = useState<string | null>(null);
-  const goalSwipeRef = useRef<{
-    startX: number;
-    startY: number;
-    dragging: boolean;
-    axis: 'x' | 'y' | null;
-  }>({ startX: 0, startY: 0, dragging: false, axis: null });
-  const didGoalSwipeRef = useRef(false);
   const pieSwipeRef = useRef<{
     startX: number;
     startY: number;
@@ -574,6 +592,26 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const pressTimerRef = useRef<number | null>(null);
   const pressOriginRef = useRef<{ x: number; y: number } | null>(null);
   const isLongPressRef = useRef(false);
+
+  useEffect(() => {
+    const el = goalsCardRef.current;
+    if (!el || goalsBarsRevealed) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setGoalsBarsRevealed(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          requestAnimationFrame(() => setGoalsBarsRevealed(true));
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.15 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [goalsBarsRevealed, visibleGrids.budgetGoals, budgetGoals.length, savingGoals.length]);
 
   const handlePressEnd = () => {
     if (pressTimerRef.current !== null) {
@@ -837,68 +875,34 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     }
   };
 
-  const handleGoalSwipeStart = (clientX: number, clientY: number) => {
-    didGoalSwipeRef.current = false;
-    goalSwipeRef.current = {
-      startX: clientX,
-      startY: clientY,
-      dragging: true,
-      axis: null,
-    };
-    setIsSwipingGoal(true);
-  };
-
-  const handleGoalSwipeMove = (clientX: number, clientY: number) => {
-    const state = goalSwipeRef.current;
-    if (!state.dragging) return;
-    const dx = clientX - state.startX;
-    const dy = clientY - state.startY;
-
-    if (!state.axis && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
-      state.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
-    }
-    if (state.axis !== 'x') return;
-
-    if (Math.abs(dx) > 10) {
-      didGoalSwipeRef.current = true;
-    }
-
-    if (goalView === 'budget') {
-      setGoalSwipeX(dx > 0 ? Math.min(24, dx * 0.25) : Math.max(-160, dx));
-    } else {
-      setGoalSwipeX(dx < 0 ? Math.max(-24, dx * 0.25) : Math.min(160, dx));
-    }
-  };
-
-  const handleGoalSwipeEnd = () => {
-    const state = goalSwipeRef.current;
-    if (!state.dragging) return;
-    state.dragging = false;
-    setIsSwipingGoal(false);
-
-    if (state.axis === 'x') {
-      if (goalView === 'budget' && goalSwipeX < -42) {
-        selectGoalView('saving');
-      } else if (goalView === 'saving' && goalSwipeX > 42) {
-        selectGoalView('budget');
-      }
-    }
-    state.axis = null;
-    setGoalSwipeX(0);
-    if (didGoalSwipeRef.current) {
-      window.setTimeout(() => {
-        didGoalSwipeRef.current = false;
-      }, 120);
-    }
-  };
-
   const metrics = useMemo(() => {
+    const now = new Date();
+    const curMonth = now.getMonth();
+    const curYear = now.getFullYear();
+
     let totalLendAll = 0;
     let totalBorrowAll = 0;
-    transactions.forEach((t) => {
-      const due = t.remainingBalance !== undefined ? t.remainingBalance : t.amount;
-      if (t.type === 'lend' && !t.resolved) totalLendAll += due;
-      if (t.type === 'borrow' && !t.resolved) totalBorrowAll += due;
+    let monthlyNetWorthDelta = 0;
+
+    transactions.forEach((tx) => {
+      const due = tx.remainingBalance !== undefined ? tx.remainingBalance : tx.amount;
+      if (tx.type === 'lend' && !tx.resolved) totalLendAll += due;
+      if (tx.type === 'borrow' && !tx.resolved) totalBorrowAll += due;
+
+      if (tx.rawDate) {
+        const d = parseLocalDate(tx.rawDate);
+        if (d.getMonth() === curMonth && d.getFullYear() === curYear) {
+          if (tx.type === 'income') {
+            monthlyNetWorthDelta += tx.amount;
+          } else if (tx.type === 'expense') {
+            monthlyNetWorthDelta -= tx.amount;
+          } else if (tx.type === 'transfer' && tx.charge) {
+            monthlyNetWorthDelta -= tx.charge;
+          } else if (tx.type === 'adjustment' || tx.type === 'correction') {
+            monthlyNetWorthDelta += tx.amount;
+          }
+        }
+      }
     });
 
     let availableCashBalance = 0;
@@ -912,12 +916,22 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     });
 
     const absoluteNetWorth = availableCashBalance + totalSavings + totalLendAll - totalBorrowAll;
+    const prevMonthNetWorth = absoluteNetWorth - monthlyNetWorthDelta;
+
+    let netWorthTrendPct: number | null = null;
+    if (Math.abs(prevMonthNetWorth) >= 0.01 && Math.abs(monthlyNetWorthDelta) >= 0.01) {
+      const rawPct = (monthlyNetWorthDelta / Math.abs(prevMonthNetWorth)) * 100;
+      if (Number.isFinite(rawPct) && Math.abs(rawPct) >= 0.1) {
+        netWorthTrendPct = rawPct;
+      }
+    }
 
     return {
       absoluteNetWorth,
       availableCashBalance,
       dispLend: totalLendAll,
       dispBorrow: totalBorrowAll,
+      netWorthTrendPct,
     };
   }, [transactions, wallets, savingsList, walletBalances]);
 
@@ -927,6 +941,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     let filteredTxs: Transaction[] = [];
     let periodTitle = '';
     let headerBadge = '';
+    let todayPct: number | null = null;
+    let isCurrentMonthView = false;
 
     if (filters.incExp === 'monthly') {
       const targetDate = new Date(now.getFullYear(), now.getMonth() + incExpMonthOffset, 1);
@@ -944,6 +960,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         year: 'numeric',
       });
       headerBadge = getMonthBadgeLabel(incExpMonthOffset, periodTitle, t);
+      if (incExpMonthOffset === 0) {
+        isCurrentMonthView = true;
+        const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
+        todayPct = Math.min(100, Math.max(0, (now.getDate() / daysInMonth) * 100));
+      }
     } else if (filters.incExp === 'yearly') {
       const targetYear = now.getFullYear() + incExpYearOffset;
       filteredTxs = transactions.filter((tx) => {
@@ -957,6 +978,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       periodTitle =
         lang === 'bn' ? `জানুয়ারি – ডিসেম্বর ${yearDisplay}` : `Jan – Dec ${yearDisplay}`;
       headerBadge = incExpYearOffset === 0 ? t.common.thisYear : yearDisplay;
+      if (incExpYearOffset === 0) {
+        const startOfYear = new Date(targetYear, 0, 1);
+        const endOfYear = new Date(targetYear + 1, 0, 1);
+        const dayOfYear = Math.floor((now.getTime() - startOfYear.getTime()) / 86400000) + 1;
+        const daysInYear = Math.max(1, Math.round((endOfYear.getTime() - startOfYear.getTime()) / 86400000));
+        todayPct = Math.min(100, Math.max(0, (dayOfYear / daysInYear) * 100));
+      }
     } else if (filters.incExp === 'custom' && customDateFrom && customDateTo) {
       const { from, to } = getShiftedCustomRange(customDateFrom, customDateTo, incExpCustomOffset);
       filteredTxs = transactions.filter(
@@ -967,6 +995,21 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           ? formatDisplayDate(from, lang)
           : `${formatDisplayDate(from, lang)} – ${formatDisplayDate(to, lang)}`;
       headerBadge = formatShortRangeLabel(from, to, lang);
+      const todayISO = getTodayISO();
+      if (todayISO >= from && todayISO <= to) {
+        const fromDate = parseLocalDate(from);
+        const toDate = parseLocalDate(to);
+        const todayDate = parseLocalDate(todayISO);
+        const totalDays = Math.max(
+          1,
+          Math.round((toDate.getTime() - fromDate.getTime()) / 86400000) + 1
+        );
+        const elapsedDays = Math.max(
+          1,
+          Math.round((todayDate.getTime() - fromDate.getTime()) / 86400000) + 1
+        );
+        todayPct = Math.min(100, Math.max(0, (elapsedDays / totalDays) * 100));
+      }
     } else {
       filteredTxs = filterTransactionsByPeriod(
         transactions,
@@ -1027,6 +1070,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       periodTitle,
       headerBadge,
       filterButtonLabel,
+      todayPct,
+      isCurrentMonthView,
     };
   }, [
     transactions,
@@ -1151,36 +1196,102 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     if (!visibleGrids[key]) return null;
 
     switch (key) {
-      case 'netWorth':
+      case 'netWorth': {
+        const isNegativeNetWorth = metrics.absoluteNetWorth < 0;
+        const trendPct = metrics.netWorthTrendPct;
+        const absTrendPct = trendPct !== null ? Math.abs(trendPct) : 0;
+        const trendLabel =
+          trendPct !== null
+            ? absTrendPct > 999
+              ? '999%+'
+              : absTrendPct >= 10
+              ? `${Math.round(absTrendPct)}%`
+              : `${Number(absTrendPct.toFixed(1))}%`
+            : null;
+        const isTrendPositive = trendPct !== null && trendPct > 0;
+
         return (
           <div
             key="netWorth"
+            role="button"
+            tabIndex={0}
             onClick={() => onOpenDrilldown('netWorth', null, 'all')}
-            className="cursor-pointer rounded-3xl bg-[#102A43] p-6 text-white shadow-sm transition-transform active:scale-[0.99] dark:border dark:border-slate-700/60 dark:bg-[#0D2238]"
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onOpenDrilldown('netWorth', null, 'all');
+              }
+            }}
+            className="net-worth-card group relative cursor-pointer overflow-hidden rounded-3xl border border-white/[0.06] px-5 py-4 text-white transition-[transform,box-shadow] duration-200 ease-[cubic-bezier(0.4,0,0.2,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/70 sm:px-6 sm:py-4.5 dark:border-white/10"
           >
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-xs font-semibold text-slate-300">
-                {t.dashboard.netWorth}
+            {/* Ambient decorative radial orbs */}
+            <span
+              aria-hidden="true"
+              className="net-worth-orb-top pointer-events-none absolute -top-20 -right-[60px] z-0 h-[200px] w-[200px] rounded-full"
+            />
+            <span
+              aria-hidden="true"
+              className={`pointer-events-none absolute -bottom-[50px] -left-[30px] z-0 h-[140px] w-[140px] rounded-full ${
+                isNegativeNetWorth ? 'net-worth-orb-bottom-neg' : 'net-worth-orb-bottom-pos'
+              }`}
+            />
+
+            <div className="relative z-10">
+              {/* Top Header: Title & Date */}
+              <div className="mb-1.5 flex items-center justify-between gap-2">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-slate-400 sm:text-xs">
+                  {t.dashboard.netWorth}
+                </span>
+                <span className="text-[11px] font-medium text-slate-400/80 sm:text-xs">
+                  {formatDisplayDate(getTodayISO(), lang)}
+                </span>
               </div>
-              <div className="text-xs font-medium text-slate-400">
-                {formatDisplayDate(getTodayISO(), lang)}
+
+              {/* Main Amount + Inline Trend Indicator */}
+              <div className="mb-2.5 flex flex-nowrap items-center gap-2">
+                <div className="font-mono-num min-w-0 truncate text-[24px] leading-tight font-bold tracking-tight tabular-nums sm:text-[28px]">
+                  <AnimatedMoneyValue
+                    value={metrics.absoluteNetWorth}
+                    currency={currency}
+                    durationMs={800}
+                    variant="netWorth"
+                  />
+                </div>
+                {trendLabel && (
+                  <span
+                    className={`inline-flex shrink-0 items-center gap-0.5 rounded-md px-1.5 py-0.5 text-[11px] font-semibold whitespace-nowrap tabular-nums ${
+                      isTrendPositive
+                        ? 'bg-emerald-400/15 text-emerald-300'
+                        : 'bg-[#ff6b6b]/15 text-[#ff6b6b]'
+                    }`}
+                  >
+                    <span aria-hidden="true" className="text-[9px] leading-none">
+                      {isTrendPositive ? '▲' : '▼'}
+                    </span>
+                    <span>{trendLabel}</span>
+                  </span>
+                )}
               </div>
-            </div>
-            <div className="font-mono-num mt-2 text-3xl font-extrabold tracking-tight tabular-nums sm:text-4xl">
-              <AnimatedMoneyValue
-                value={metrics.absoluteNetWorth}
-                currency={currency}
-                durationMs={760}
-              />
-            </div>
-            <div className="mt-2 text-xs font-medium text-slate-300">
-              {t.dashboard.availableCash}:{' '}
-              <span className="font-mono-num font-bold tabular-nums text-white">
-                {formatMoney(metrics.availableCashBalance, currency)}
-              </span>
+
+              {/* Available Balance Glass Pill */}
+              <div className="mb-3 inline-flex max-w-full items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.08] px-3 py-1 text-[11px] text-slate-300 sm:text-xs">
+                <span className="truncate">{t.dashboard.availableCash}:</span>
+                <strong className="font-mono-num shrink-0 font-bold tabular-nums text-white">
+                  {formatMoney(metrics.availableCashBalance, currency)}
+                </strong>
+              </div>
+
+              {/* Card Footer: View Breakdown */}
+              <div className="flex items-center justify-between border-t border-white/[0.08] pt-2.5">
+                <span className="inline-flex items-center gap-1 text-xs font-semibold text-blue-400 transition-[gap] duration-200 group-hover:gap-2">
+                  <span>{t.dashboard.viewBreakdown}</span>
+                  <ChevronRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
+                </span>
+              </div>
             </div>
           </div>
         );
+      }
 
       case 'wallets':
         return (
@@ -1297,8 +1408,51 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           ...(filters.incExp === 'yearly' ? { yearOffset: incExpYearOffset } : {}),
           ...(filters.incExp === 'custom' ? { customOffset: incExpCustomOffset } : {}),
         };
-        const isDeficit = incExpSummary.netSavings < 0;
-        const isPositive = incExpSummary.netSavings > 0;
+        const hasIncome = incExpSummary.totalIncome > 0;
+        const usedPct = hasIncome
+          ? Math.round((incExpSummary.totalExpense / incExpSummary.totalIncome) * 100)
+          : 0;
+        const leftAmount = incExpSummary.totalIncome - incExpSummary.totalExpense;
+        const cardState: 'none' | 'ok' | 'near' | 'over' = !hasIncome
+          ? 'none'
+          : usedPct > 100
+          ? 'over'
+          : usedPct >= 80
+          ? 'near'
+          : 'ok';
+
+        const statusText =
+          cardState === 'over'
+            ? t.dashboard.overspentLabel
+            : cardState === 'near'
+            ? t.dashboard.runningHighLabel
+            : t.dashboard.onTrackLabel;
+        const leftTileLabel =
+          cardState === 'over' ? t.dashboard.overByLabel : t.dashboard.leftLabel;
+
+        const fmtTileVal = (n: number) =>
+          Math.abs(n).toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+        const leftTileTheme =
+          cardState === 'ok'
+            ? 'bg-[#E4F3EA] text-[#0F6B45] dark:bg-emerald-950/55 dark:text-emerald-300'
+            : cardState === 'near'
+            ? 'bg-[#FFF1D6] text-[#8A5300] dark:bg-amber-950/55 dark:text-amber-300'
+            : cardState === 'over'
+            ? 'bg-[#FDEBEA] text-[#B42318] dark:bg-rose-950/55 dark:text-rose-300'
+            : 'bg-[#F4F7F6] text-[#5B6B7F] dark:bg-slate-800/70 dark:text-slate-400';
+
+        const barFillTheme =
+          cardState === 'over'
+            ? 'bg-[#D64545] dark:bg-rose-500'
+            : cardState === 'near'
+            ? 'bg-[#E8A317] dark:bg-amber-400'
+            : 'bg-[#1E9E6A] dark:bg-emerald-500';
+
+        const clampedTodayLabelPct =
+          incExpSummary.todayPct !== null
+            ? Math.min(92, Math.max(8, incExpSummary.todayPct))
+            : null;
 
         return (
           <div
@@ -1344,7 +1498,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               handlePressEnd();
               onOpenFilterCard('incExp');
             }}
-            className="select-none overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900"
+            className="select-none overflow-hidden rounded-3xl border border-[#E3E9EC] bg-white pb-3.5 shadow-[0_1px_2px_rgba(17,42,70,0.06),0_6px_20px_rgba(17,42,70,0.06)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-sm"
           >
             <div
               style={{
@@ -1352,44 +1506,73 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               }}
               className={!isSwipingIncExp ? 'transition-transform duration-200 ease-out' : ''}
             >
-              {/* Slim Single Period Filter Bar */}
-              <button
-                type="button"
-                onTouchStart={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (isLongPressRef.current || didIncExpSwipeRef.current) return;
-                  onOpenFilterCard('incExp');
-                }}
-                aria-label={t.modals.selectTimePeriod}
-                title={t.modals.selectTimePeriod}
-                className="flex w-full cursor-pointer items-center justify-between gap-2 px-4 py-2.5 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-50 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#16845B] sm:px-5 dark:text-slate-400 dark:hover:bg-slate-800/50 dark:hover:text-slate-200"
-              >
-                <span className="truncate">{incExpSummary.filterButtonLabel}</span>
-                <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-              </button>
-
-              {/* Income & Expense Interactive Split */}
-              <div className="grid grid-cols-2 divide-x divide-slate-100 border-t border-slate-100 dark:divide-slate-800 dark:border-slate-800">
+              {/* Header: Month / Period Dropdown */}
+              <div className="flex items-center justify-between px-2 pt-1 sm:px-3">
                 <button
                   type="button"
-                  onClick={() => {
-                    if (!isLongPressRef.current && !didIncExpSwipeRef.current) {
-                      onOpenDrilldown('income', null, filters.incExp, incExpPeriodContext);
-                    }
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (isLongPressRef.current || didIncExpSwipeRef.current) return;
+                    onOpenFilterCard('incExp');
                   }}
-                  className="flex min-h-[72px] cursor-pointer flex-col justify-between px-4 py-3 text-left transition-colors hover:bg-emerald-50/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#16845B] sm:px-5 dark:hover:bg-emerald-950/20"
+                  aria-label={t.modals.selectTimePeriod}
+                  title={t.modals.selectTimePeriod}
+                  className="inline-flex min-h-[44px] min-w-0 cursor-pointer items-center gap-1.5 rounded-xl px-2 text-[15px] font-medium text-[#112A46] transition-colors hover:bg-slate-100/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] sm:text-base dark:text-slate-100 dark:hover:bg-slate-800/70"
                 >
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400">
-                    <TrendingUp className="h-3.5 w-3.5 shrink-0 text-[#16845B] dark:text-emerald-400" />
-                    <span className="truncate">{t.common.income}</span>
-                  </span>
-                  <span className="font-mono-num mt-1 truncate text-base font-extrabold leading-tight text-[#16845B] sm:text-lg dark:text-emerald-400">
-                    {formatMoney(incExpSummary.totalIncome, currency)}
-                  </span>
+                  <span className="truncate">{incExpSummary.filterButtonLabel}</span>
+                  <ChevronDown className="h-4 w-4 shrink-0 text-[#5B6B7F] dark:text-slate-400" />
                 </button>
+              </div>
 
+              {/* 3-Column Tiles: Income | Expense | Left / Over by */}
+              <div className="grid grid-cols-[1fr_1fr_1.2fr] gap-1.5 px-4 sm:gap-2">
+                {/* Tile 1: Income (Value or Dashed + Add CTA) */}
+                {hasIncome ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!isLongPressRef.current && !didIncExpSwipeRef.current) {
+                        onOpenDrilldown('income', null, filters.incExp, incExpPeriodContext);
+                      }
+                    }}
+                    className="min-w-0 cursor-pointer rounded-[14px] bg-[#F4F7F6] p-2.5 text-left transition-colors hover:bg-[#E9F2EE] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E9E6A] dark:bg-slate-800/70 dark:hover:bg-slate-800"
+                  >
+                    <div className="flex items-center gap-1 text-[11px] text-[#5B6B7F] sm:text-xs dark:text-slate-400">
+                      <TrendingUp className="h-3.5 w-3.5 shrink-0 text-[#1E9E6A] dark:text-emerald-400" />
+                      <span className="truncate">{t.common.income}</span>
+                    </div>
+                    <div className="font-mono-num mt-1 flex items-baseline gap-0.5 text-[15px] font-bold leading-tight tabular-nums text-[#112A46] sm:text-base dark:text-slate-100">
+                      <span className="shrink-0 text-[11px] font-medium text-[#5B6B7F] sm:text-xs dark:text-slate-400">
+                        {currency}
+                      </span>
+                      <span className="truncate">{fmtTileVal(incExpSummary.totalIncome)}</span>
+                    </div>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (isLongPressRef.current || didIncExpSwipeRef.current) return;
+                      if (onStartAddingIncome) onStartAddingIncome();
+                      else onStartAddingTx();
+                    }}
+                    aria-label={`${t.common.add} ${t.common.income}`}
+                    className="min-w-0 cursor-pointer rounded-[14px] border-[1.5px] border-dashed border-[#1E9E6A] bg-white p-2.5 text-left transition-colors hover:bg-[#E4F3EA]/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E9E6A] dark:border-emerald-500/70 dark:bg-slate-900 dark:hover:bg-emerald-950/30"
+                  >
+                    <div className="flex items-center gap-1 text-[11px] text-[#5B6B7F] sm:text-xs dark:text-slate-400">
+                      <TrendingUp className="h-3.5 w-3.5 shrink-0 text-[#1E9E6A] dark:text-emerald-400" />
+                      <span className="truncate">{t.common.income}</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-1 text-[13px] font-semibold leading-tight text-[#0F6B45] sm:text-sm dark:text-emerald-400">
+                      <Plus className="h-3.5 w-3.5 shrink-0 stroke-[2.6]" />
+                      <span className="truncate">{t.common.add}</span>
+                    </div>
+                  </button>
+                )}
+
+                {/* Tile 2: Expense */}
                 <button
                   type="button"
                   onClick={() => {
@@ -1397,69 +1580,86 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                       onOpenDrilldown('expense', null, filters.incExp, incExpPeriodContext);
                     }
                   }}
-                  className="flex min-h-[72px] cursor-pointer flex-col justify-between px-4 py-3 text-left transition-colors hover:bg-rose-50/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#16845B] sm:px-5 dark:hover:bg-rose-950/20"
+                  className="min-w-0 cursor-pointer rounded-[14px] bg-[#F4F7F6] p-2.5 text-left transition-colors hover:bg-[#F5EBEB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D64545] dark:bg-slate-800/70 dark:hover:bg-slate-800"
                 >
-                  <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 dark:text-slate-400">
-                    <TrendingDown className="h-3.5 w-3.5 shrink-0 text-[#D94848] dark:text-rose-400" />
+                  <div className="flex items-center gap-1 text-[11px] text-[#5B6B7F] sm:text-xs dark:text-slate-400">
+                    <TrendingDown className="h-3.5 w-3.5 shrink-0 text-[#D64545] dark:text-rose-400" />
                     <span className="truncate">{t.common.expense}</span>
-                  </span>
-                  <span className="font-mono-num mt-1 truncate text-base font-extrabold leading-tight text-[#D94848] sm:text-lg dark:text-rose-400">
-                    {formatMoney(incExpSummary.totalExpense, currency)}
-                  </span>
+                  </div>
+                  <div className="font-mono-num mt-1 flex items-baseline gap-0.5 text-[15px] font-bold leading-tight tabular-nums text-[#112A46] sm:text-base dark:text-slate-100">
+                    <span className="shrink-0 text-[11px] font-medium text-[#5B6B7F] sm:text-xs dark:text-slate-400">
+                      {currency}
+                    </span>
+                    <span className="truncate">{fmtTileVal(incExpSummary.totalExpense)}</span>
+                  </div>
                 </button>
+
+                {/* Tile 3: Left / Over by (Semantic emphasis tile) */}
+                <div className={`min-w-0 rounded-[14px] p-2.5 text-left ${leftTileTheme}`}>
+                  <div className="flex items-center gap-1 text-[11px] font-medium sm:text-xs">
+                    {cardState === 'ok' && (
+                      <Check className="h-3.5 w-3.5 shrink-0 stroke-[2.6]" />
+                    )}
+                    {cardState === 'near' && (
+                      <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    )}
+                    {cardState === 'over' && (
+                      <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                    )}
+                    <span className="truncate">{leftTileLabel}</span>
+                  </div>
+                  {hasIncome ? (
+                    <div className="font-mono-num mt-1 flex items-baseline gap-0.5 text-[17px] font-bold leading-tight tabular-nums sm:text-[19px]">
+                      <span className="shrink-0 text-xs font-medium sm:text-[13px]">
+                        {leftAmount < 0 ? `−${currency}` : currency}
+                      </span>
+                      <span className="truncate">{fmtTileVal(leftAmount)}</span>
+                    </div>
+                  ) : (
+                    <div className="font-mono-num mt-1 text-[17px] font-bold leading-tight text-[#5B6B7F] sm:text-[19px] dark:text-slate-500">
+                      —
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Net Savings / Overspent Footer */}
-              <div className="border-t border-slate-100 bg-slate-50/60 px-4 py-3 sm:px-5 dark:border-slate-800 dark:bg-slate-950/40">
-                <div className="flex items-baseline justify-between gap-3">
-                  <span
-                    className={`truncate text-xs font-bold ${
-                      isDeficit
-                        ? 'text-[#D94848] dark:text-rose-400'
-                        : 'text-[#102A43] dark:text-slate-200'
-                    }`}
-                  >
-                    {isDeficit ? t.dashboard.overspentLabel : t.dashboard.netSavings}
-                  </span>
-                  <span
-                    className={`font-mono-num shrink-0 text-sm font-extrabold sm:text-base ${
-                      isDeficit
-                        ? 'text-[#D94848] dark:text-rose-400'
-                        : isPositive
-                        ? 'text-[#16845B] dark:text-emerald-400'
-                        : 'text-[#102A43] dark:text-slate-200'
-                    }`}
-                  >
-                    {isDeficit ? '−' : isPositive ? '+' : ''}
-                    {formatMoney(Math.abs(incExpSummary.netSavings), currency)}
-                  </span>
-                </div>
-
-                <div className="mt-2 flex h-1.5 w-full overflow-hidden rounded-full bg-slate-200/80 dark:bg-slate-800">
-                  {incExpSummary.totalIncome > 0 ? (
-                    <>
+              {/* Progress Bar with Today Pace Marker OR No-Income Hint */}
+              {hasIncome ? (
+                <div className="px-5 pt-3">
+                  <div className="relative h-2.5 w-full rounded-[5px] bg-[#E8EDF0] dark:bg-slate-800">
+                    <div
+                      className={`h-2.5 rounded-[5px] transition-all duration-300 ${barFillTheme}`}
+                      style={{ width: `${Math.min(usedPct, 100)}%` }}
+                    />
+                    {incExpSummary.todayPct !== null && (
                       <div
-                        className="h-full bg-[#D94848]/85 transition-all duration-300"
-                        style={{ width: `${incExpSummary.expenseRatioPct}%` }}
+                        aria-hidden="true"
+                        className="absolute -top-[3px] h-4 w-[2px] rounded-[1px] bg-[#112A46] dark:bg-slate-200"
+                        style={{ left: `${incExpSummary.todayPct}%` }}
                       />
-                      {incExpSummary.netSavings > 0 && (
-                        <div
-                          className="h-full bg-[#16845B] transition-all duration-300"
-                          style={{ width: `${Math.max(0, 100 - incExpSummary.expenseRatioPct)}%` }}
-                        />
-                      )}
-                    </>
-                  ) : incExpSummary.totalExpense > 0 ? (
-                    <div className="h-full w-full bg-[#D94848]/85 transition-all duration-300" />
-                  ) : null}
+                    )}
+                  </div>
+                  <div className="relative mt-1.5 min-h-[16px] text-[11px] text-[#5B6B7F] dark:text-slate-400">
+                    <span className="block truncate pr-10">
+                      {statusText} · {usedPct}% {t.dashboard.ofIncomeUsed}
+                    </span>
+                    {clampedTodayLabelPct !== null && (
+                      <span
+                        className="absolute top-0 -translate-x-1/2 bg-white px-1 font-medium text-[#112A46] dark:bg-slate-900 dark:text-slate-200"
+                        style={{ left: `${clampedTodayLabelPct}%` }}
+                      >
+                        {t.dashboard.todayLabel}
+                      </span>
+                    )}
+                  </div>
                 </div>
-
-                {canSwipeIncExp && (
-                  <p className="mt-2.5 text-[11px] text-slate-400 dark:text-slate-500">
-                    {t.dashboard.swipePrevNextPeriod}
-                  </p>
-                )}
-              </div>
+              ) : (
+                <p className="px-5 pt-2.5 text-xs text-[#5B6B7F] dark:text-slate-400">
+                  {incExpSummary.isCurrentMonthView
+                    ? t.dashboard.addIncomeHint
+                    : t.dashboard.addPeriodIncomeHint}
+                </p>
+              )}
             </div>
           </div>
         );
@@ -1495,418 +1695,282 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         );
 
       case 'budgetGoals': {
-        const isBudgetView = goalView === 'budget';
-        const budgetOverTotal = budgetSummary.totalPct > 100;
-        const headerPct = isBudgetView
-          ? budgetSummary.sortedGoals.length > 0
-            ? `${Math.round(budgetSummary.totalPct)}%`
-            : null
-          : savingSummary.items.length > 0
-          ? `${Math.round(savingSummary.totalPct)}%`
-          : null;
+        const hasBudgets = budgetSummary.sortedGoals.length > 0;
+        const hasSavings = savingSummary.items.length > 0;
+
+        const fmtPlainAmount = (val: number) =>
+          Math.abs(val).toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+        const budgetPct = Math.round(budgetSummary.totalPct);
+        const budgetOverCount = budgetSummary.sortedGoals.filter((g) => g.pct > 100).length;
+        const budgetIsOver = budgetSummary.totalPct > 100 || budgetOverCount > 0;
+        const budgetIsNear = !budgetIsOver && budgetSummary.totalPct >= 80;
+        const budgetStatusText =
+          budgetOverCount > 0
+            ? `${budgetOverCount} ${t.dashboard.overLimitCount}`
+            : `${budgetSummary.sortedGoals.length} ${t.dashboard.onTrackCount}`;
+
+        const savingPct = Math.max(0, Math.round(savingSummary.totalPct));
+        const savingReachedCount = savingSummary.items.filter(
+          (item) => item.progress.pct >= 100
+        ).length;
+        const allSavingsReached =
+          hasSavings && savingReachedCount === savingSummary.items.length;
+        const savingStatusText = allSavingsReached
+          ? t.dashboard.allGoalsReached
+          : savingReachedCount > 0
+          ? `${savingReachedCount}/${savingSummary.items.length} ${t.dashboard.reachedLabel}`
+          : `${savingSummary.items.length} ${
+              savingSummary.items.length === 1
+                ? t.dashboard.activeGoalsSingular
+                : t.dashboard.activeGoalsPlural
+            }`;
+
+        const openOverview = (tab: 'budget' | 'saving') => {
+          if (onOpenGoalsOverview) {
+            onOpenGoalsOverview(tab);
+          } else if (tab === 'budget') {
+            onOpenBudgetGoalsModal();
+          } else {
+            onOpenSavingGoalsModal();
+          }
+        };
+
+        const defaultOverviewTab: 'budget' | 'saving' =
+          !hasBudgets && hasSavings ? 'saving' : 'budget';
+
+        const budgetBarWidth = goalsBarsRevealed
+          ? Math.min(100, Math.max(0, budgetSummary.totalPct))
+          : 0;
+        const savingBarWidth = goalsBarsRevealed
+          ? Math.min(100, Math.max(0, savingSummary.totalPct))
+          : 0;
 
         return (
           <div
             key="budgetGoals"
-            onClick={() => {
-              if (didGoalSwipeRef.current) return;
-              if (isBudgetView) {
-                onOpenBudgetGoalsModal();
-              } else {
-                onOpenSavingGoalsModal();
-              }
-            }}
-            className="cursor-pointer rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-colors hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700"
+            ref={goalsCardRef}
+            className="overflow-hidden rounded-3xl border border-[#E3E9EC] bg-white pb-4 shadow-[0_1px_2px_rgba(17,42,70,0.06),0_6px_20px_rgba(17,42,70,0.06)] dark:border-slate-800 dark:bg-slate-900 dark:shadow-sm"
           >
             {/* Minimal Card Header */}
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="flex min-w-0 items-center gap-2 text-sm font-bold leading-snug text-[#102A43] dark:text-slate-100">
-                {isBudgetView ? (
-                  <Target className="h-4 w-4 shrink-0 text-[#16845B] dark:text-emerald-400" />
-                ) : (
-                  <PiggyBank className="h-4 w-4 shrink-0 text-sky-600 dark:text-sky-400" />
-                )}
-                <span className="truncate">
-                  {isBudgetView
-                    ? t.dashboard.monthlyBudgetGoals
-                    : t.dashboard.savingGoalsTitle}
-                </span>
+            <div className="flex items-center justify-between gap-2 px-4 pt-3.5 pb-2.5">
+              <h3 className="truncate text-[15px] font-bold text-[#112A46] sm:text-base dark:text-slate-100">
+                {t.dashboard.goalsOverview}
               </h3>
 
-              {headerPct && (
-                <span
-                  className={`font-mono-num shrink-0 text-xs font-bold tabular-nums ${
-                    isBudgetView
-                      ? budgetOverTotal
-                        ? 'text-rose-600 dark:text-rose-400'
-                        : 'text-[#16845B] dark:text-emerald-400'
-                      : 'text-sky-600 dark:text-sky-400'
-                  }`}
-                >
-                  {headerPct}
-                </span>
-              )}
+              <button
+                type="button"
+                onClick={() => openOverview(defaultOverviewTab)}
+                className="inline-flex min-h-[32px] shrink-0 cursor-pointer items-center gap-0.5 rounded-xl px-2 text-xs font-semibold text-[#5B6B7F] transition-colors hover:bg-slate-100 hover:text-[#112A46] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E9E6A] dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+              >
+                <span>{t.dashboard.detailsBtn}</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
             </div>
 
-            {/* Swipeable Single-Pane Carousel (Monthly Budget <-> Saving Goals) */}
-            <div
-              onTouchStart={(e) =>
-                handleGoalSwipeStart(e.touches[0].clientX, e.touches[0].clientY)
-              }
-              onTouchMove={(e) =>
-                handleGoalSwipeMove(e.touches[0].clientX, e.touches[0].clientY)
-              }
-              onTouchEnd={handleGoalSwipeEnd}
-              onMouseDown={(e) => handleGoalSwipeStart(e.clientX, e.clientY)}
-              onMouseMove={(e) => {
-                if (e.buttons === 1) handleGoalSwipeMove(e.clientX, e.clientY);
-              }}
-              onMouseUp={handleGoalSwipeEnd}
-              onMouseLeave={handleGoalSwipeEnd}
-              className="mt-3 overflow-hidden select-none cursor-grab active:cursor-grabbing"
-            >
-              <div
-                style={{
-                  transform: `translateX(calc(${
-                    isBudgetView ? '0%' : '-50%'
-                  } + ${goalSwipeX}px))`,
-                }}
-                className={`flex w-[200%] items-start ${
-                  !isSwipingGoal ? 'transition-transform duration-300 ease-out' : ''
-                }`}
-              >
-                {/* Slide 1: Monthly Budget */}
-                <div className="w-1/2 shrink-0 pr-1">
-                  {budgetSummary.sortedGoals.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-5 text-center dark:border-slate-800 dark:bg-slate-950/40">
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {t.dashboard.emptyBudgetDesc}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!didGoalSwipeRef.current) onOpenBudgetGoalsModal();
-                        }}
-                        className="mt-3 rounded-xl bg-[#16845B] px-4 py-2 text-xs font-bold text-white hover:bg-[#126B4A]"
+            {/* Side-by-Side 2-Tile Overview: Monthly Budget | Saving Goals */}
+            <div className="grid grid-cols-2 gap-2.5 px-4">
+              {/* Tile 1: Monthly Budget */}
+              {hasBudgets ? (
+                <button
+                  type="button"
+                  onClick={() => openOverview('budget')}
+                  className="flex min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border border-slate-200/80 bg-[#FAFBFB] p-3 text-left transition-colors hover:border-slate-300/90 hover:bg-[#F4F7F6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E9E6A] dark:border-slate-800 dark:bg-slate-800/50 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
+                >
+                  <div>
+                    {/* Soft Icon Badge + Label */}
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg ${
+                          budgetIsOver
+                            ? 'bg-rose-50 text-[#D64545] dark:bg-rose-950/60 dark:text-rose-400'
+                            : budgetIsNear
+                            ? 'bg-amber-50 text-[#E8A317] dark:bg-amber-950/60 dark:text-amber-400'
+                            : 'bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400'
+                        }`}
                       >
-                        {t.dashboard.setFirstBudget}
-                      </button>
+                        <Target className="h-4 w-4" />
+                      </span>
+                      <span className="truncate text-[13px] font-semibold text-[#112A46] dark:text-slate-100">
+                        {t.dashboard.budgetShort}
+                      </span>
                     </div>
-                  ) : (
-                    <div>
-                      {/* Clean Unboxed Overall Budget Progress */}
-                      <div className="border-b border-slate-100 pb-3.5 dark:border-slate-800/80">
-                        <div className="font-mono-num mb-2 flex items-baseline justify-between gap-2 tabular-nums">
-                          <span className="text-base font-extrabold text-[#102A43] dark:text-slate-100">
-                            {formatMoney(budgetSummary.totalSpent, currency)}
-                          </span>
-                          <span className="text-xs font-medium text-slate-400 dark:text-slate-500">
-                            / {formatMoney(budgetSummary.totalLimit, currency)}
-                          </span>
-                        </div>
+
+                    {/* Same-Line Spent / Expected Amount */}
+                    <div className="font-mono-num mt-3 flex items-baseline gap-1 overflow-hidden whitespace-nowrap tabular-nums">
+                      <span className="shrink-0 text-[14px] font-extrabold tracking-tight text-[#112A46] sm:text-[15px] dark:text-slate-100">
+                        {formatMoney(budgetSummary.totalSpent, currency)}
+                      </span>
+                      <span className="truncate text-[11px] font-medium text-slate-400 sm:text-xs dark:text-slate-500">
+                        / {fmtPlainAmount(budgetSummary.totalLimit)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-2.5">
+                    {/* Animated Progress Bar + Inline Percentage */}
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200/85 dark:bg-slate-700/85">
                         <div
-                          className={`h-1.5 overflow-hidden rounded-full ${
-                            budgetOverTotal
-                              ? 'bg-rose-500/15 dark:bg-rose-400/20'
-                              : 'bg-emerald-500/12 dark:bg-emerald-400/15'
+                          className={`goal-bar-fill h-full rounded-full ${
+                            budgetIsOver
+                              ? 'bg-[#EF4444] dark:bg-rose-400'
+                              : budgetIsNear
+                              ? 'bg-[#E8A317] dark:bg-amber-400'
+                              : 'bg-[#10B981] dark:bg-emerald-400'
                           }`}
-                        >
-                          <div
-                            className={`h-full rounded-full transition-all duration-300 ${
-                              budgetOverTotal
-                                ? 'bg-rose-500 dark:bg-rose-400'
-                                : 'bg-[#16845B] dark:bg-emerald-400'
-                            }`}
-                            style={{
-                              width: `${Math.min(100, Math.max(0, budgetSummary.totalPct))}%`,
-                            }}
-                          />
-                        </div>
+                          style={{ width: `${budgetBarWidth}%` }}
+                        />
                       </div>
-
-                      {/* Minimal Per-Category Rows */}
-                      <div className="mt-2.5 space-y-2">
-                        {budgetSummary.sortedGoals.map(({ goal, spent, pct }) => {
-                          const roundedPct = Math.round(pct);
-                          const isOver = pct > 100;
-                          const exceeded = Math.max(0, spent - goal.monthlyLimit);
-
-                          return (
-                            <button
-                              key={goal.id}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (!didGoalSwipeRef.current) {
-                                  onOpenDrilldown('expense_category', goal.category, 'monthly', {
-                                    monthOffset: 0,
-                                    budgetGoalId: goal.id,
-                                    goalTargetAmount: goal.monthlyLimit,
-                                  });
-                                }
-                              }}
-                              className="block w-full cursor-pointer rounded-xl px-2 py-1.5 -mx-2 text-left transition-colors hover:bg-slate-50/90 dark:hover:bg-slate-800/40"
-                            >
-                              <div className="mb-1.5 flex items-center justify-between gap-2">
-                                <div className="flex min-w-0 items-center gap-2">
-                                  <CategoryIconBadge
-                                    style={getCategoryStyle(categoryStyles, 'exp', goal.category)}
-                                    size="xs"
-                                  />
-                                  <span className="truncate text-[13px] font-semibold text-[#102A43] dark:text-slate-100">
-                                    {goal.category}
-                                  </span>
-                                </div>
-                                <span className="font-mono-num shrink-0 text-xs tabular-nums">
-                                  <span className="font-bold text-[#102A43] dark:text-slate-100">
-                                    {formatMoney(spent, currency)}
-                                  </span>
-                                  <span className="font-normal text-slate-400 dark:text-slate-500">
-                                    {' / '}
-                                    {formatMoney(goal.monthlyLimit, currency)}
-                                  </span>
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-2.5">
-                                <div
-                                  className={`h-1.5 flex-1 overflow-hidden rounded-full ${
-                                    isOver
-                                      ? 'bg-rose-500/15 dark:bg-rose-400/20'
-                                      : 'bg-emerald-500/12 dark:bg-emerald-400/15'
-                                  }`}
-                                >
-                                  <div
-                                    className={`h-full rounded-full transition-all duration-300 ${
-                                      isOver
-                                        ? 'bg-rose-500 dark:bg-rose-400'
-                                        : 'bg-[#16845B] dark:bg-emerald-400'
-                                    }`}
-                                    style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
-                                  />
-                                </div>
-                                <span
-                                  className={`font-mono-num w-9 shrink-0 text-right text-[11px] font-semibold tabular-nums ${
-                                    isOver
-                                      ? 'text-rose-600 dark:text-rose-400'
-                                      : 'text-[#16845B] dark:text-emerald-400'
-                                  }`}
-                                >
-                                  {roundedPct}%
-                                </span>
-                              </div>
-
-                              {isOver && (
-                                <div className="font-mono-num mt-1 text-[11px] font-medium text-rose-600 dark:text-rose-400">
-                                  +{formatMoney(exceeded, currency)} {t.dashboard.overBudget}
-                                </div>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
+                      <span className="font-mono-num shrink-0 text-[11px] font-semibold tabular-nums text-slate-600 sm:text-xs dark:text-slate-300">
+                        {budgetPct}%
+                      </span>
                     </div>
-                  )}
-                </div>
 
-                {/* Slide 2: Saving Goals */}
-                <div className="w-1/2 shrink-0 pl-1">
-                  {savingSummary.items.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 p-5 text-center dark:border-slate-800 dark:bg-slate-950/40">
-                      <p className="text-xs text-slate-500 dark:text-slate-400">
-                        {t.dashboard.emptySavingDesc}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!didGoalSwipeRef.current) onOpenSavingGoalsModal();
-                        }}
-                        className="mt-3 rounded-xl bg-sky-600 px-4 py-2 text-xs font-bold text-white hover:bg-sky-700"
+                    {/* Status Dot + Label */}
+                    <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-medium">
+                      <span
+                        aria-hidden="true"
+                        className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                          budgetIsOver
+                            ? 'bg-[#EF4444] dark:bg-rose-400'
+                            : budgetIsNear
+                            ? 'bg-[#E8A317] dark:bg-amber-400'
+                            : 'bg-[#10B981] dark:bg-emerald-400'
+                        }`}
+                      />
+                      <span
+                        className={`truncate ${
+                          budgetOverCount > 0
+                            ? 'text-slate-600 dark:text-slate-300'
+                            : 'text-[#5B6B7F] dark:text-slate-400'
+                        }`}
                       >
-                        {t.dashboard.setFirstSaving}
-                      </button>
+                        {budgetStatusText}
+                      </span>
                     </div>
-                  ) : (
-                    <div>
-                      {/* Clean Unboxed Overall Saving Progress */}
-                      <div className="border-b border-slate-100 pb-3.5 dark:border-slate-800/80">
-                        <div className="font-mono-num mb-2 flex items-baseline justify-between gap-2 tabular-nums">
-                          <span className="text-base font-extrabold text-[#102A43] dark:text-slate-100">
-                            {formatMoney(savingSummary.totalSaved, currency)}
-                          </span>
-                          <span className="text-xs font-medium text-slate-400 dark:text-slate-500">
-                            / {formatMoney(savingSummary.totalTarget, currency)}
-                          </span>
-                        </div>
-                        <div className="h-1.5 overflow-hidden rounded-full bg-sky-500/12 dark:bg-sky-400/15">
-                          <div
-                            className="h-full rounded-full bg-sky-500 transition-all duration-300 dark:bg-sky-400"
-                            style={{
-                              width: `${Math.min(100, Math.max(0, savingSummary.totalPct))}%`,
-                            }}
-                          />
-                        </div>
-                      </div>
-
-                      {/* Minimal Per-Saving-Goal Rows */}
-                      <div className="mt-2.5 space-y-2">
-                        {savingSummary.items.map(({ goal, progress }) => {
-                          const roundedPct = Math.max(0, Math.round(progress.pct));
-                          const reached = progress.pct >= 100;
-                          const showAccountSuffix = Boolean(
-                            goal.account &&
-                              goal.account.trim().toLowerCase() !== goal.title.trim().toLowerCase()
-                          );
-                          const daysText =
-                            !reached &&
-                            goal.periodType === 'period' &&
-                            progress.daysLeft !== null &&
-                            progress.daysLeft >= 0
-                              ? progress.daysLeft === 0
-                                ? t.dashboard.endsTodayLabel
-                                : `${progress.daysLeft} ${
-                                    progress.daysLeft === 1
-                                      ? t.dashboard.dayLeftLabel
-                                      : t.dashboard.daysLeftLabel
-                                  }`
-                              : '';
-
-                          return (
-                            <button
-                              key={goal.id}
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (!didGoalSwipeRef.current) {
-                                  onOpenDrilldown(
-                                    'saving_goal',
-                                    goal.title,
-                                    goal.periodType === 'monthly' ? 'monthly' : 'custom',
-                                    {
-                                      monthOffset: goal.periodType === 'monthly' ? 0 : undefined,
-                                      startDate:
-                                        goal.periodType === 'period' ? goal.startDate : undefined,
-                                      endDate:
-                                        goal.periodType === 'period' ? goal.endDate : undefined,
-                                      periodLabel: progress.periodLabel,
-                                      savingGoalId: goal.id,
-                                      savingGoalAccount: goal.account || undefined,
-                                      goalTargetAmount: goal.targetAmount,
-                                    }
-                                  );
-                                }
-                              }}
-                              className="block w-full cursor-pointer rounded-xl px-2 py-1.5 -mx-2 text-left transition-colors hover:bg-slate-50/90 dark:hover:bg-slate-800/40"
-                            >
-                              <div className="mb-1.5 flex items-center justify-between gap-2">
-                                <div className="flex min-w-0 items-center gap-2">
-                                  <CategoryIconBadge
-                                    style={getCategoryStyle(
-                                      categoryStyles,
-                                      'sav',
-                                      goal.account || savingsList[0] || 'Savings'
-                                    )}
-                                    size="xs"
-                                  />
-                                  <span className="truncate text-[13px] font-semibold text-[#102A43] dark:text-slate-100">
-                                    {goal.title}
-                                    {showAccountSuffix && (
-                                      <span className="font-normal text-slate-400 dark:text-slate-500">
-                                        {' · '}
-                                        {goal.account}
-                                      </span>
-                                    )}
-                                  </span>
-                                </div>
-                                <span className="font-mono-num shrink-0 text-xs tabular-nums">
-                                  <span className="font-bold text-[#102A43] dark:text-slate-100">
-                                    {formatMoney(progress.savedAmount, currency)}
-                                  </span>
-                                  <span className="font-normal text-slate-400 dark:text-slate-500">
-                                    {' / '}
-                                    {formatMoney(goal.targetAmount, currency)}
-                                  </span>
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-2.5">
-                                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-sky-500/12 dark:bg-sky-400/15">
-                                  <div
-                                    className="h-full rounded-full bg-sky-500 transition-all duration-300 dark:bg-sky-400"
-                                    style={{
-                                      width: `${Math.min(100, Math.max(0, progress.pct))}%`,
-                                    }}
-                                  />
-                                </div>
-                                <span className="font-mono-num w-9 shrink-0 text-right text-[11px] font-semibold tabular-nums text-sky-600 dark:text-sky-400">
-                                  {roundedPct}%
-                                </span>
-                              </div>
-
-                              {daysText && (
-                                <div className="mt-1 text-[11px] text-slate-400 dark:text-slate-500">
-                                  {daysText}
-                                </div>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom slide indicator + subtle hint */}
-            <div className="mt-3.5 flex items-center justify-between border-t border-slate-100 pt-2.5 text-[11px] text-slate-400 dark:border-slate-800/80 dark:text-slate-500">
-              <span>
-                {isBudgetView
-                  ? t.dashboard.swipeLeftSaving
-                  : t.dashboard.swipeRightBudget}
-              </span>
-              <div
-                onTouchStart={(e) => e.stopPropagation()}
-                onMouseDown={(e) => e.stopPropagation()}
-                className="flex items-center gap-0.5"
-              >
+                  </div>
+                </button>
+              ) : (
                 <button
                   type="button"
-                  aria-label={t.dashboard.monthlyBudgetGoals}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    selectGoalView('budget');
+                  onClick={() => {
+                    if (isReadOnly) openOverview('budget');
+                    else onOpenBudgetGoalsModal();
                   }}
-                  className="flex h-8 cursor-pointer items-center px-1"
+                  className="flex min-h-[126px] min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border-[1.5px] border-dashed border-[#1E9E6A]/75 bg-white p-3 text-left transition-colors hover:bg-[#E4F3EA]/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1E9E6A] dark:border-emerald-500/60 dark:bg-slate-900 dark:hover:bg-emerald-950/30"
                 >
-                  <span
-                    className={`block h-1.5 rounded-full transition-all ${
-                      isBudgetView
-                        ? 'w-5 bg-[#16845B] dark:bg-emerald-400'
-                        : 'w-2 bg-slate-300 dark:bg-slate-700'
-                    }`}
-                  />
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-sky-50 text-sky-600 dark:bg-sky-950/60 dark:text-sky-400">
+                      <Target className="h-4 w-4" />
+                    </span>
+                    <span className="truncate text-[13px] font-semibold text-[#112A46] dark:text-slate-100">
+                      {t.dashboard.budgetShort}
+                    </span>
+                  </div>
+
+                  <div className="mt-2">
+                    <div className="flex items-center gap-1 text-[13px] font-bold text-[#0F6B45] sm:text-sm dark:text-emerald-400">
+                      <Plus className="h-3.5 w-3.5 shrink-0 stroke-[2.6]" />
+                      <span className="truncate">{t.dashboard.setBudgetShort}</span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-[#5B6B7F] dark:text-slate-400">
+                      {t.dashboard.trackMonthlyLimitsHint}
+                    </p>
+                  </div>
                 </button>
+              )}
+
+              {/* Tile 2: Saving Goals */}
+              {hasSavings ? (
                 <button
                   type="button"
-                  aria-label={t.dashboard.savingGoalsTitle}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    selectGoalView('saving');
-                  }}
-                  className="flex h-8 cursor-pointer items-center px-1"
+                  onClick={() => openOverview('saving')}
+                  className="flex min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border border-slate-200/80 bg-[#FAFBFB] p-3 text-left transition-colors hover:border-slate-300/90 hover:bg-[#F4F7F6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] dark:border-slate-800 dark:bg-slate-800/50 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
                 >
-                  <span
-                    className={`block h-1.5 rounded-full transition-all ${
-                      !isBudgetView
-                        ? 'w-5 bg-sky-500 dark:bg-sky-400'
-                        : 'w-2 bg-slate-300 dark:bg-slate-700'
-                    }`}
-                  />
+                  <div>
+                    {/* Soft Icon Badge + Label */}
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[#10B981] dark:bg-emerald-950/60 dark:text-emerald-400">
+                        <PiggyBank className="h-4 w-4" />
+                      </span>
+                      <span className="truncate text-[13px] font-semibold text-[#112A46] dark:text-slate-100">
+                        {t.dashboard.savingsShort}
+                      </span>
+                    </div>
+
+                    {/* Same-Line Saved / Expected Target Amount */}
+                    <div className="font-mono-num mt-3 flex items-baseline gap-1 overflow-hidden whitespace-nowrap tabular-nums">
+                      <span className="shrink-0 text-[14px] font-extrabold tracking-tight text-[#112A46] sm:text-[15px] dark:text-slate-100">
+                        {formatMoney(savingSummary.totalSaved, currency)}
+                      </span>
+                      <span className="truncate text-[11px] font-medium text-slate-400 sm:text-xs dark:text-slate-500">
+                        / {fmtPlainAmount(savingSummary.totalTarget)}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-2.5">
+                    {/* Animated Progress Bar + Inline Percentage */}
+                    <div className="flex items-center gap-2">
+                      <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200/85 dark:bg-slate-700/85">
+                        <div
+                          className="goal-bar-fill h-full rounded-full bg-[#10B981] dark:bg-emerald-400"
+                          style={{ width: `${savingBarWidth}%` }}
+                        />
+                      </div>
+                      <span className="font-mono-num shrink-0 text-[11px] font-semibold tabular-nums text-slate-600 sm:text-xs dark:text-slate-300">
+                        {savingPct}%
+                      </span>
+                    </div>
+
+                    {/* Status Dot + Label */}
+                    <div className="mt-2.5 flex items-center gap-1.5 text-[11px] font-medium">
+                      <span
+                        aria-hidden="true"
+                        className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#10B981] dark:bg-emerald-400"
+                      />
+                      <span
+                        className={`truncate ${
+                          allSavingsReached
+                            ? 'text-[#0F6B45] dark:text-emerald-400'
+                            : 'text-[#5B6B7F] dark:text-slate-400'
+                        }`}
+                      >
+                        {savingStatusText}
+                      </span>
+                    </div>
+                  </div>
                 </button>
-              </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isReadOnly) openOverview('saving');
+                    else onOpenSavingGoalsModal();
+                  }}
+                  className="flex min-h-[126px] min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border-[1.5px] border-dashed border-[#10B981]/75 bg-white p-3 text-left transition-colors hover:bg-emerald-50/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] dark:border-emerald-500/60 dark:bg-slate-900 dark:hover:bg-emerald-950/30"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[#10B981] dark:bg-emerald-950/60 dark:text-emerald-400">
+                      <PiggyBank className="h-4 w-4" />
+                    </span>
+                    <span className="truncate text-[13px] font-semibold text-[#112A46] dark:text-slate-100">
+                      {t.dashboard.savingsShort}
+                    </span>
+                  </div>
+
+                  <div className="mt-2">
+                    <div className="flex items-center gap-1 text-[13px] font-bold text-[#0F6B45] sm:text-sm dark:text-emerald-400">
+                      <Plus className="h-3.5 w-3.5 shrink-0 stroke-[2.6]" />
+                      <span className="truncate">{t.dashboard.addGoalShort}</span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-[#5B6B7F] dark:text-slate-400">
+                      {t.dashboard.setSavingTargetsHint}
+                    </p>
+                  </div>
+                </button>
+              )}
             </div>
           </div>
         );
@@ -2305,6 +2369,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       {gridOrder.map((key, idx) => {
         const content = renderSection(key);
         if (!content) return null;
+        if (key === 'netWorth') {
+          return <React.Fragment key={key}>{content}</React.Fragment>;
+        }
         return (
           <ScrollRevealSection key={key} index={idx}>
             {content}
