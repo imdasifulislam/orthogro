@@ -1452,7 +1452,7 @@ export const DrilldownModal: React.FC<{
         )}
 
         {showNetWorthSummary && netWorthSummary ? (
-          <div className="no-scrollbar min-h-0 flex-1 space-y-2 overflow-y-auto pr-0.5">
+          <div className="no-scrollbar min-h-0 flex-1 space-y-3.5 overflow-y-auto pr-0.5">
             {/* Compact Hero Net Worth & Green/Red Composition Bar */}
             <div className="net-worth-card relative overflow-hidden rounded-2xl p-3 text-white">
               <div className="relative z-10">
@@ -1471,7 +1471,7 @@ export const DrilldownModal: React.FC<{
                   const barTotal = positiveAssets + positiveBorrowed;
                   if (barTotal <= 0) return null;
                   return (
-                    <div className="mt-2 flex h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                    <div className="mt-2 flex h-[3px] w-full overflow-hidden rounded-full bg-white/10">
                       {positiveAssets > 0 && (
                         <div
                           style={{ width: `${(positiveAssets / barTotal) * 100}%` }}
@@ -1533,12 +1533,12 @@ export const DrilldownModal: React.FC<{
                       key={w}
                       type="button"
                       onClick={() => onSelectDrilldown?.('wallet', w)}
-                      className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2 py-1.5 text-left transition-colors hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-emerald-500/40"
+                      className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2.5 py-2.5 text-left transition-colors hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-emerald-500/40"
                     >
-                      <span className="truncate text-[11px] font-medium leading-tight text-slate-600 dark:text-slate-300">
+                      <span className="truncate text-[11px] font-medium leading-tight text-slate-500 dark:text-slate-400">
                         {w}
                       </span>
-                      <span className="font-mono-num mt-0.5 truncate text-xs font-bold leading-tight tabular-nums text-[#102A43] dark:text-slate-100">
+                      <span className="font-mono-num mt-1 truncate text-xs font-bold leading-tight tabular-nums text-slate-600 dark:text-slate-300">
                         {formatMoney(bal, currency)}
                       </span>
                     </button>
@@ -1579,12 +1579,12 @@ export const DrilldownModal: React.FC<{
                         key={s}
                         type="button"
                         onClick={() => onSelectDrilldown?.('savings', s)}
-                        className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2 py-1.5 text-left transition-colors hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-emerald-500/40"
+                        className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2.5 py-2.5 text-left transition-colors hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-emerald-500/40"
                       >
-                        <span className="truncate text-[11px] font-medium leading-tight text-slate-600 dark:text-slate-300">
+                        <span className="truncate text-[11px] font-medium leading-tight text-slate-500 dark:text-slate-400">
                           {s}
                         </span>
-                        <span className="font-mono-num mt-0.5 truncate text-xs font-bold leading-tight tabular-nums text-[#102A43] dark:text-slate-100">
+                        <span className="font-mono-num mt-1 truncate text-xs font-bold leading-tight tabular-nums text-slate-600 dark:text-slate-300">
                           {formatMoney(bal, currency)}
                         </span>
                       </button>
@@ -1634,12 +1634,12 @@ export const DrilldownModal: React.FC<{
                         onClose();
                         onInspectDebt(tx);
                       }}
-                      className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2 py-1.5 text-left transition-colors hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-emerald-500/40"
+                      className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2.5 py-2.5 text-left transition-colors hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-emerald-500/40"
                     >
-                      <span className="truncate text-[11px] font-medium leading-tight text-slate-600 dark:text-slate-300">
+                      <span className="truncate text-[11px] font-medium leading-tight text-slate-500 dark:text-slate-400">
                         {tx.title || t.dashboard.lentReceivable}
                       </span>
-                      <span className="font-mono-num mt-0.5 truncate text-xs font-bold leading-tight tabular-nums text-[#102A43] dark:text-slate-100">
+                      <span className="font-mono-num mt-1 truncate text-xs font-bold leading-tight tabular-nums text-slate-600 dark:text-slate-300">
                         {formatMoney(due, currency)}
                       </span>
                     </button>
@@ -1688,12 +1688,12 @@ export const DrilldownModal: React.FC<{
                         onClose();
                         onInspectDebt(tx);
                       }}
-                      className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2 py-1.5 text-left transition-colors hover:border-rose-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-rose-500/40"
+                      className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2.5 py-2.5 text-left transition-colors hover:border-rose-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-rose-500/40"
                     >
-                      <span className="truncate text-[11px] font-medium leading-tight text-slate-600 dark:text-slate-300">
+                      <span className="truncate text-[11px] font-medium leading-tight text-slate-500 dark:text-slate-400">
                         {tx.title || t.dashboard.borrowedPayable}
                       </span>
-                      <span className="font-mono-num mt-0.5 truncate text-xs font-bold leading-tight tabular-nums text-[#102A43] dark:text-slate-100">
+                      <span className="font-mono-num mt-1 truncate text-xs font-bold leading-tight tabular-nums text-slate-600 dark:text-slate-300">
                         {formatMoney(due, currency)}
                       </span>
                     </button>
