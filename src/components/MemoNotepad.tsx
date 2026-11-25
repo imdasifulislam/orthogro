@@ -1,16 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  ArrowLeft,
   Check,
   ChevronDown,
   Copy,
   MessageSquare,
   Plus,
-  Save,
   Share2,
   Trash2,
-  Wallet,
+  TrendingDown,
   X,
 } from 'lucide-react';
 import { useTranslation } from '../i18n';
@@ -449,7 +447,6 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
     if (isReadOnly) return;
     resetMemoFields();
     setIsMemoEditorOpen(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const openSavedMemoEditor = (memo: BazarMemo) => {
@@ -480,7 +477,6 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
       extractSaveableItems(loadedRows)
     );
     setIsMemoEditorOpen(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   // Auto-save on Back / Exit without requiring explicit Save tap
@@ -570,7 +566,7 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
 
   // Escape key closes top-most sheet/drawer/modal
   useEffect(() => {
-    if (!shareSheet && !expenseDrawer && !isAddingNote && !selectedNote) return;
+    if (!shareSheet && !expenseDrawer && !isAddingNote && !selectedNote && !isMemoEditorOpen) return;
     const handleKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (activeMemoPicker) return;
@@ -580,12 +576,14 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
         setExpenseDrawer(null);
       } else if (isAddingNote || selectedNote) {
         void handleCloseNoteModal();
+      } else if (isMemoEditorOpen) {
+        void handleExitMemoEditor();
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shareSheet, expenseDrawer, activeMemoPicker, isAddingNote, selectedNote]);
+  }, [shareSheet, expenseDrawer, activeMemoPicker, isAddingNote, selectedNote, isMemoEditorOpen]);
 
   const handleRowChange = (
     idx: number,
@@ -593,7 +591,15 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
     value: string
   ) => {
     setMemoRows((prev) => {
-      const updated = prev.map((row, i) => (i === idx ? { ...row, [field]: value } : row));
+      const updated = prev.map((row, i) => {
+        if (i !== idx) return row;
+        if (field === 'price') {
+          const parsed = parseFloat(value);
+          const hasAmount = value.trim() !== '' && Number.isFinite(parsed) && parsed > 0;
+          return { ...row, price: value, checked: hasAmount };
+        }
+        return { ...row, [field]: value };
+      });
       const editedRow = updated[idx];
       if (
         idx === updated.length - 1 &&
@@ -639,37 +645,6 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
     });
   };
 
-  const handleSaveMemoClick = async () => {
-    if (isReadOnly || isSavingMemoRef.current) return;
-    const valid = extractSaveableItems(memoRows);
-    if (valid.length === 0) {
-      onNotify('error', t.toasts.needMemoItem);
-      return;
-    }
-    const total = valid.reduce((s, item) => s + item.price, 0);
-    const currentSnap = serializeMemoSnapshot(memoNoteText, valid);
-    isSavingMemoRef.current = true;
-    initialMemoSnapshotRef.current = currentSnap;
-    try {
-      await onSaveMemo(
-        {
-          date: memoDate,
-          category: memoCategory,
-          ...(memoSubCategory ? { subCategory: memoSubCategory } : {}),
-          wallet: memoWallet,
-          items: valid,
-          total,
-          note: memoNoteText.trim(),
-        },
-        editingMemoId || undefined
-      );
-    } finally {
-      isSavingMemoRef.current = false;
-    }
-    resetMemoFields();
-    setIsMemoEditorOpen(false);
-  };
-
   const openExpenseDrawerForActive = () => {
     if (isReadOnly) return;
     const valid = extractSaveableItems(memoRows);
@@ -710,7 +685,11 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
   };
 
   const openExpenseDrawerForSaved = (memo: BazarMemo) => {
-    if (isReadOnly || memo.total <= 0) return;
+    if (isReadOnly) return;
+    if (memo.total <= 0) {
+      onNotify('error', t.toasts.needMemoPriceForExpense);
+      return;
+    }
     const defaultTitle =
       memo.note?.trim() || `${t.memo.bazarMemoPrefix} (${memo.date})`;
     const safeCat = expenseCategories.includes(memo.category)
@@ -836,31 +815,6 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
       title: title.trim() || t.memo.notepadTab,
       text,
     });
-  };
-
-  const handleSaveNoteClick = async () => {
-    if (isReadOnly || isSavingNoteRef.current) return;
-    if (!currentContent.trim() && !currentTitle.trim()) {
-      onNotify('error', t.toasts.needNoteContent);
-      return;
-    }
-    const snap = serializeNoteSnapshot(currentTitle, currentContent);
-    isSavingNoteRef.current = true;
-    initialNoteSnapshotRef.current = snap;
-    try {
-      await onSaveNote(
-        {
-          title: currentTitle.trim() || t.common.untitled,
-          content: currentContent.trim(),
-          date: getTodayISO(),
-        },
-        selectedNote?.id
-      );
-    } finally {
-      isSavingNoteRef.current = false;
-    }
-    setIsAddingNote(false);
-    setSelectedNote(null);
   };
 
   const handleTabSwipeStart = (
@@ -1008,44 +962,52 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
 
   return (
     <div className="mx-auto max-w-4xl">
-      {/* Dedicated Full-Focus Bazar Memo Add/Edit View */}
-      {isMemoEditorOpen ? (
-        <div className="mx-auto max-w-2xl">
-          {/* Clean Top Editor Navigation Bar */}
-          <div className="mb-3 flex items-center justify-between gap-2">
-            <button
-              type="button"
-              onClick={() => void handleExitMemoEditor()}
-              className="inline-flex min-h-[40px] items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm font-bold text-[#102A43] transition-colors hover:bg-slate-200/60 dark:text-slate-100 dark:hover:bg-slate-800"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              <span>{t.memo.backToMemos}</span>
-            </button>
-
-            <div className="flex items-center gap-2">
-              {!isReadOnly && (
-                <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                  {t.memo.autoSaveHint}
-                </span>
-              )}
-              {editingMemoId && !isReadOnly && (
+      {/* Bazar Memo Editor Modal (Auto-saves on Back / Close / Backdrop tap) */}
+      {isMemoEditorOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+          onClick={() => void handleExitMemoEditor()}
+        >
+          <div
+            className="flex max-h-[84vh] min-h-[54vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Unified Memo Header + Auto-save Hint + Compact Icons */}
+            <div className="flex shrink-0 items-center justify-between gap-2 px-5 pt-4 pb-1">
+              <span className="truncate text-xs font-semibold text-slate-400 dark:text-slate-500">
+                {editingMemoId ? `${t.memo.bazarMemoTab} · ${memoDate}` : t.memo.newMemoBtn}
+              </span>
+              <div className="-mr-1 flex shrink-0 items-center gap-1.5">
+                {!isReadOnly && (
+                  <span className="mr-0.5 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                    {t.memo.autoSaveHint}
+                  </span>
+                )}
+                {editingMemoId && !isReadOnly && (
+                  <button
+                    type="button"
+                    aria-label={t.common.delete}
+                    title={t.common.delete}
+                    onClick={() => onDeleteMemo(editingMemoId)}
+                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-950"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <button
                   type="button"
-                  aria-label={t.common.delete}
-                  title={t.common.delete}
-                  onClick={() => onDeleteMemo(editingMemoId)}
-                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-950"
+                  aria-label={t.common.close}
+                  title={t.common.close}
+                  onClick={() => void handleExitMemoEditor()}
+                  className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <X className="h-4 w-4" />
                 </button>
-              )}
+              </div>
             </div>
-          </div>
 
-          {/* Dedicated Open Memo Canvas */}
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
             {/* Optional Memo Title */}
-            <div className="px-4 pt-3.5 pb-1.5 sm:px-5">
+            <div className="shrink-0 px-5 pt-1.5 pb-2.5">
               <input
                 type="text"
                 maxLength={500}
@@ -1064,8 +1026,10 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
               />
             </div>
 
-            {/* Tight Flat Item Rows (Zero inner borders, zero column boxes) */}
-            <div className="px-3 pt-0.5 pb-2 sm:px-4">
+            <div className="mx-5 shrink-0 border-b border-slate-100 dark:border-slate-800" />
+
+            {/* Scrollable Tight Flat Item Rows (Zero inner borders, zero column boxes) */}
+            <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-1.5 pb-3 sm:px-4">
               <div className="space-y-0">
                 {memoRows.map((row, idx) => {
                   const hasRowContent =
@@ -1155,46 +1119,59 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                       />
 
                       {/* Price */}
-                      <div className="flex shrink-0 items-center gap-0.5 pl-1">
+                      <div
+                        onClick={() => priceInputRefs.current[idx]?.focus()}
+                        className="flex min-w-[68px] max-w-[96px] shrink-0 cursor-text items-baseline justify-end pl-1 sm:min-w-[82px] sm:max-w-[110px]"
+                      >
                         <span
-                          className={`select-none text-[11px] transition-colors ${
+                          className={`mr-[1px] shrink-0 select-none text-[11px] font-medium transition-colors ${
                             row.price.trim() !== ''
-                              ? 'text-slate-400 dark:text-slate-400'
+                              ? row.checked
+                                ? 'text-slate-400 dark:text-slate-500'
+                                : 'text-slate-500 dark:text-slate-400'
                               : 'text-slate-300 group-focus-within:text-slate-400 dark:text-slate-700 dark:group-focus-within:text-slate-500'
                           }`}
                         >
                           {currency}
                         </span>
-                        <input
-                          ref={(el) => {
-                            priceInputRefs.current[idx] = el;
-                          }}
-                          type="number"
-                          inputMode="decimal"
-                          enterKeyHint={idx < memoRows.length - 1 ? 'next' : 'done'}
-                          step="any"
-                          min="0"
-                          readOnly={isReadOnly}
-                          aria-label={t.memo.pricePlaceholder}
-                          placeholder="0"
-                          value={row.price}
-                          onChange={(e) => handleRowChange(idx, 'price', e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              if (idx < memoRows.length - 1) {
-                                priceInputRefs.current[idx + 1]?.focus();
-                              } else {
-                                e.currentTarget.blur();
+                        <span className="inline-grid min-w-[1ch] max-w-full items-baseline overflow-hidden">
+                          <span
+                            aria-hidden="true"
+                            className="invisible col-start-1 row-start-1 whitespace-pre pr-0.5 font-mono-num text-sm font-semibold tabular-nums"
+                          >
+                            {row.price || '0'}
+                          </span>
+                          <input
+                            ref={(el) => {
+                              priceInputRefs.current[idx] = el;
+                            }}
+                            type="number"
+                            inputMode="decimal"
+                            enterKeyHint={idx < memoRows.length - 1 ? 'next' : 'done'}
+                            step="any"
+                            min="0"
+                            readOnly={isReadOnly}
+                            aria-label={t.memo.pricePlaceholder}
+                            placeholder="0"
+                            value={row.price}
+                            onChange={(e) => handleRowChange(idx, 'price', e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (idx < memoRows.length - 1) {
+                                  priceInputRefs.current[idx + 1]?.focus();
+                                } else {
+                                  e.currentTarget.blur();
+                                }
                               }
-                            }
-                          }}
-                          className={`no-spinner w-14 bg-transparent py-1 text-right font-mono-num text-sm font-semibold tabular-nums focus:outline-none sm:w-[70px] ${
-                            row.checked
-                              ? 'text-slate-400 dark:text-slate-500'
-                              : 'text-[#102A43] placeholder:font-normal placeholder:text-slate-300 dark:text-slate-100 dark:placeholder:text-slate-600'
-                          }`}
-                        />
+                            }}
+                            className={`no-spinner col-start-1 row-start-1 w-full min-w-0 bg-transparent py-1 pr-0.5 text-right font-mono-num text-sm font-semibold tabular-nums focus:outline-none ${
+                              row.checked
+                                ? 'text-slate-400 dark:text-slate-500'
+                                : 'text-[#102A43] placeholder:font-normal placeholder:text-slate-300 dark:text-slate-100 dark:placeholder:text-slate-600'
+                            }`}
+                          />
+                        </span>
                       </div>
 
                       {/* Subtle Delete Row Button */}
@@ -1234,8 +1211,8 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
               )}
             </div>
 
-            {/* Compact Summary & 3 Icon Action Buttons Footer */}
-            <div className="flex items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/70 px-4 py-3 sm:px-5 dark:border-slate-800 dark:bg-slate-950/50">
+            {/* Compact Summary & Icon Action Buttons Footer */}
+            <div className="flex shrink-0 items-center justify-between gap-3 border-t border-slate-100 bg-slate-50/70 px-4 py-3 sm:px-5 dark:border-slate-800 dark:bg-slate-950/50">
               <div className="min-w-0">
                 <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                   {t.common.total}
@@ -1246,21 +1223,6 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
               </div>
 
               <div className="flex shrink-0 items-center gap-1.5">
-                {/* Save Memo Icon Button */}
-                <button
-                  type="button"
-                  disabled={isReadOnly}
-                  onClick={() => void handleSaveMemoClick()}
-                  title={editingMemoId ? t.memo.updateMemo : t.memo.saveMemo}
-                  aria-label={editingMemoId ? t.memo.updateMemo : t.memo.saveMemo}
-                  className="flex min-h-[44px] min-w-[48px] flex-col items-center justify-center gap-0.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[#102A43] transition-colors hover:border-[#16845B]/40 hover:bg-emerald-50/60 hover:text-[#16845B] active:scale-[0.97] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-emerald-500/40 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-400"
-                >
-                  <Save className="h-4 w-4" />
-                  <span className="text-[10px] font-bold leading-none whitespace-nowrap">
-                    {editingMemoId ? t.memo.updateShort : t.memo.saveShort}
-                  </span>
-                </button>
-
                 {/* Share Memo Icon Button */}
                 <button
                   type="button"
@@ -1282,9 +1244,9 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                   onClick={openExpenseDrawerForActive}
                   title={t.memo.addAsExpense}
                   aria-label={t.memo.addAsExpense}
-                  className="flex min-h-[44px] min-w-[52px] flex-col items-center justify-center gap-0.5 rounded-xl bg-[#16845B] px-3 py-1.5 text-white shadow-xs transition-colors hover:bg-[#126B4A] active:scale-[0.97] disabled:opacity-50"
+                  className="flex min-h-[44px] min-w-[52px] flex-col items-center justify-center gap-0.5 rounded-xl border border-rose-200/80 bg-rose-50 px-3 py-1.5 text-[#D94848] shadow-xs transition-colors hover:border-rose-300 hover:bg-rose-100/80 active:scale-[0.97] disabled:opacity-50 dark:border-rose-900/60 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:border-rose-800 dark:hover:bg-rose-950"
                 >
-                  <Wallet className="h-4 w-4" />
+                  <TrendingDown className="h-4 w-4" />
                   <span className="text-[10px] font-bold leading-none whitespace-nowrap">
                     {t.memo.expenseShort}
                   </span>
@@ -1293,9 +1255,9 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
             </div>
           </div>
         </div>
-      ) : (
-        <>
-          {/* Sub-tab segmented selector */}
+      )}
+
+      {/* Sub-tab segmented selector */}
           <div className="mb-4 grid grid-cols-2 gap-1 rounded-xl bg-slate-200/70 p-1 dark:bg-slate-800">
             <button
               type="button"
@@ -1424,34 +1386,20 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                                   {memo.date} · {memo.items.length} {t.memo.itemsCountSuffix}
                                 </p>
                               </div>
-                              <div className="flex shrink-0 items-center gap-1">
+                              {!isReadOnly && (
                                 <button
                                   type="button"
-                                  aria-label={t.memo.shareMemo}
-                                  title={t.memo.shareMemo}
+                                  aria-label={t.common.delete}
+                                  title={t.common.delete}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    openShareSheetForSavedMemo(memo);
+                                    onDeleteMemo(memo.id);
                                   }}
-                                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors hover:bg-sky-50 hover:text-sky-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-sky-950/60 dark:hover:text-sky-400"
+                                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-950"
                                 >
-                                  <Share2 className="h-3.5 w-3.5" />
+                                  <Trash2 className="h-3.5 w-3.5" />
                                 </button>
-                                {!isReadOnly && (
-                                  <button
-                                    type="button"
-                                    aria-label={t.common.delete}
-                                    title={t.common.delete}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      onDeleteMemo(memo.id);
-                                    }}
-                                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-950"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                  </button>
-                                )}
-                              </div>
+                              )}
                             </div>
 
                             {/* Tight Borderless Item Preview */}
@@ -1472,7 +1420,11 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                                       {item.name}
                                     </span>
                                     {item.qty && (
-                                      <span className="ml-1.5 text-[11px] text-slate-400 dark:text-slate-500">
+                                      <span
+                                        className={`ml-1.5 text-[11px] text-slate-400 dark:text-slate-500 ${
+                                          item.checked ? 'line-through' : ''
+                                        }`}
+                                      >
                                         · {item.qty}
                                       </span>
                                     )}
@@ -1490,34 +1442,53 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                             </div>
                           </div>
 
-                          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-2.5 dark:border-slate-800">
-                            <div className="flex items-baseline gap-2">
-                              <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                          <div className="mt-3 flex items-center justify-between gap-2 border-t border-slate-100 pt-2.5 dark:border-slate-800">
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">
                                 {t.common.total}
-                              </span>
-                              <span className="font-mono-num text-sm font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
+                              </p>
+                              <p className="truncate font-mono-num text-sm font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
                                 {memo.total > 0
                                   ? formatMoney(memo.total, currency)
                                   : t.memo.plannedNoPrice}
-                              </span>
+                              </p>
                             </div>
 
-                            {memo.total > 0 && !isReadOnly ? (
+                            <div className="flex shrink-0 items-center gap-1.5">
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  openExpenseDrawerForSaved(memo);
+                                  openShareSheetForSavedMemo(memo);
                                 }}
-                                className="min-h-[36px] shrink-0 whitespace-nowrap rounded-xl bg-[#102A43] px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-slate-800 dark:bg-sky-700 dark:hover:bg-sky-600"
+                                title={t.memo.shareMemo}
+                                aria-label={t.memo.shareMemo}
+                                className="flex min-h-[40px] min-w-[46px] flex-col items-center justify-center gap-0.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[#102A43] transition-colors hover:border-sky-400/50 hover:bg-sky-50/60 hover:text-sky-700 active:scale-[0.97] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-sky-500/40 dark:hover:bg-sky-950/40 dark:hover:text-sky-400"
                               >
-                                {t.memo.logAsExpense}
+                                <Share2 className="h-3.5 w-3.5" />
+                                <span className="text-[10px] font-bold leading-none whitespace-nowrap">
+                                  {t.memo.shareShort}
+                                </span>
                               </button>
-                            ) : (
-                              <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                                {t.memo.tapToOpen}
-                              </span>
-                            )}
+
+                              {!isReadOnly && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openExpenseDrawerForSaved(memo);
+                                  }}
+                                  title={t.memo.addAsExpense}
+                                  aria-label={t.memo.addAsExpense}
+                                  className="flex min-h-[40px] min-w-[50px] flex-col items-center justify-center gap-0.5 rounded-xl border border-rose-200/80 bg-rose-50 px-2.5 py-1.5 text-[#D94848] shadow-xs transition-colors hover:border-rose-300 hover:bg-rose-100/80 active:scale-[0.97] dark:border-rose-900/60 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:border-rose-800 dark:hover:bg-rose-950"
+                                >
+                                  <TrendingDown className="h-3.5 w-3.5" />
+                                  <span className="text-[10px] font-bold leading-none whitespace-nowrap">
+                                    {t.memo.expenseShort}
+                                  </span>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       ))}
@@ -1598,18 +1569,34 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                               <h4 className="line-clamp-1 text-sm font-bold text-[#102A43] dark:text-slate-100">
                                 {note.title}
                               </h4>
-                              <button
-                                type="button"
-                                aria-label={t.memo.shareNote}
-                                title={t.memo.shareNote}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  openShareSheetForNote(note.title, note.content);
-                                }}
-                                className="-mt-1 -mr-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-[#16845B] dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-emerald-400"
-                              >
-                                <Share2 className="h-3.5 w-3.5" />
-                              </button>
+                              <div className="-mt-1 -mr-1 flex shrink-0 items-center gap-1">
+                                <button
+                                  type="button"
+                                  aria-label={t.memo.shareNote}
+                                  title={t.memo.shareNote}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openShareSheetForNote(note.title, note.content);
+                                  }}
+                                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors hover:bg-sky-50 hover:text-sky-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-sky-950/60 dark:hover:text-sky-400"
+                                >
+                                  <Share2 className="h-3.5 w-3.5" />
+                                </button>
+                                {!isReadOnly && (
+                                  <button
+                                    type="button"
+                                    aria-label={t.common.delete}
+                                    title={t.common.delete}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onDeleteNote(note.id);
+                                    }}
+                                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-950"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                              </div>
                             </div>
                             <p className="mt-1.5 line-clamp-4 whitespace-pre-line text-xs leading-relaxed text-slate-500 dark:text-slate-400">
                               {note.content || t.memo.emptyNote}
@@ -1627,8 +1614,6 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
               </div>
             </div>
           </div>
-        </>
-      )}
 
       {/* Notepad Editor Modal (Auto-saves on Back / Close / Backdrop tap) */}
       {(isAddingNote || selectedNote) && (
@@ -1640,25 +1625,50 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
             className="flex h-[82vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Unified Note Header + Share + Close */}
-            <div className="flex items-center justify-between px-5 pt-4 pb-1">
-              <span className="text-xs font-semibold text-slate-400 dark:text-slate-500">
+            {/* Unified Note Header + Auto-save Hint + Compact Icons */}
+            <div className="flex items-center justify-between gap-2 px-5 pt-4 pb-1">
+              <span className="truncate text-xs font-semibold text-slate-400 dark:text-slate-500">
                 {selectedNote ? `${t.memo.editNote} · ${selectedNote.date}` : t.memo.newNote}
               </span>
-              <div className="-mr-1.5 flex items-center gap-1">
+              <div className="-mr-1 flex shrink-0 items-center gap-1.5">
+                {!isReadOnly && (
+                  <span className="mr-0.5 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                    {t.memo.autoSaveHint}
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => openShareSheetForNote(currentTitle, currentContent)}
                   aria-label={t.memo.shareNote}
                   title={t.memo.shareNote}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-[#16845B] dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-emerald-400"
+                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors hover:bg-sky-50 hover:text-sky-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-sky-950/60 dark:hover:text-sky-400"
                 >
-                  <Share2 className="h-4 w-4" />
+                  <Share2 className="h-3.5 w-3.5" />
                 </button>
+                {selectedNote && !isReadOnly && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // Bypass auto-save when deleting
+                      initialNoteSnapshotRef.current = serializeNoteSnapshot(
+                        currentTitle,
+                        currentContent
+                      );
+                      onDeleteNote(selectedNote.id);
+                      setSelectedNote(null);
+                    }}
+                    aria-label={t.common.delete}
+                    title={t.common.delete}
+                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-950"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => void handleCloseNoteModal()}
                   aria-label={t.common.close}
+                  title={t.common.close}
                   className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                 >
                   <X className="h-4 w-4" />
@@ -1693,51 +1703,8 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
               placeholder={t.memo.noteContentPlaceholder}
               value={currentContent}
               onChange={(e) => setCurrentContent(e.target.value)}
-              className="w-full flex-1 resize-none bg-transparent px-5 py-3.5 text-sm leading-relaxed text-[#102A43] placeholder:text-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
+              className="w-full flex-1 resize-none bg-transparent px-5 pt-3.5 pb-5 text-sm leading-relaxed text-[#102A43] placeholder:text-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
             />
-
-            <div className="flex items-center justify-between gap-2 border-t border-slate-100 bg-slate-50/60 px-5 py-3.5 dark:border-slate-800 dark:bg-slate-950/40">
-              {selectedNote && !isReadOnly ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    // Bypass auto-save when deleting
-                    initialNoteSnapshotRef.current = serializeNoteSnapshot(
-                      currentTitle,
-                      currentContent
-                    );
-                    onDeleteNote(selectedNote.id);
-                    setSelectedNote(null);
-                  }}
-                  className="min-h-[42px] rounded-xl bg-rose-600 px-4 py-2 text-xs font-bold text-white hover:bg-rose-700"
-                >
-                  {t.common.delete}
-                </button>
-              ) : (
-                <span className="text-[11px] font-medium text-slate-400 dark:text-slate-500">
-                  {!isReadOnly ? t.memo.autoSaveHint : ''}
-                </span>
-              )}
-
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => void handleCloseNoteModal()}
-                  className="min-h-[42px] rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
-                >
-                  {t.common.close}
-                </button>
-                {!isReadOnly && (
-                  <button
-                    type="button"
-                    onClick={() => void handleSaveNoteClick()}
-                    className="min-h-[42px] rounded-xl bg-[#16845B] px-5 py-2 text-xs font-bold text-white hover:bg-[#126B4A]"
-                  >
-                    {selectedNote ? t.common.update : t.common.save}
-                  </button>
-                )}
-              </div>
-            </div>
           </div>
         </div>
       )}
@@ -1765,8 +1732,8 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
               {/* Drawer Header */}
               <div className="flex items-start justify-between gap-3 px-5 pt-3 pb-3">
                 <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
-                    <Wallet className="h-5 w-5" />
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-[#D94848] dark:bg-rose-950/60 dark:text-rose-400">
+                    <TrendingDown className="h-5 w-5" />
                   </div>
                   <div>
                     <h3

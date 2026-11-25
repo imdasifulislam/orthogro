@@ -1297,41 +1297,41 @@ export const DrilldownModal: React.FC<{
                 </p>
               )}
           </div>
-          {!showNetWorthSummary ? (
-            isCategoryDrilldown ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setDraftCustomFrom(customDateFrom);
-                  setDraftCustomTo(customDateTo);
-                  setCustomRangeError(null);
-                  setShowCategoryFilterPicker(true);
-                }}
-                aria-label={t.modals.selectTimePeriod}
-                title={t.modals.selectTimePeriod}
-                className="inline-flex min-h-[32px] max-w-[165px] shrink-0 cursor-pointer items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-[#102A43] transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
-              >
-                <span className="truncate">{categoryFilterButtonLabel}</span>
-                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
-              </button>
-            ) : (
-              <select
-                value={drilldownFilter}
-                onChange={(e) => setDrilldownFilter(e.target.value as PeriodFilter)}
-                className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-              >
-                <option value="all">{t.common.allTime}</option>
-                <option value="monthly">{monthlyOptionLabel}</option>
-                <option value="previous_month">{t.common.prevMonthShort}</option>
-                <option value="yearly">{yearlyOptionLabel}</option>
-                {(drilldownFilter === 'custom' ||
-                  hasExplicitGoalRange ||
-                  (Boolean(customDateFrom) && Boolean(customDateTo))) && (
-                  <option value="custom">{customOptionLabel}</option>
-                )}
-              </select>
-            )
-          ) : (
+          <div className="flex shrink-0 items-center gap-1.5">
+            {!showNetWorthSummary &&
+              (isCategoryDrilldown ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraftCustomFrom(customDateFrom);
+                    setDraftCustomTo(customDateTo);
+                    setCustomRangeError(null);
+                    setShowCategoryFilterPicker(true);
+                  }}
+                  aria-label={t.modals.selectTimePeriod}
+                  title={t.modals.selectTimePeriod}
+                  className="inline-flex min-h-[32px] max-w-[136px] shrink-0 cursor-pointer items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-[#102A43] transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] sm:max-w-[165px] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
+                >
+                  <span className="truncate">{categoryFilterButtonLabel}</span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+                </button>
+              ) : (
+                <select
+                  value={drilldownFilter}
+                  onChange={(e) => setDrilldownFilter(e.target.value as PeriodFilter)}
+                  className="max-w-[130px] shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs font-semibold text-[#102A43] sm:max-w-none sm:px-2.5 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                >
+                  <option value="all">{t.common.allTime}</option>
+                  <option value="monthly">{monthlyOptionLabel}</option>
+                  <option value="previous_month">{t.common.prevMonthShort}</option>
+                  <option value="yearly">{yearlyOptionLabel}</option>
+                  {(drilldownFilter === 'custom' ||
+                    hasExplicitGoalRange ||
+                    (Boolean(customDateFrom) && Boolean(customDateTo))) && (
+                    <option value="custom">{customOptionLabel}</option>
+                  )}
+                </select>
+              ))}
             <button
               type="button"
               onClick={onClose}
@@ -1340,7 +1340,7 @@ export const DrilldownModal: React.FC<{
             >
               <X className="h-4 w-4" />
             </button>
-          )}
+          </div>
         </div>
 
         {isNetWorthDrilldown && (
@@ -1564,9 +1564,8 @@ export const DrilldownModal: React.FC<{
         )}
 
         {!isReadOnly &&
-        ((drilldownPeriodContext?.budgetGoalId && onEditBudgetGoal) ||
-          (drilldownPeriodContext?.savingGoalId && onEditSavingGoal)) ? (
-          <div className="mt-4 flex shrink-0 items-center gap-2.5">
+          ((drilldownPeriodContext?.budgetGoalId && onEditBudgetGoal) ||
+            (drilldownPeriodContext?.savingGoalId && onEditSavingGoal)) && (
             <button
               type="button"
               onClick={() => {
@@ -1576,29 +1575,13 @@ export const DrilldownModal: React.FC<{
                   onEditSavingGoal(drilldownPeriodContext.savingGoalId);
                 }
               }}
-              className="min-h-[42px] flex-1 cursor-pointer rounded-xl border border-slate-200 bg-slate-50 py-2 text-xs font-bold text-[#102A43] transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700/80"
+              className="mt-4 min-h-[42px] w-full shrink-0 cursor-pointer rounded-xl border border-slate-200 bg-slate-50 py-2 text-xs font-bold text-[#102A43] transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700/80"
             >
               {drilldownPeriodContext?.budgetGoalId
                 ? t.modals.editBudgetGoal
                 : t.modals.editSavingGoal}
             </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="min-h-[42px] flex-1 cursor-pointer rounded-xl bg-[#16845B] py-2 text-xs font-bold text-white transition-colors hover:bg-[#126B4A]"
-            >
-              {t.common.close}
-            </button>
-          </div>
-        ) : (
-          <button
-            type="button"
-            onClick={onClose}
-            className="mt-4 min-h-[42px] w-full shrink-0 rounded-xl bg-[#16845B] py-2 text-xs font-bold text-white hover:bg-[#126B4A]"
-          >
-            {t.common.close}
-          </button>
-        )}
+          )}
       </div>
 
       {isCategoryDrilldown && showCategoryFilterPicker && (
@@ -1748,13 +1731,25 @@ export const DebtHistoryModal: React.FC<{
         className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
         onClick={(e) => e.stopPropagation()}
       >
-        <h3 className="text-base font-bold text-[#16845B] dark:text-emerald-400">
-          {item.title}
-        </h3>
-        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-          {t.modals.original}: {formatMoney(item.amount, currency)} · {t.modals.remainingDue}:{' '}
-          {formatMoney(due, currency)}
-        </p>
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <h3 className="truncate text-base font-bold text-[#16845B] dark:text-emerald-400">
+              {item.title}
+            </h3>
+            <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+              {t.modals.original}: {formatMoney(item.amount, currency)} · {t.modals.remainingDue}:{' '}
+              {formatMoney(due, currency)}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={t.common.close}
+            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
 
         <h4 className="mt-4 mb-2 text-xs font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">
           {t.modals.paymentHistory}
@@ -1784,8 +1779,8 @@ export const DebtHistoryModal: React.FC<{
           </div>
         )}
 
-        <div className="mt-4 space-y-2">
-          {!item.resolved && (
+        {!item.resolved && (
+          <div className="mt-4">
             <button
               type="button"
               onClick={() => {
@@ -1796,15 +1791,8 @@ export const DebtHistoryModal: React.FC<{
             >
               {t.modals.recordPaymentSettle}
             </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-h-[40px] w-full rounded-xl bg-slate-200 py-2 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200"
-          >
-            {t.common.close}
-          </button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -3179,14 +3167,6 @@ export const BudgetGoalsModal: React.FC<{
           )}
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-4 min-h-[40px] w-full shrink-0 rounded-xl bg-slate-200 py-2 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-        >
-          {t.common.close}
-        </button>
       </div>
 
       {categoryPickerOpen && (
@@ -3641,14 +3621,6 @@ export const SavingGoalsModal: React.FC<{
           )}
           </div>
         </div>
-
-        <button
-          type="button"
-          onClick={onClose}
-          className="mt-4 min-h-[40px] w-full shrink-0 rounded-xl bg-slate-200 py-2 text-xs font-bold text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700"
-        >
-          {t.common.close}
-        </button>
       </div>
 
       {accountPickerOpen && (
@@ -4540,25 +4512,18 @@ export const GoalsOverviewModal: React.FC<{
         </div>
 
         {/* Footer */}
-        <div className="mt-4 flex shrink-0 items-center gap-2.5">
-          {!isReadOnly && (
+        {!isReadOnly && (
+          <div className="mt-4 flex shrink-0 items-center">
             <button
               type="button"
               onClick={() => (isBudgetTab ? onEditBudgetGoal() : onEditSavingGoal())}
-              className="inline-flex min-h-[42px] flex-1 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs font-bold text-[#102A43] transition-colors hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700/80"
+              className="inline-flex min-h-[42px] w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl bg-[#16845B] px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-[#126B4A]"
             >
               <Plus className="h-3.5 w-3.5 stroke-[2.5]" />
               <span>{isBudgetTab ? t.modals.addBudgetBtn : t.modals.addSavingGoalBtn}</span>
             </button>
-          )}
-          <button
-            type="button"
-            onClick={onClose}
-            className="min-h-[42px] flex-1 cursor-pointer rounded-xl bg-[#16845B] py-2 text-xs font-bold text-white transition-colors hover:bg-[#126B4A]"
-          >
-            {t.common.close}
-          </button>
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
