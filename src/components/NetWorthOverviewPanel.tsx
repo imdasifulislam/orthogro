@@ -431,7 +431,7 @@ export const NetWorthOverviewPanel: React.FC<NetWorthOverviewPanelProps> = ({
       : chartGeometry.coords.length - 1;
   const activePoint = chartGeometry.coords[activePointIdx] || null;
 
-  // Asset breakdown items: Wallets & Cash first, then Savings & Investments, then others
+// Asset breakdown items: Wallets & Cash first, then Savings & Investments, then others
   const assetGroups = useMemo(() => {
     return [
       {
@@ -496,7 +496,6 @@ export const NetWorthOverviewPanel: React.FC<NetWorthOverviewPanelProps> = ({
     t.modals.tapToViewAccounts,
     t.modals.tapToViewRecords,
   ]);
-
   const positiveAssetsSum = useMemo(
     () => assetGroups.reduce((sum, g) => sum + Math.max(0, g.amount), 0),
     [assetGroups]
