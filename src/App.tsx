@@ -151,7 +151,6 @@ import {
 } from './utils/recurringBills';
 
 const DEFAULT_WALLETS = ['Cash', 'Bkash', 'Nagad', 'Bank'];
-const LEGACY_DEFAULT_WALLETS = ['Bank', 'Bkash', 'Nagad', 'Cash'];
 
 const DEFAULT_SAVINGS = [
   'Emergency Fund',
@@ -160,10 +159,6 @@ const DEFAULT_SAVINGS = [
   'Saving',
   'Samity',
 ];
-const LEGACY_DEFAULT_SAVINGS_LISTS: string[][] = [
-  ['Savings', 'Samity', 'Investment'],
-  ['Emergency Fund', 'Deposit', 'Hobby', 'Invest', 'Savings', 'Samity'],
-];
 
 const DEFAULT_EXPENSE_CATS = [
   'Family Maintenance',
@@ -171,14 +166,6 @@ const DEFAULT_EXPENSE_CATS = [
   'Personal',
   'Sadakah',
   'Entertainment',
-  'Others',
-];
-const LEGACY_DEFAULT_EXPENSE_CATS = [
-  'Family Maintenance',
-  'Relative',
-  'Personal',
-  'Career',
-  'Sadakah',
   'Others',
 ];
 
@@ -192,19 +179,6 @@ const DEFAULT_INCOME_CATS = [
   'Gift',
   'Others',
 ];
-const LEGACY_DEFAULT_INCOME_CATS_LISTS: string[][] = [
-  ['Salary', 'Business', 'Gift', 'Others'],
-  [
-    'Salary',
-    'Business',
-    'Freelance',
-    'Investment Return',
-    'Rental',
-    'Gift',
-    'Bonus',
-    'Others',
-  ],
-];
 
 const DEFAULT_EXPENSE_SUBCATEGORIES: Record<string, string[]> = {
   'Family Maintenance': [
@@ -217,46 +191,26 @@ const DEFAULT_EXPENSE_SUBCATEGORIES: Record<string, string[]> = {
   ],
   Personal: ['Food', 'Apparel', 'Career'],
 };
-const LEGACY_DEFAULT_FAMILY_SUBS = [
-  'Groceries',
-  'Utilities & Bills',
-  'Rent & Housing',
-  'Healthcare',
-  'Education',
-  'Household',
-];
-
-function isExactStringArray(a: unknown, b: string[]): boolean {
-  return Array.isArray(a) && a.length === b.length && a.every((v, i) => v === b[i]);
-}
 
 function normalizeWallets(raw: unknown): string[] {
   if (!Array.isArray(raw) || raw.length === 0) return DEFAULT_WALLETS;
-  if (isExactStringArray(raw, LEGACY_DEFAULT_WALLETS)) return DEFAULT_WALLETS;
   const cleaned = raw.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
   return cleaned.length > 0 ? cleaned : DEFAULT_WALLETS;
 }
 
 function normalizeSavingsList(raw: unknown): string[] {
   if (!Array.isArray(raw)) return DEFAULT_SAVINGS;
-  if (LEGACY_DEFAULT_SAVINGS_LISTS.some((legacy) => isExactStringArray(raw, legacy))) {
-    return DEFAULT_SAVINGS;
-  }
   return raw.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
 }
 
 function normalizeExpenseCats(raw: unknown): string[] {
   if (!Array.isArray(raw) || raw.length === 0) return DEFAULT_EXPENSE_CATS;
-  if (isExactStringArray(raw, LEGACY_DEFAULT_EXPENSE_CATS)) return DEFAULT_EXPENSE_CATS;
   const cleaned = raw.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
   return cleaned.length > 0 ? cleaned : DEFAULT_EXPENSE_CATS;
 }
 
 function normalizeIncomeCats(raw: unknown): string[] {
   if (!Array.isArray(raw) || raw.length === 0) return DEFAULT_INCOME_CATS;
-  if (LEGACY_DEFAULT_INCOME_CATS_LISTS.some((legacy) => isExactStringArray(raw, legacy))) {
-    return DEFAULT_INCOME_CATS;
-  }
   const cleaned = raw.filter((v): v is string => typeof v === 'string' && v.trim().length > 0);
   return cleaned.length > 0 ? cleaned : DEFAULT_INCOME_CATS;
 }
@@ -266,13 +220,6 @@ function normalizeExpenseSubCategories(raw: unknown): Record<string, string[]> {
     return { ...DEFAULT_EXPENSE_SUBCATEGORIES };
   }
   const entries = Object.entries(raw as Record<string, unknown>);
-  if (
-    entries.length === 1 &&
-    entries[0][0] === 'Family Maintenance' &&
-    isExactStringArray(entries[0][1], LEGACY_DEFAULT_FAMILY_SUBS)
-  ) {
-    return { ...DEFAULT_EXPENSE_SUBCATEGORIES };
-  }
   const result: Record<string, string[]> = {};
   entries.forEach(([cat, list]) => {
     if (Array.isArray(list)) {
@@ -316,10 +263,10 @@ const DEFAULT_GRID_ORDER: GridKey[] = [
 ];
 const DEFAULT_VISIBLE_GRIDS: Record<GridKey, boolean> = {
   netWorth: true,
-  wallets: true,
-  savings: true,
+  wallets: false,
+  savings: false,
   incExp: true,
-  lendBorrow: true,
+  lendBorrow: false,
   budgetGoals: true,
   categoryPieChart: true,
   transactions: true,
@@ -515,6 +462,68 @@ function buildDefaultWorkspace(
   };
 }
 
+const STARTER_MEMO_MONTHLY_ID = 'starter_memo_monthly';
+const STARTER_MEMO_TODAY_ID = 'starter_memo_today';
+const STARTER_NOTE_TIPS_ID = 'starter_note_tips';
+const STARTER_NOTE_BUDGET_RULE_ID = 'starter_note_budget_rule';
+
+const STARTER_MONTHLY_ITEM_NAMES = [
+  'মিনিকেট চাল',
+  'সয়াবিন তেল',
+  'মসুর ডাল',
+  'চিনি ও লবণ',
+  'পেঁয়াজ ও রসুন',
+  'আটা ও ময়দা',
+  'ডিটারজেন্ট ও সাবান',
+];
+const STARTER_MONTHLY_ITEM_PRICES = [780, 860, 280, 210, 290, 140, 320];
+const STARTER_TODAY_ITEM_NAMES = [
+  'মুরগি / মাছ',
+  'ডিম',
+  'তাজা সবজি',
+  'কাঁচা মরিচ ও ধনেপাতা',
+  'দুধ ও পাউরুটি',
+];
+
+const STARTER_NOTE_TIPS_TITLE = '৬টি মানি ম্যানেজমেন্ট টিপস';
+const STARTER_NOTE_TIPS_CONTENT = [
+  'মাসের শুরুতেই গুছিয়ে নিন আপনার টাকা! 💰',
+  '',
+  'মাসের শুরুতে একটু পরিকল্পনা করুন, তাহলে সারা মাসের আর্থিক চাপ অনেকটাই কমবে।',
+  '',
+  '১. বাজেট করুন:',
+  'মাসের আয় ও সম্ভাব্য খরচের হিসাব রাখুন।',
+  '',
+  '২. আগে সঞ্চয় করুন:',
+  'আয় পাওয়ার সঙ্গে সঙ্গেই সঞ্চয়ের টাকা আলাদা করুন।',
+  '',
+  '৩. প্রয়োজনকে অগ্রাধিকার দিন:',
+  'শখের আগে জরুরি খরচ মেটান।',
+  '',
+  '৪. অপ্রয়োজনীয় খরচ কমান:',
+  'ছোট ছোট খরচের দিকেও নজর রাখুন।',
+  '',
+  '৫. নিয়মিত হিসাব রাখুন:',
+  'প্রতিদিনের আয়-ব্যয় লিখে রাখুন।',
+  '',
+  '৬. জরুরি তহবিল গড়ুন:',
+  'হঠাৎ বিপদের জন্য ধীরে ধীরে আলাদা ফান্ড তৈরি করুন।',
+].join('\n');
+
+const STARTER_NOTE_BUDGET_RULE_TITLE = '50/30/20 Budget Rule';
+const STARTER_NOTE_BUDGET_RULE_CONTENT = [
+  'মেনে চলুন 50/30/20 Budget Rule:',
+  '',
+  '• ৫০% Needs: বাসা ভাড়া, খাবার, বিল ও প্রয়োজনীয় খরচ।',
+  '• ৩০% Wants: শপিং, ঘোরাঘুরি, বিনোদন ও শখ।',
+  '• ২০% Savings: সঞ্চয়, জরুরি তহবিল ও ঋণ পরিশোধ।',
+  '',
+  'মনে রাখবেন:',
+  'ভালো মানি ম্যানেজমেন্ট মানে বেশি আয় করা নয়, বরং আপনার আয়ের সঠিক ব্যবহার নিশ্চিত করা।',
+  '',
+  'এই মাসে আপনার প্রতিটি টাকার হিসাব থাকুক আপনার হাতেই!',
+].join('\n');
+
 function buildDefaultStarterMemos(): BazarMemo[] {
   const today = getTodayISO();
   const monthlyItems = [
@@ -535,7 +544,7 @@ function buildDefaultStarterMemos(): BazarMemo[] {
   ];
   return [
     {
-      id: generateSafeId('memo'),
+      id: STARTER_MEMO_MONTHLY_ID,
       date: today,
       category: 'Family Maintenance',
       subCategory: 'Groceries',
@@ -545,7 +554,7 @@ function buildDefaultStarterMemos(): BazarMemo[] {
       total: monthlyItems.reduce((sum, item) => sum + item.price, 0),
     },
     {
-      id: generateSafeId('memo'),
+      id: STARTER_MEMO_TODAY_ID,
       date: today,
       category: 'Family Maintenance',
       subCategory: 'Groceries',
@@ -561,51 +570,62 @@ function buildDefaultStarterNotes(): UserNote[] {
   const today = getTodayISO();
   return [
     {
-      id: generateSafeId('note'),
-      title: '৬টি মানি ম্যানেজমেন্ট টিপস',
-      content: [
-        'মাসের শুরুতেই গুছিয়ে নিন আপনার টাকা! 💰',
-        '',
-        'মাসের শুরুতে একটু পরিকল্পনা করুন, তাহলে সারা মাসের আর্থিক চাপ অনেকটাই কমবে।',
-        '',
-        '১. বাজেট করুন:',
-        'মাসের আয় ও সম্ভাব্য খরচের হিসাব রাখুন।',
-        '',
-        '২. আগে সঞ্চয় করুন:',
-        'আয় পাওয়ার সঙ্গে সঙ্গেই সঞ্চয়ের টাকা আলাদা করুন।',
-        '',
-        '৩. প্রয়োজনকে অগ্রাধিকার দিন:',
-        'শখের আগে জরুরি খরচ মেটান।',
-        '',
-        '৪. অপ্রয়োজনীয় খরচ কমান:',
-        'ছোট ছোট খরচের দিকেও নজর রাখুন।',
-        '',
-        '৫. নিয়মিত হিসাব রাখুন:',
-        'প্রতিদিনের আয়-ব্যয় লিখে রাখুন।',
-        '',
-        '৬. জরুরি তহবিল গড়ুন:',
-        'হঠাৎ বিপদের জন্য ধীরে ধীরে আলাদা ফান্ড তৈরি করুন।',
-      ].join('\n'),
+      id: STARTER_NOTE_TIPS_ID,
+      title: STARTER_NOTE_TIPS_TITLE,
+      content: STARTER_NOTE_TIPS_CONTENT,
       date: today,
     },
     {
-      id: generateSafeId('note'),
-      title: '50/30/20 Budget Rule',
-      content: [
-        'মেনে চলুন 50/30/20 Budget Rule:',
-        '',
-        '• ৫০% Needs: বাসা ভাড়া, খাবার, বিল ও প্রয়োজনীয় খরচ।',
-        '• ৩০% Wants: শপিং, ঘোরাঘুরি, বিনোদন ও শখ।',
-        '• ২০% Savings: সঞ্চয়, জরুরি তহবিল ও ঋণ পরিশোধ।',
-        '',
-        'মনে রাখবেন:',
-        'ভালো মানি ম্যানেজমেন্ট মানে বেশি আয় করা নয়, বরং আপনার আয়ের সঠিক ব্যবহার নিশ্চিত করা।',
-        '',
-        'এই মাসে আপনার প্রতিটি টাকার হিসাব থাকুক আপনার হাতেই!',
-      ].join('\n'),
+      id: STARTER_NOTE_BUDGET_RULE_ID,
+      title: STARTER_NOTE_BUDGET_RULE_TITLE,
+      content: STARTER_NOTE_BUDGET_RULE_CONTENT,
       date: today,
     },
   ];
+}
+
+function getUntouchedStarterMemoKind(m: BazarMemo): 'monthly' | 'today' | null {
+  const items = Array.isArray(m.items) ? m.items : [];
+  if (
+    m.note === 'মাসিক বাজার' &&
+    items.length === STARTER_MONTHLY_ITEM_NAMES.length &&
+    m.total === 2880 &&
+    items.every(
+      (it, idx) =>
+        it.name === STARTER_MONTHLY_ITEM_NAMES[idx] &&
+        it.price === STARTER_MONTHLY_ITEM_PRICES[idx]
+    )
+  ) {
+    return 'monthly';
+  }
+  if (
+    m.note === 'আজকের বাজার' &&
+    items.length === STARTER_TODAY_ITEM_NAMES.length &&
+    items.every((it, idx) => it.name === STARTER_TODAY_ITEM_NAMES[idx]) &&
+    ((m.total === 0 && items.every((it) => it.price === 0 && !it.checked)) || m.total === 880)
+  ) {
+    return 'today';
+  }
+  return null;
+}
+
+function getUntouchedStarterNoteKind(
+  n: UserNote
+): 'tips' | 'budget_rule' | 'v1_checklist' | 'v1_goals' | null {
+  const title = (n.title || '').trim();
+  const content = (n.content || '').trim();
+  if (title === STARTER_NOTE_TIPS_TITLE && content === STARTER_NOTE_TIPS_CONTENT.trim()) {
+    return 'tips';
+  }
+  if (
+    title === STARTER_NOTE_BUDGET_RULE_TITLE &&
+    content === STARTER_NOTE_BUDGET_RULE_CONTENT.trim()
+  ) {
+    return 'budget_rule';
+  }
+  if (title === 'মাসিক হিসাবের চেকলিস্ট') return 'v1_checklist';
+  if (title === 'আর্থিক লক্ষ্য ও দরকারি নোট') return 'v1_goals';
+  return null;
 }
 
 function isUntouchedV1StarterMemos(list: BazarMemo[]): boolean {
@@ -780,6 +800,8 @@ function OrthoGroApp() {
   const [showTxTypeDrawer, setShowTxTypeDrawer] = useState(false);
   const [showTxFormDrawer, setShowTxFormDrawer] = useState(false);
   const backgroundHiddenAtRef = useRef<number | null>(null);
+  const dedupedMemosUidRef = useRef<Set<string>>(new Set());
+  const dedupedNotesUidRef = useRef<Set<string>>(new Set());
   const [isReturningUser, setIsReturningUser] = useState<boolean>(() => {
     try {
       return localStorage.getItem(RETURNING_USER_STORAGE_KEY) === 'true';
@@ -867,6 +889,7 @@ function OrthoGroApp() {
   const [settingsView, setSettingsView] = useState<SettingsView>('menu');
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [hydratedOwnerId, setHydratedOwnerId] = useState<string | null>(null);
 
   // Workspace preferences & lists
   const [workspace, setWorkspace] = useState<WorkspaceSettings>(() => {
@@ -1363,37 +1386,56 @@ function OrthoGroApp() {
               }
             }
           } else if (snap && snap.exists() && wasInGuestMode) {
-            // Merge any new custom wallets, savings, categories, sub-categories, or styles created during Guest mode
+            // Merge ONLY genuinely custom wallets, savings, categories, sub-categories, or styles created during Guest mode (never re-inject untouched Guest defaults)
             const guestWorkspace = readGuestJSON<WorkspaceSettings | null>(
               GUEST_STORAGE_KEYS.workspace,
               null
             );
             if (guestWorkspace) {
               const cloudData = snap.data() as Partial<WorkspaceSettings>;
-              const mergeUnique = (existing: unknown, incoming: unknown, fallback: string[]) => {
+              const mergeCustomOnly = (
+                existing: unknown,
+                incoming: unknown,
+                defaultList: string[],
+                allowEmpty = false
+              ) => {
+                const defaultSet = new Set(defaultList);
                 const base = Array.isArray(existing)
                   ? existing.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
-                  : fallback;
-                const extra = Array.isArray(incoming)
-                  ? incoming.filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+                  : allowEmpty
+                  ? []
+                  : defaultList;
+                const customExtra = Array.isArray(incoming)
+                  ? incoming.filter(
+                      (x): x is string =>
+                        typeof x === 'string' && x.trim().length > 0 && !defaultSet.has(x)
+                    )
                   : [];
-                const merged = Array.from(new Set([...base, ...extra])).slice(0, 50);
-                return merged.length > 0 ? merged : fallback;
+                const merged = Array.from(new Set([...base, ...customExtra])).slice(0, 50);
+                const changed = merged.length !== base.length;
+                return {
+                  list: merged.length > 0 || allowEmpty ? merged : defaultList,
+                  changed,
+                };
               };
 
-              const mergedWallets = mergeUnique(cloudData.wallets, guestWorkspace.wallets, DEFAULT_WALLETS);
-              const mergedSavings = Array.from(
-                new Set([
-                  ...normalizeSavingsList(cloudData.savingsList),
-                  ...normalizeSavingsList(guestWorkspace.savingsList),
-                ])
-              ).slice(0, 50);
-              const mergedExpCats = mergeUnique(
+              const walletsRes = mergeCustomOnly(
+                cloudData.wallets,
+                guestWorkspace.wallets,
+                DEFAULT_WALLETS
+              );
+              const savingsRes = mergeCustomOnly(
+                cloudData.savingsList,
+                guestWorkspace.savingsList,
+                DEFAULT_SAVINGS,
+                true
+              );
+              const expCatsRes = mergeCustomOnly(
                 cloudData.expenseCategories,
                 guestWorkspace.expenseCategories,
                 DEFAULT_EXPENSE_CATS
               );
-              const mergedIncCats = mergeUnique(
+              const incCatsRes = mergeCustomOnly(
                 cloudData.incomeCategories,
                 guestWorkspace.incomeCategories,
                 DEFAULT_INCOME_CATS
@@ -1402,42 +1444,63 @@ function OrthoGroApp() {
               const cloudSubs = normalizeExpenseSubCategories(cloudData.expenseSubCategories);
               const guestSubs = normalizeExpenseSubCategories(guestWorkspace.expenseSubCategories);
               const mergedSubs: Record<string, string[]> = { ...cloudSubs };
+              let subsChanged = false;
               Object.entries(guestSubs).forEach(([cat, list]) => {
+                const defaultSubsForCat = new Set(DEFAULT_EXPENSE_SUBCATEGORIES[cat] || []);
+                const customSubs = list.filter((s) => !defaultSubsForCat.has(s));
+                if (customSubs.length === 0) return;
                 if (Object.keys(mergedSubs).length >= 50 && !(cat in mergedSubs)) return;
-                mergedSubs[cat] = Array.from(new Set([...(mergedSubs[cat] || []), ...list])).slice(
-                  0,
-                  50
-                );
+                const prevSubs = mergedSubs[cat] || [];
+                const nextSubs = Array.from(new Set([...prevSubs, ...customSubs])).slice(0, 50);
+                if (nextSubs.length !== prevSubs.length) {
+                  mergedSubs[cat] = nextSubs;
+                  subsChanged = true;
+                }
               });
 
               const cloudStyles = normalizeCategoryStyles(cloudData.categoryStyles);
               const guestStyles = normalizeCategoryStyles(guestWorkspace.categoryStyles);
               const mergedStyles: Record<string, CategoryStyle> = { ...cloudStyles };
+              let stylesChanged = false;
               Object.entries(guestStyles).forEach(([k, v]) => {
+                const def = DEFAULT_CATEGORY_STYLES[k];
+                const isDefaultStyle = def && def.icon === v.icon && def.color === v.color;
+                if (isDefaultStyle) return;
                 if (Object.keys(mergedStyles).length >= 200 && !(k in mergedStyles)) return;
                 if (!(k in mergedStyles)) {
                   mergedStyles[k] = v;
+                  stylesChanged = true;
                 }
               });
 
-              try {
-                await updateDoc(userDocRef, {
-                  wallets: mergedWallets,
-                  savingsList: mergedSavings,
-                  expenseCategories: mergedExpCats,
-                  incomeCategories: mergedIncCats,
-                  expenseSubCategories: mergedSubs,
-                  categoryStyles: mergedStyles,
-                  updatedAt: serverTimestamp(),
-                });
-              } catch (err) {
-                handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+              if (
+                walletsRes.changed ||
+                savingsRes.changed ||
+                expCatsRes.changed ||
+                incCatsRes.changed ||
+                subsChanged ||
+                stylesChanged
+              ) {
+                try {
+                  await updateDoc(userDocRef, {
+                    wallets: walletsRes.list,
+                    savingsList: savingsRes.list,
+                    expenseCategories: expCatsRes.list,
+                    incomeCategories: incCatsRes.list,
+                    expenseSubCategories: mergedSubs,
+                    categoryStyles: mergedStyles,
+                    updatedAt: serverTimestamp(),
+                  });
+                } catch (err) {
+                  handleFirestoreError(err, OperationType.UPDATE, `users/${user.uid}`);
+                }
               }
             }
           }
 
           // Sync guest records online ONLY when connecting Google while actively in Guest mode
           if (wasInGuestMode) {
+            const isExistingCloudAccount = Boolean(snap && snap.exists());
             const guestTxs = readGuestJSON<Transaction[]>(GUEST_STORAGE_KEYS.transactions, []);
             const guestMemos = readGuestJSON<BazarMemo[]>(GUEST_STORAGE_KEYS.memos, []);
             const guestNotes = readGuestJSON<UserNote[]>(GUEST_STORAGE_KEYS.notes, []);
@@ -1505,7 +1568,15 @@ function OrthoGroApp() {
 
             guestMemos.forEach((m) => {
               if (!m.items || m.items.length === 0) return;
-              const id = generateSafeId('memo');
+              // Never copy untouched Guest starter memos into an existing cloud account
+              if (isExistingCloudAccount && getUntouchedStarterMemoKind(m) !== null) return;
+              const starterKind = getUntouchedStarterMemoKind(m);
+              const id =
+                !isExistingCloudAccount && starterKind === 'monthly'
+                  ? STARTER_MEMO_MONTHLY_ID
+                  : !isExistingCloudAccount && starterKind === 'today'
+                  ? STARTER_MEMO_TODAY_ID
+                  : generateSafeId('memo');
               const memoDate =
                 typeof m.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(m.date)
                   ? m.date
@@ -1528,7 +1599,15 @@ function OrthoGroApp() {
             });
 
             guestNotes.forEach((n) => {
-              const id = generateSafeId('note');
+              // Never copy untouched Guest starter notes into an existing cloud account
+              if (isExistingCloudAccount && getUntouchedStarterNoteKind(n) !== null) return;
+              const starterKind = getUntouchedStarterNoteKind(n);
+              const id =
+                !isExistingCloudAccount && starterKind === 'tips'
+                  ? STARTER_NOTE_TIPS_ID
+                  : !isExistingCloudAccount && starterKind === 'budget_rule'
+                  ? STARTER_NOTE_BUDGET_RULE_ID
+                  : generateSafeId('note');
               const noteDate =
                 typeof n.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(n.date)
                   ? n.date
@@ -1758,8 +1837,30 @@ function OrthoGroApp() {
 
   // Firestore real-time listeners for active workspace (own or shared partner)
   useEffect(() => {
-    if (authLoading || !currentUser || !activeOwnerId) return;
+    if (authLoading || !currentUser || !activeOwnerId) {
+      if (!authLoading && !currentUser) {
+        setHydratedOwnerId(null);
+      }
+      return;
+    }
     const uid = activeOwnerId;
+    let isCancelled = false;
+    let wsReady = false;
+    let txReady = false;
+    let budReady = false;
+    let savReady = false;
+
+    const markHydratedIfReady = () => {
+      if (!isCancelled && wsReady && txReady && budReady && savReady) {
+        setHydratedOwnerId(uid);
+      }
+    };
+
+    const hydrationTimeout = window.setTimeout(() => {
+      if (!isCancelled) {
+        setHydratedOwnerId(uid);
+      }
+    }, 2500);
 
     const unsubWorkspace = onSnapshot(
       doc(db, 'users', uid),
@@ -1825,8 +1926,14 @@ function OrthoGroApp() {
             }).catch(() => {});
           }
         }
+        wsReady = true;
+        markHydratedIfReady();
       },
-      (err) => handleFirestoreError(err, OperationType.GET, `users/${uid}`)
+      (err) => {
+        handleFirestoreError(err, OperationType.GET, `users/${uid}`);
+        wsReady = true;
+        markHydratedIfReady();
+      }
     );
 
     const txQuery = query(
@@ -1842,8 +1949,14 @@ function OrthoGroApp() {
         }));
         list.sort((a, b) => (b.rawDate || '').localeCompare(a.rawDate || ''));
         setTransactions(list);
+        txReady = true;
+        markHydratedIfReady();
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, `users/${uid}/transactions`)
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, `users/${uid}/transactions`);
+        txReady = true;
+        markHydratedIfReady();
+      }
     );
 
     const memosQuery = query(
@@ -1859,28 +1972,37 @@ function OrthoGroApp() {
         }));
         list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
         setMemos(list);
-        if (uid === currentUser.uid) {
-          const seedKey = `orthogro_starter_memos_v2_${uid}`;
-          try {
-            if (!localStorage.getItem(seedKey)) {
-              localStorage.setItem(seedKey, '1');
-              if (snap.empty) {
-                const batch = writeBatch(db);
-                addStarterMemosToBatch(batch, uid);
-                void batch.commit().catch((err) => {
-                  handleFirestoreError(err, OperationType.WRITE, `users/${uid}/memos`);
-                });
-              } else if (isUntouchedV1StarterMemos(list)) {
-                const batch = writeBatch(db);
-                list.forEach((m) => batch.delete(doc(db, 'users', uid, 'memos', m.id)));
-                addStarterMemosToBatch(batch, uid);
-                void batch.commit().catch((err) => {
-                  handleFirestoreError(err, OperationType.WRITE, `users/${uid}/memos`);
-                });
-              }
-            }
-          } catch {
-            // ignore storage errors
+        // Safely deduplicate exact untouched starter memo copies once per session on confirmed server data
+        if (
+          uid === currentUser.uid &&
+          !snap.metadata.fromCache &&
+          !dedupedMemosUidRef.current.has(uid)
+        ) {
+          dedupedMemosUidRef.current.add(uid);
+          const byStarterKind = new Map<'monthly' | 'today', BazarMemo[]>();
+          list.forEach((m) => {
+            const kind = getUntouchedStarterMemoKind(m);
+            if (!kind) return;
+            const arr = byStarterKind.get(kind) || [];
+            arr.push(m);
+            byStarterKind.set(kind, arr);
+          });
+          const toDeleteIds: string[] = [];
+          byStarterKind.forEach((copies, kind) => {
+            if (copies.length <= 1) return;
+            const preferredId =
+              kind === 'monthly' ? STARTER_MEMO_MONTHLY_ID : STARTER_MEMO_TODAY_ID;
+            const keeper = copies.find((c) => c.id === preferredId) || copies[copies.length - 1];
+            copies.forEach((c) => {
+              if (c.id !== keeper.id) toDeleteIds.push(c.id);
+            });
+          });
+          if (toDeleteIds.length > 0) {
+            const batch = writeBatch(db);
+            toDeleteIds.forEach((id) => batch.delete(doc(db, 'users', uid, 'memos', id)));
+            void batch.commit().catch((err) => {
+              handleFirestoreError(err, OperationType.DELETE, `users/${uid}/memos`);
+            });
           }
         }
       },
@@ -1900,28 +2022,45 @@ function OrthoGroApp() {
         }));
         list.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
         setNotes(list);
-        if (uid === currentUser.uid) {
-          const seedKey = `orthogro_starter_notes_v2_${uid}`;
-          try {
-            if (!localStorage.getItem(seedKey)) {
-              localStorage.setItem(seedKey, '1');
-              if (snap.empty) {
-                const batch = writeBatch(db);
-                addStarterNotesToBatch(batch, uid);
-                void batch.commit().catch((err) => {
-                  handleFirestoreError(err, OperationType.WRITE, `users/${uid}/notes`);
-                });
-              } else if (isUntouchedV1StarterNotes(list)) {
-                const batch = writeBatch(db);
-                list.forEach((n) => batch.delete(doc(db, 'users', uid, 'notes', n.id)));
-                addStarterNotesToBatch(batch, uid);
-                void batch.commit().catch((err) => {
-                  handleFirestoreError(err, OperationType.WRITE, `users/${uid}/notes`);
-                });
-              }
-            }
-          } catch {
-            // ignore storage errors
+        // Safely deduplicate exact untouched starter note copies once per session on confirmed server data
+        if (
+          uid === currentUser.uid &&
+          !snap.metadata.fromCache &&
+          !dedupedNotesUidRef.current.has(uid)
+        ) {
+          dedupedNotesUidRef.current.add(uid);
+          const byStarterKey = new Map<string, UserNote[]>();
+          list.forEach((n) => {
+            const kind = getUntouchedStarterNoteKind(n);
+            if (!kind) return;
+            const key =
+              kind === 'v1_checklist' || kind === 'v1_goals'
+                ? `${kind}::${(n.content || '').trim()}`
+                : kind;
+            const arr = byStarterKey.get(key) || [];
+            arr.push(n);
+            byStarterKey.set(key, arr);
+          });
+          const toDeleteIds: string[] = [];
+          byStarterKey.forEach((copies, key) => {
+            if (copies.length <= 1) return;
+            const preferredId =
+              key === 'tips'
+                ? STARTER_NOTE_TIPS_ID
+                : key === 'budget_rule'
+                ? STARTER_NOTE_BUDGET_RULE_ID
+                : '';
+            const keeper = copies.find((c) => c.id === preferredId) || copies[copies.length - 1];
+            copies.forEach((c) => {
+              if (c.id !== keeper.id) toDeleteIds.push(c.id);
+            });
+          });
+          if (toDeleteIds.length > 0) {
+            const batch = writeBatch(db);
+            toDeleteIds.forEach((id) => batch.delete(doc(db, 'users', uid, 'notes', id)));
+            void batch.commit().catch((err) => {
+              handleFirestoreError(err, OperationType.DELETE, `users/${uid}/notes`);
+            });
           }
         }
       },
@@ -1941,8 +2080,14 @@ function OrthoGroApp() {
         }));
         list.sort((a, b) => a.category.localeCompare(b.category));
         setBudgetGoals(list);
+        budReady = true;
+        markHydratedIfReady();
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, `users/${uid}/budgets`)
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, `users/${uid}/budgets`);
+        budReady = true;
+        markHydratedIfReady();
+      }
     );
 
     const savingGoalsQuery = query(
@@ -1958,8 +2103,14 @@ function OrthoGroApp() {
         }));
         list.sort((a, b) => a.title.localeCompare(b.title));
         setSavingGoals(list);
+        savReady = true;
+        markHydratedIfReady();
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, `users/${uid}/savingGoals`)
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, `users/${uid}/savingGoals`);
+        savReady = true;
+        markHydratedIfReady();
+      }
     );
 
     const recurringBillsQuery = query(
@@ -1980,6 +2131,8 @@ function OrthoGroApp() {
     );
 
     return () => {
+      isCancelled = true;
+      window.clearTimeout(hydrationTimeout);
       unsubWorkspace();
       unsubTxs();
       unsubMemos();
@@ -5752,25 +5905,27 @@ function OrthoGroApp() {
 
     if (currentUser) {
       const uid = currentUser.uid;
-      const batch = writeBatch(db);
-      batch.update(doc(db, 'users', uid), {
+      const deleteBatch = writeBatch(db);
+      deleteBatch.update(doc(db, 'users', uid), {
         ...defaultWs,
         updatedAt: serverTimestamp(),
       });
       transactions.forEach((tx) =>
-        batch.delete(doc(db, 'users', uid, 'transactions', tx.id))
+        deleteBatch.delete(doc(db, 'users', uid, 'transactions', tx.id))
       );
-      memos.forEach((m) => batch.delete(doc(db, 'users', uid, 'memos', m.id)));
-      notes.forEach((n) => batch.delete(doc(db, 'users', uid, 'notes', n.id)));
-      budgetGoals.forEach((b) => batch.delete(doc(db, 'users', uid, 'budgets', b.id)));
-      savingGoals.forEach((sg) => batch.delete(doc(db, 'users', uid, 'savingGoals', sg.id)));
+      memos.forEach((m) => deleteBatch.delete(doc(db, 'users', uid, 'memos', m.id)));
+      notes.forEach((n) => deleteBatch.delete(doc(db, 'users', uid, 'notes', n.id)));
+      budgetGoals.forEach((b) => deleteBatch.delete(doc(db, 'users', uid, 'budgets', b.id)));
+      savingGoals.forEach((sg) => deleteBatch.delete(doc(db, 'users', uid, 'savingGoals', sg.id)));
       recurringBills.forEach((rb) =>
-        batch.delete(doc(db, 'users', uid, 'recurringBills', rb.id))
+        deleteBatch.delete(doc(db, 'users', uid, 'recurringBills', rb.id))
       );
-      addStarterMemosToBatch(batch, uid);
-      addStarterNotesToBatch(batch, uid);
       try {
-        await batch.commit();
+        await deleteBatch.commit();
+        const starterBatch = writeBatch(db);
+        addStarterMemosToBatch(starterBatch, uid);
+        addStarterNotesToBatch(starterBatch, uid);
+        await starterBatch.commit();
       } catch (err) {
         handleFirestoreError(err, OperationType.WRITE, `users/${uid}`);
       }
@@ -5785,9 +5940,11 @@ function OrthoGroApp() {
     }
     const emptyGuide: FeatureGuideState = { dismissed: [], used: [] };
     setFeatureGuideState(emptyGuide);
+    setShowAssistantButton(false);
     try {
       localStorage.removeItem(featureGuideStorageKey);
       localStorage.removeItem(milestoneStorageKey);
+      localStorage.removeItem('orthogro_show_assistant_v1');
     } catch {
       // ignore storage errors
     }
@@ -5906,6 +6063,42 @@ function OrthoGroApp() {
           onForgotReset={handleForgotPinReset}
           onSignOutReset={handleSignOutForgotPinReset}
         />
+      </LanguageProvider>
+    );
+  }
+
+  if (currentUser && activeOwnerId && hydratedOwnerId !== activeOwnerId) {
+    return (
+      <LanguageProvider lang={currentLanguage} setLanguage={(l) => void handleLanguageChange(l, false)}>
+        <div className="flex min-h-screen flex-col items-center justify-center bg-[#F6F8F7] p-6 text-center dark:bg-slate-950">
+          <div className="text-4xl font-extrabold tracking-tight text-[#0E6042] dark:text-emerald-200">
+            OrthoGro
+          </div>
+          <p className="mt-1.5 text-sm font-medium text-slate-600 dark:text-slate-300">
+            {t.auth.subtitle}
+          </p>
+          <p
+            aria-label={currentLanguage === 'bn' ? t.app.tagline : 'Track • Save • Grow'}
+            className="mt-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-[#16845B] dark:text-emerald-400"
+          >
+            {currentLanguage === 'bn' ? (
+              <span>{t.app.tagline}</span>
+            ) : (
+              <>
+                <span>Track</span>
+                <span aria-hidden="true">•</span>
+                <span>Save</span>
+                <span aria-hidden="true">•</span>
+                <span>Grow</span>
+              </>
+            )}
+          </p>
+          <div
+            role="status"
+            aria-label={currentLanguage === 'bn' ? 'লোড হচ্ছে' : 'Loading'}
+            className="mt-6 h-8 w-8 animate-spin rounded-full border-[3px] border-emerald-100 border-t-[#16845B] dark:border-slate-800 dark:border-t-emerald-400"
+          />
+        </div>
       </LanguageProvider>
     );
   }
@@ -6524,6 +6717,10 @@ function OrthoGroApp() {
         currency={workspace.currency}
         customDateFrom={customDateFrom}
         customDateTo={customDateTo}
+        onCustomDateRangeChange={(from, to) => {
+          setCustomDateFrom(from);
+          setCustomDateTo(to);
+        }}
         onSelectDrilldown={(nextType, nextKey) => {
           setDrilldownPeriodContext(null);
           setDrilldownFilter('all');
