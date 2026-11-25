@@ -1106,6 +1106,7 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                           itemInputRefs.current[idx] = el;
                         }}
                         type="text"
+                        enterKeyHint="next"
                         readOnly={isReadOnly}
                         placeholder={t.memo.addItemPlaceholder}
                         value={row.name}
@@ -1129,6 +1130,7 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                           qtyInputRefs.current[idx] = el;
                         }}
                         type="text"
+                        enterKeyHint="next"
                         maxLength={40}
                         readOnly={isReadOnly}
                         aria-label={t.memo.qtyPlaceholder}
@@ -1138,7 +1140,11 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
-                            priceInputRefs.current[idx]?.focus();
+                            if (idx < memoRows.length - 1) {
+                              itemInputRefs.current[idx + 1]?.focus();
+                            } else {
+                              appendAndFocusRow();
+                            }
                           }
                         }}
                         className={`w-14 shrink-0 bg-transparent py-1 text-right text-xs font-medium focus:outline-none sm:w-16 ${
@@ -1165,6 +1171,7 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                           }}
                           type="number"
                           inputMode="decimal"
+                          enterKeyHint={idx < memoRows.length - 1 ? 'next' : 'done'}
                           step="any"
                           min="0"
                           readOnly={isReadOnly}
@@ -1176,9 +1183,9 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                             if (e.key === 'Enter') {
                               e.preventDefault();
                               if (idx < memoRows.length - 1) {
-                                itemInputRefs.current[idx + 1]?.focus();
+                                priceInputRefs.current[idx + 1]?.focus();
                               } else {
-                                appendAndFocusRow();
+                                e.currentTarget.blur();
                               }
                             }
                           }}

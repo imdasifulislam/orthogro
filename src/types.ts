@@ -198,7 +198,8 @@ export type FilterCardKey =
   | 'netWorth'
   | 'lendBorrow'
   | 'incExp'
-  | 'categoryPieChart';
+  | 'categoryPieChart'
+  | 'transactions';
 
 export type DrilldownType =
   | 'netWorth'

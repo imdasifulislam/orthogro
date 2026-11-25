@@ -62,7 +62,7 @@ export const CalculatorView: React.FC = () => {
   };
 
   const handleEquals = () => {
-    if (currentVal === 'Error') return;
+    if (isCalculated || currentVal === 'Error') return;
     if (!expression && currentVal === '0') return;
     const fullExpr = `${expression}${currentVal}`;
     const result = safeEvaluateExpression(fullExpr);
@@ -94,8 +94,13 @@ export const CalculatorView: React.FC = () => {
   };
 
   const handlePercent = () => {
+    if (currentVal === 'Error') return;
     const val = Number(currentVal);
     if (!Number.isFinite(val)) return;
+    if (isCalculated) {
+      setExpression('');
+      setIsCalculated(false);
+    }
     setCurrentVal(Number((val / 100).toPrecision(12)).toString());
   };
 

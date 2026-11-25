@@ -268,7 +268,8 @@ export const FilterPeriodModal: React.FC<{
   const isLendBorrow = activeFilterCard === 'lendBorrow';
   const usesPeriodicPresets =
     activeFilterCard === 'categoryPieChart' ||
-    activeFilterCard === 'incExp';
+    activeFilterCard === 'incExp' ||
+    activeFilterCard === 'transactions';
 
   const presets: Array<{ key: PeriodFilter; label: string }> = isLendBorrow
     ? [
@@ -4142,28 +4143,6 @@ export const GoalsOverviewModal: React.FC<{
         <div className="mb-3.5 grid shrink-0 grid-cols-2 gap-1 rounded-xl bg-slate-100 p-1 dark:bg-slate-800/80">
           <button
             type="button"
-            onClick={() => setActiveTab('budget')}
-            className={`flex min-h-[38px] cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-bold transition-all ${
-              isBudgetTab
-                ? 'bg-white text-[#102A43] shadow-sm dark:bg-slate-900 dark:text-slate-100'
-                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
-            }`}
-          >
-            <Target
-              className={`h-3.5 w-3.5 shrink-0 ${
-                isBudgetTab ? 'text-sky-600 dark:text-sky-400' : ''
-              }`}
-            />
-            <span className="truncate">{t.dashboard.monthlyBudgetGoals}</span>
-            {budgetGoals.length > 0 && (
-              <span className="font-mono-num shrink-0 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
-                ({budgetGoals.length})
-              </span>
-            )}
-          </button>
-
-          <button
-            type="button"
             onClick={() => setActiveTab('saving')}
             className={`flex min-h-[38px] cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-bold transition-all ${
               !isBudgetTab
@@ -4180,6 +4159,28 @@ export const GoalsOverviewModal: React.FC<{
             {savingGoals.length > 0 && (
               <span className="font-mono-num shrink-0 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
                 ({savingGoals.length})
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('budget')}
+            className={`flex min-h-[38px] cursor-pointer items-center justify-center gap-1.5 rounded-lg px-2.5 text-xs font-bold transition-all ${
+              isBudgetTab
+                ? 'bg-white text-[#102A43] shadow-sm dark:bg-slate-900 dark:text-slate-100'
+                : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'
+            }`}
+          >
+            <Target
+              className={`h-3.5 w-3.5 shrink-0 ${
+                isBudgetTab ? 'text-sky-600 dark:text-sky-400' : ''
+              }`}
+            />
+            <span className="truncate">{t.dashboard.monthlyBudgetGoals}</span>
+            {budgetGoals.length > 0 && (
+              <span className="font-mono-num shrink-0 text-[11px] font-semibold text-slate-400 dark:text-slate-500">
+                ({budgetGoals.length})
               </span>
             )}
           </button>

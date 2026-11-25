@@ -560,6 +560,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [pieSwipeX, setPieSwipeX] = useState(0);
   const [isSwipingPie, setIsSwipingPie] = useState(false);
   const [txMonthOffset, setTxMonthOffset] = useState(0);
+  const [txYearOffset, setTxYearOffset] = useState(0);
+  const [txCustomOffset, setTxCustomOffset] = useState(0);
   const [txSwipeX, setTxSwipeX] = useState(0);
   const [isSwipingTx, setIsSwipingTx] = useState(false);
   const [incExpMonthOffset, setIncExpMonthOffset] = useState(0);
@@ -780,6 +782,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   useEffect(() => {
     setPieCustomOffset(0);
     setIncExpCustomOffset(0);
+    setTxCustomOffset(0);
   }, [customDateFrom, customDateTo]);
 
   useEffect(() => {
@@ -794,6 +797,13 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     setPieCustomOffset(0);
     setPieLegendExpanded(false);
   }, [filters.categoryPieChart]);
+
+  useEffect(() => {
+    setTxMonthOffset(0);
+    setTxYearOffset(0);
+    setTxCustomOffset(0);
+    setOpenTxId(null);
+  }, [filters.transactions]);
 
   useEffect(() => {
     setPieLegendExpanded(false);
@@ -811,8 +821,25 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     customDateTo,
   ]);
 
+  const canSwipeTx =
+    filters.transactions === 'monthly' ||
+    filters.transactions === 'yearly' ||
+    (filters.transactions === 'custom' && Boolean(customDateFrom && customDateTo));
+
+  const stepTxPeriod = (step: -1 | 1) => {
+    setOpenTxId(null);
+    if (filters.transactions === 'monthly') {
+      setTxMonthOffset((prev) => prev + step);
+    } else if (filters.transactions === 'yearly') {
+      setTxYearOffset((prev) => prev + step);
+    } else if (filters.transactions === 'custom') {
+      setTxCustomOffset((prev) => prev + step);
+    }
+  };
+
   const handleTxSwipeStart = (clientX: number, clientY: number) => {
     didTxSwipeRef.current = false;
+    if (!canSwipeTx) return;
     txSwipeRef.current = {
       startX: clientX,
       startY: clientY,
@@ -848,9 +875,9 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
     if (state.axis === 'x') {
       if (txSwipeX > 36) {
-        setTxMonthOffset((prev) => prev - 1);
+        stepTxPeriod(-1);
       } else if (txSwipeX < -36) {
-        setTxMonthOffset((prev) => prev + 1);
+        stepTxPeriod(1);
       }
     }
     state.axis = null;
@@ -1272,30 +1299,86 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
     );
   };
 
-  const txMonthData = useMemo(() => {
+  const txPeriodData = useMemo(() => {
     const now = new Date();
     const locale = lang === 'bn' ? 'bn-BD' : 'en-US';
-    const targetDate = new Date(now.getFullYear(), now.getMonth() + txMonthOffset, 1);
-    const targetMonth = targetDate.getMonth();
-    const targetYear = targetDate.getFullYear();
+    const filterMode = filters.transactions;
 
-    const items = transactions.filter((tx) => {
-      if (!tx.rawDate) return false;
-      const d = parseLocalDate(tx.rawDate);
-      return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
-    });
-    const monthTitle = targetDate.toLocaleDateString(locale, {
-      month: 'long',
-      year: 'numeric',
-    });
+    let items: Transaction[] = [];
+    let periodTitle = '';
+    let filterButtonLabel = '';
 
-    return { items, monthTitle };
-  }, [transactions, txMonthOffset, lang]);
+    if (filterMode === 'monthly') {
+      const targetDate = new Date(now.getFullYear(), now.getMonth() + txMonthOffset, 1);
+      const targetMonth = targetDate.getMonth();
+      const targetYear = targetDate.getFullYear();
+
+      items = transactions.filter((tx) => {
+        if (!tx.rawDate) return false;
+        const d = parseLocalDate(tx.rawDate);
+        return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
+      });
+      periodTitle = targetDate.toLocaleDateString(locale, {
+        month: 'long',
+        year: 'numeric',
+      });
+      filterButtonLabel = periodTitle;
+    } else if (filterMode === 'yearly') {
+      const targetYear = now.getFullYear() + txYearOffset;
+
+      items = transactions.filter((tx) => {
+        if (!tx.rawDate) return false;
+        return parseLocalDate(tx.rawDate).getFullYear() === targetYear;
+      });
+      const yearDisplay = new Date(targetYear, 0, 1).toLocaleDateString(locale, {
+        year: 'numeric',
+      });
+      periodTitle =
+        lang === 'bn' ? `জানুয়ারি – ডিসেম্বর ${yearDisplay}` : `Jan – Dec ${yearDisplay}`;
+      filterButtonLabel = yearDisplay;
+    } else if (filterMode === 'custom' && customDateFrom && customDateTo) {
+      const { from, to } = getShiftedCustomRange(customDateFrom, customDateTo, txCustomOffset);
+
+      items = transactions.filter(
+        (tx) => !tx.rawDate || (tx.rawDate >= from && tx.rawDate <= to)
+      );
+      periodTitle =
+        from === to
+          ? formatDisplayDate(from, lang)
+          : `${formatDisplayDate(from, lang)} – ${formatDisplayDate(to, lang)}`;
+      filterButtonLabel = formatShortRangeLabel(from, to, lang);
+    } else {
+      items = filterTransactionsByPeriod(transactions, filterMode, customDateFrom, customDateTo);
+      filterButtonLabel = getFilterName(filterMode, lang);
+      periodTitle = getPeriodLabel(filterMode, customDateFrom, customDateTo, lang);
+      if (filterMode === 'previous_month') {
+        periodTitle = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString(
+          locale,
+          {
+            month: 'long',
+            year: 'numeric',
+          }
+        );
+        filterButtonLabel = periodTitle;
+      }
+    }
+
+    return { items, periodTitle, filterButtonLabel };
+  }, [
+    transactions,
+    filters.transactions,
+    txMonthOffset,
+    txYearOffset,
+    txCustomOffset,
+    customDateFrom,
+    customDateTo,
+    lang,
+  ]);
 
   const filteredTransactions = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return txMonthData.items;
-    return txMonthData.items.filter(
+    if (!q) return txPeriodData.items;
+    return txPeriodData.items.filter(
       (tx) =>
         tx.title.toLowerCase().includes(q) ||
         (tx.category || '').toLowerCase().includes(q) ||
@@ -1303,7 +1386,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
         (tx.wallet || '').toLowerCase().includes(q) ||
         (tx.note || '').toLowerCase().includes(q)
     );
-  }, [txMonthData.items, searchQuery]);
+  }, [txPeriodData.items, searchQuery]);
 
   const renderSection = (key: GridKey) => {
     if (!visibleGrids[key]) return null;
@@ -1853,9 +1936,78 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
 
         return (
           <div key="budgetGoals" ref={goalsCardRef}>
-            {/* Side-by-Side 2-Tile Overview: Monthly Budget | Saving Goals */}
+            {/* Side-by-Side 2-Tile Overview: Savings Goal | Monthly Budget */}
             <div className="grid grid-cols-2 gap-2.5">
-              {/* Tile 1: Monthly Budget */}
+              {/* Tile 1: Savings Goal */}
+              {hasSavings ? (
+                <button
+                  type="button"
+                  onClick={() => openOverview('saving')}
+                  className="flex min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border border-slate-200/80 bg-white p-3 text-left shadow-sm transition-colors hover:border-slate-300/90 hover:bg-[#FAFBFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
+                >
+                  <div>
+                    {/* Soft Icon Badge + Label */}
+                    <div className="flex items-center gap-2">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[#10B981] dark:bg-emerald-950/60 dark:text-emerald-400">
+                        <PiggyBank className="h-4 w-4" />
+                      </span>
+                      <span className="truncate text-[13px] font-semibold text-[#112A46] dark:text-slate-100">
+                        {t.dashboard.savingsShort}
+                      </span>
+                    </div>
+
+                    {/* Same-Line Saved / Expected Target Amount */}
+                    <div className="font-mono-num mt-2.5 flex items-baseline gap-1 overflow-hidden whitespace-nowrap text-[13px] tabular-nums sm:text-sm">
+                      <span className="shrink-0 font-bold tracking-tight text-[#112A46] dark:text-slate-100">
+                        {formatMoney(savingSummary.totalSaved, currency)}
+                      </span>
+                      <span className="truncate font-medium text-slate-400 dark:text-slate-500">
+                        / {fmtPlainAmount(savingSummary.totalTarget)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Animated Progressive-Shade Progress Bar */}
+                  <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div
+                      className={`${
+                        savingBarRevealed ? 'goal-bar-fill' : 'transition-none'
+                      } h-full rounded-full ${savingBarColor}`}
+                      style={{ width: `${savingBarWidth}%` }}
+                    />
+                  </div>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (isReadOnly) openOverview('saving');
+                    else onOpenSavingGoalsModal();
+                  }}
+                  className="flex min-h-[96px] min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border-[1.5px] border-dashed border-[#10B981]/75 bg-white p-3 text-left transition-colors hover:bg-emerald-50/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] dark:border-emerald-500/60 dark:bg-slate-900 dark:hover:bg-emerald-950/30"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[#10B981] dark:bg-emerald-950/60 dark:text-emerald-400">
+                      <PiggyBank className="h-4 w-4" />
+                    </span>
+                    <span className="truncate text-[13px] font-semibold text-[#112A46] dark:text-slate-100">
+                      {t.dashboard.savingsShort}
+                    </span>
+                  </div>
+
+                  <div className="mt-2">
+                    <div className="flex items-center gap-1 text-[13px] font-bold text-[#0F6B45] sm:text-sm dark:text-emerald-400">
+                      <Plus className="h-3.5 w-3.5 shrink-0 stroke-[2.6]" />
+                      <span className="truncate">{t.dashboard.addGoalShort}</span>
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-[#5B6B7F] dark:text-slate-400">
+                      {t.dashboard.setSavingTargetsHint}
+                    </p>
+                  </div>
+                </button>
+              )}
+
+              {/* Tile 2: Monthly Budget */}
               {hasBudgets ? (
                 <button
                   type="button"
@@ -1927,75 +2079,6 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                     </div>
                     <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-[#5B6B7F] dark:text-slate-400">
                       {t.dashboard.trackMonthlyLimitsHint}
-                    </p>
-                  </div>
-                </button>
-              )}
-
-              {/* Tile 2: Saving Goals */}
-              {hasSavings ? (
-                <button
-                  type="button"
-                  onClick={() => openOverview('saving')}
-                  className="flex min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border border-slate-200/80 bg-white p-3 text-left shadow-sm transition-colors hover:border-slate-300/90 hover:bg-[#FAFBFB] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] dark:border-slate-800 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-800/80"
-                >
-                  <div>
-                    {/* Soft Icon Badge + Label */}
-                    <div className="flex items-center gap-2">
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[#10B981] dark:bg-emerald-950/60 dark:text-emerald-400">
-                        <PiggyBank className="h-4 w-4" />
-                      </span>
-                      <span className="truncate text-[13px] font-semibold text-[#112A46] dark:text-slate-100">
-                        {t.dashboard.savingsShort}
-                      </span>
-                    </div>
-
-                    {/* Same-Line Saved / Expected Target Amount */}
-                    <div className="font-mono-num mt-2.5 flex items-baseline gap-1 overflow-hidden whitespace-nowrap text-[13px] tabular-nums sm:text-sm">
-                      <span className="shrink-0 font-bold tracking-tight text-[#112A46] dark:text-slate-100">
-                        {formatMoney(savingSummary.totalSaved, currency)}
-                      </span>
-                      <span className="truncate font-medium text-slate-400 dark:text-slate-500">
-                        / {fmtPlainAmount(savingSummary.totalTarget)}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Animated Progressive-Shade Progress Bar */}
-                  <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                    <div
-                      className={`${
-                        savingBarRevealed ? 'goal-bar-fill' : 'transition-none'
-                      } h-full rounded-full ${savingBarColor}`}
-                      style={{ width: `${savingBarWidth}%` }}
-                    />
-                  </div>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (isReadOnly) openOverview('saving');
-                    else onOpenSavingGoalsModal();
-                  }}
-                  className="flex min-h-[96px] min-w-0 cursor-pointer flex-col justify-between rounded-[18px] border-[1.5px] border-dashed border-[#10B981]/75 bg-white p-3 text-left transition-colors hover:bg-emerald-50/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#10B981] dark:border-emerald-500/60 dark:bg-slate-900 dark:hover:bg-emerald-950/30"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-[#10B981] dark:bg-emerald-950/60 dark:text-emerald-400">
-                      <PiggyBank className="h-4 w-4" />
-                    </span>
-                    <span className="truncate text-[13px] font-semibold text-[#112A46] dark:text-slate-100">
-                      {t.dashboard.savingsShort}
-                    </span>
-                  </div>
-
-                  <div className="mt-2">
-                    <div className="flex items-center gap-1 text-[13px] font-bold text-[#0F6B45] sm:text-sm dark:text-emerald-400">
-                      <Plus className="h-3.5 w-3.5 shrink-0 stroke-[2.6]" />
-                      <span className="truncate">{t.dashboard.addGoalShort}</span>
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-[11px] leading-snug text-[#5B6B7F] dark:text-slate-400">
-                      {t.dashboard.setSavingTargetsHint}
                     </p>
                   </div>
                 </button>
@@ -2288,14 +2371,30 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             onMouseLeave={handleTxSwipeEnd}
             className="scroll-mt-20 space-y-3"
           >
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-              <div className="min-w-0">
-                <h3 className="text-sm font-bold text-[#102A43] dark:text-slate-100">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-1.5">
+                <h3 className="shrink-0 whitespace-nowrap text-sm font-bold text-[#102A43] dark:text-slate-100">
                   {t.dashboard.recentTransactions} ({filteredTransactions.length})
                 </h3>
-                <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
-                  {txMonthData.monthTitle}
-                </div>
+                <span aria-hidden="true" className="shrink-0 text-xs text-slate-300 dark:text-slate-600">
+                  ·
+                </span>
+                <button
+                  type="button"
+                  onTouchStart={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (didTxSwipeRef.current) return;
+                    onOpenFilterCard('transactions');
+                  }}
+                  aria-label={t.modals.selectTimePeriod}
+                  title={t.modals.selectTimePeriod}
+                  className="inline-flex min-h-[30px] min-w-0 cursor-pointer items-center gap-0.5 rounded-lg px-1.5 py-1 text-xs font-semibold text-slate-500 transition-colors hover:bg-slate-100 hover:text-[#102A43] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                >
+                  <span className="truncate">{txPeriodData.filterButtonLabel}</span>
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+                </button>
               </div>
               <div
                 className="relative w-full sm:w-64"
@@ -2327,7 +2426,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                         ? t.dashboard.noTransactionsYet
                         : searchQuery.trim()
                         ? t.dashboard.noTransactionsMatch
-                        : `${t.dashboard.noTxInPeriod} ${txMonthData.monthTitle}`}
+                        : `${t.dashboard.noTxInPeriod} ${txPeriodData.periodTitle}`}
                     </p>
                     {transactions.length === 0 && (
                       <button
@@ -2361,33 +2460,29 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
               </div>
             </div>
 
-            <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500 dark:text-slate-400">
-              <span>{t.dashboard.swipePrevNextMonth}</span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  aria-label={t.common.previousMonth}
-                  onClick={() => {
-                    setOpenTxId(null);
-                    setTxMonthOffset((prev) => prev - 1);
-                  }}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200/70 hover:text-[#102A43] dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  aria-label={t.common.nextMonth}
-                  onClick={() => {
-                    setOpenTxId(null);
-                    setTxMonthOffset((prev) => prev + 1);
-                  }}
-                  className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200/70 hover:text-[#102A43] dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
+            {canSwipeTx && (
+              <div className="flex items-center justify-between pt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                <span>{t.dashboard.swipePrevNextPeriod}</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    aria-label={t.common.previousMonth}
+                    onClick={() => stepTxPeriod(-1)}
+                    className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200/70 hover:text-[#102A43] dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={t.common.nextMonth}
+                    onClick={() => stepTxPeriod(1)}
+                    className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-200/70 hover:text-[#102A43] dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
           </div>
         );
     }
