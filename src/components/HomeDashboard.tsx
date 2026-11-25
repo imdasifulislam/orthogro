@@ -516,8 +516,6 @@ interface HomeDashboardProps {
   isReadOnly?: boolean;
 }
 
-let hasRevealedGoalsBarsInSession = false;
-
 export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   transactions,
   wallets,
@@ -553,9 +551,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const [pieView, setPieView] = useState<'expense' | 'income'>('expense');
   const [pieLegendExpanded, setPieLegendExpanded] = useState(false);
   const [pieRevealed, setPieRevealed] = useState(false);
-  const [goalsBarsRevealed, setGoalsBarsRevealed] = useState(
-    () => hasRevealedGoalsBarsInSession
-  );
+  const [budgetBarRevealed, setBudgetBarRevealed] = useState(false);
+  const [savingBarRevealed, setSavingBarRevealed] = useState(false);
   const goalsCardRef = useRef<HTMLDivElement | null>(null);
   const [pieMonthOffset, setPieMonthOffset] = useState(0);
   const [pieYearOffset, setPieYearOffset] = useState(0);
@@ -598,7 +595,11 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   const isLongPressRef = useRef(false);
 
   useEffect(() => {
-    if (goalsBarsRevealed || hasRevealedGoalsBarsInSession) return;
+    if (budgetGoals.length === 0) {
+      setBudgetBarRevealed(false);
+      return;
+    }
+    if (budgetBarRevealed || !visibleGrids.budgetGoals) return;
     const el = goalsCardRef.current;
     if (!el) return;
     const prefersReducedMotion =
@@ -606,22 +607,26 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       typeof window.matchMedia === 'function' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     if (prefersReducedMotion || typeof IntersectionObserver === 'undefined') {
-      hasRevealedGoalsBarsInSession = true;
-      setGoalsBarsRevealed(true);
+      setBudgetBarRevealed(true);
       return;
     }
 
     let revealTimer: number | null = null;
-    let revealRaf: number | null = null;
+    let revealRaf1: number | null = null;
+    let revealRaf2: number | null = null;
 
     const clearPendingReveal = () => {
       if (revealTimer !== null) {
         window.clearTimeout(revealTimer);
         revealTimer = null;
       }
-      if (revealRaf !== null) {
-        cancelAnimationFrame(revealRaf);
-        revealRaf = null;
+      if (revealRaf1 !== null) {
+        cancelAnimationFrame(revealRaf1);
+        revealRaf1 = null;
+      }
+      if (revealRaf2 !== null) {
+        cancelAnimationFrame(revealRaf2);
+        revealRaf2 = null;
       }
     };
 
@@ -632,13 +637,15 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           if (revealTimer === null) {
             revealTimer = window.setTimeout(() => {
               revealTimer = null;
-              revealRaf = requestAnimationFrame(() => {
-                revealRaf = null;
-                hasRevealedGoalsBarsInSession = true;
-                setGoalsBarsRevealed(true);
-                observer.disconnect();
+              revealRaf1 = requestAnimationFrame(() => {
+                revealRaf1 = null;
+                revealRaf2 = requestAnimationFrame(() => {
+                  revealRaf2 = null;
+                  setBudgetBarRevealed(true);
+                  observer.disconnect();
+                });
               });
-            }, 110);
+            }, 160);
           }
         } else {
           clearPendingReveal();
@@ -651,7 +658,73 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
       clearPendingReveal();
       observer.disconnect();
     };
-  }, [goalsBarsRevealed, visibleGrids.budgetGoals, budgetGoals.length, savingGoals.length]);
+  }, [budgetBarRevealed, visibleGrids.budgetGoals, budgetGoals.length]);
+
+  useEffect(() => {
+    if (savingGoals.length === 0) {
+      setSavingBarRevealed(false);
+      return;
+    }
+    if (savingBarRevealed || !visibleGrids.budgetGoals) return;
+    const el = goalsCardRef.current;
+    if (!el) return;
+    const prefersReducedMotion =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (prefersReducedMotion || typeof IntersectionObserver === 'undefined') {
+      setSavingBarRevealed(true);
+      return;
+    }
+
+    let revealTimer: number | null = null;
+    let revealRaf1: number | null = null;
+    let revealRaf2: number | null = null;
+
+    const clearPendingReveal = () => {
+      if (revealTimer !== null) {
+        window.clearTimeout(revealTimer);
+        revealTimer = null;
+      }
+      if (revealRaf1 !== null) {
+        cancelAnimationFrame(revealRaf1);
+        revealRaf1 = null;
+      }
+      if (revealRaf2 !== null) {
+        cancelAnimationFrame(revealRaf2);
+        revealRaf2 = null;
+      }
+    };
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const isVisible = entries.some((entry) => entry.isIntersecting);
+        if (isVisible) {
+          if (revealTimer === null) {
+            revealTimer = window.setTimeout(() => {
+              revealTimer = null;
+              revealRaf1 = requestAnimationFrame(() => {
+                revealRaf1 = null;
+                revealRaf2 = requestAnimationFrame(() => {
+                  revealRaf2 = null;
+                  setSavingBarRevealed(true);
+                  observer.disconnect();
+                });
+              });
+            }, 160);
+          }
+        } else {
+          clearPendingReveal();
+        }
+      },
+      { threshold: 0.2 }
+    );
+    observer.observe(el);
+    return () => {
+      clearPendingReveal();
+      observer.disconnect();
+    };
+  }, [savingBarRevealed, visibleGrids.budgetGoals, savingGoals.length]);
 
   const handlePressEnd = () => {
     if (pressTimerRef.current !== null) {
@@ -1771,10 +1844,10 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
           }
         };
 
-        const budgetBarWidth = goalsBarsRevealed
+        const budgetBarWidth = budgetBarRevealed
           ? Math.min(100, Math.max(0, budgetSummary.totalPct))
           : 0;
-        const savingBarWidth = goalsBarsRevealed
+        const savingBarWidth = savingBarRevealed
           ? Math.min(100, Math.max(0, savingSummary.totalPct))
           : 0;
 
@@ -1823,7 +1896,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                     <div
                       className={`${
-                        goalsBarsRevealed ? 'goal-bar-fill' : 'transition-none'
+                        budgetBarRevealed ? 'goal-bar-fill' : 'transition-none'
                       } h-full rounded-full ${budgetBarColor}`}
                       style={{ width: `${budgetBarWidth}%` }}
                     />
@@ -1892,7 +1965,7 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   <div className="mt-2.5 h-1 w-full overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
                     <div
                       className={`${
-                        goalsBarsRevealed ? 'goal-bar-fill' : 'transition-none'
+                        savingBarRevealed ? 'goal-bar-fill' : 'transition-none'
                       } h-full rounded-full ${savingBarColor}`}
                       style={{ width: `${savingBarWidth}%` }}
                     />
