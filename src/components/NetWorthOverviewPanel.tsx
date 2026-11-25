@@ -431,22 +431,9 @@ export const NetWorthOverviewPanel: React.FC<NetWorthOverviewPanelProps> = ({
       : chartGeometry.coords.length - 1;
   const activePoint = chartGeometry.coords[activePointIdx] || null;
 
-  // Asset breakdown items (sorted by largest positive amount first)
+// Asset breakdown items: Wallets & Cash first, then Savings & Investments, then others
   const assetGroups = useMemo(() => {
-    const groups = [
-      {
-        id: 'savings_investments',
-        name: t.dashboard.savingsInvestments,
-        amount: summary.totalSavings,
-        emptyText: t.modals.noSavingsAccounts,
-        subHint: t.modals.tapToViewAccounts,
-        children: savingsList.map((s) => ({
-          key: `sav-${s}`,
-          label: s,
-          value: walletBalances[s] || 0,
-          onClick: () => onSelectDrilldown?.('savings', s),
-        })),
-      },
+    return [
       {
         id: 'wallets',
         name: t.modals.walletsAndCash,
@@ -458,6 +445,19 @@ export const NetWorthOverviewPanel: React.FC<NetWorthOverviewPanelProps> = ({
           label: w,
           value: walletBalances[w] || 0,
           onClick: () => onSelectDrilldown?.('wallet', w),
+        })),
+      },
+      {
+        id: 'savings_investments',
+        name: t.dashboard.savingsInvestments,
+        amount: summary.totalSavings,
+        emptyText: t.modals.noSavingsAccounts,
+        subHint: t.modals.tapToViewAccounts,
+        children: savingsList.map((s) => ({
+          key: `sav-${s}`,
+          label: s,
+          value: walletBalances[s] || 0,
+          onClick: () => onSelectDrilldown?.('savings', s),
         })),
       },
       {
@@ -477,7 +477,6 @@ export const NetWorthOverviewPanel: React.FC<NetWorthOverviewPanelProps> = ({
         })),
       },
     ];
-    return groups.sort((a, b) => b.amount - a.amount);
   }, [
     summary.totalSavings,
     summary.availableCashBalance,
@@ -497,7 +496,6 @@ export const NetWorthOverviewPanel: React.FC<NetWorthOverviewPanelProps> = ({
     t.modals.tapToViewAccounts,
     t.modals.tapToViewRecords,
   ]);
-
   const positiveAssetsSum = useMemo(
     () => assetGroups.reduce((sum, g) => sum + Math.max(0, g.amount), 0),
     [assetGroups]

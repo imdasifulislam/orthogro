@@ -889,6 +889,7 @@ function OrthoGroApp() {
   const [settingsView, setSettingsView] = useState<SettingsView>('menu');
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [confirmDialog, setConfirmDialog] = useState<ConfirmDialogState | null>(null);
+  const [hydratedOwnerId, setHydratedOwnerId] = useState<string | null>(null);
 
   // Workspace preferences & lists
   const [workspace, setWorkspace] = useState<WorkspaceSettings>(() => {
@@ -1836,8 +1837,30 @@ function OrthoGroApp() {
 
   // Firestore real-time listeners for active workspace (own or shared partner)
   useEffect(() => {
-    if (authLoading || !currentUser || !activeOwnerId) return;
+    if (authLoading || !currentUser || !activeOwnerId) {
+      if (!authLoading && !currentUser) {
+        setHydratedOwnerId(null);
+      }
+      return;
+    }
     const uid = activeOwnerId;
+    let isCancelled = false;
+    let wsReady = false;
+    let txReady = false;
+    let budReady = false;
+    let savReady = false;
+
+    const markHydratedIfReady = () => {
+      if (!isCancelled && wsReady && txReady && budReady && savReady) {
+        setHydratedOwnerId(uid);
+      }
+    };
+
+    const hydrationTimeout = window.setTimeout(() => {
+      if (!isCancelled) {
+        setHydratedOwnerId(uid);
+      }
+    }, 2500);
 
     const unsubWorkspace = onSnapshot(
       doc(db, 'users', uid),
@@ -1903,8 +1926,14 @@ function OrthoGroApp() {
             }).catch(() => {});
           }
         }
+        wsReady = true;
+        markHydratedIfReady();
       },
-      (err) => handleFirestoreError(err, OperationType.GET, `users/${uid}`)
+      (err) => {
+        handleFirestoreError(err, OperationType.GET, `users/${uid}`);
+        wsReady = true;
+        markHydratedIfReady();
+      }
     );
 
     const txQuery = query(
@@ -1920,8 +1949,14 @@ function OrthoGroApp() {
         }));
         list.sort((a, b) => (b.rawDate || '').localeCompare(a.rawDate || ''));
         setTransactions(list);
+        txReady = true;
+        markHydratedIfReady();
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, `users/${uid}/transactions`)
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, `users/${uid}/transactions`);
+        txReady = true;
+        markHydratedIfReady();
+      }
     );
 
     const memosQuery = query(
@@ -2045,8 +2080,14 @@ function OrthoGroApp() {
         }));
         list.sort((a, b) => a.category.localeCompare(b.category));
         setBudgetGoals(list);
+        budReady = true;
+        markHydratedIfReady();
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, `users/${uid}/budgets`)
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, `users/${uid}/budgets`);
+        budReady = true;
+        markHydratedIfReady();
+      }
     );
 
     const savingGoalsQuery = query(
@@ -2062,8 +2103,14 @@ function OrthoGroApp() {
         }));
         list.sort((a, b) => a.title.localeCompare(b.title));
         setSavingGoals(list);
+        savReady = true;
+        markHydratedIfReady();
       },
-      (err) => handleFirestoreError(err, OperationType.LIST, `users/${uid}/savingGoals`)
+      (err) => {
+        handleFirestoreError(err, OperationType.LIST, `users/${uid}/savingGoals`);
+        savReady = true;
+        markHydratedIfReady();
+      }
     );
 
     const recurringBillsQuery = query(
@@ -2084,6 +2131,8 @@ function OrthoGroApp() {
     );
 
     return () => {
+      isCancelled = true;
+      window.clearTimeout(hydrationTimeout);
       unsubWorkspace();
       unsubTxs();
       unsubMemos();
@@ -6014,6 +6063,42 @@ function OrthoGroApp() {
           onForgotReset={handleForgotPinReset}
           onSignOutReset={handleSignOutForgotPinReset}
         />
+      </LanguageProvider>
+    );
+  }
+
+  if (currentUser && activeOwnerId && hydratedOwnerId !== activeOwnerId) {
+    return (
+      <LanguageProvider lang={currentLanguage} setLanguage={(l) => void handleLanguageChange(l, false)}>
+        <div className="flex min-h-screen flex-col items-center justify-center bg-[#F6F8F7] p-6 text-center dark:bg-slate-950">
+          <div className="text-4xl font-extrabold tracking-tight text-[#0E6042] dark:text-emerald-200">
+            OrthoGro
+          </div>
+          <p className="mt-1.5 text-sm font-medium text-slate-600 dark:text-slate-300">
+            {t.auth.subtitle}
+          </p>
+          <p
+            aria-label={currentLanguage === 'bn' ? t.app.tagline : 'Track • Save • Grow'}
+            className="mt-4 flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest text-[#16845B] dark:text-emerald-400"
+          >
+            {currentLanguage === 'bn' ? (
+              <span>{t.app.tagline}</span>
+            ) : (
+              <>
+                <span>Track</span>
+                <span aria-hidden="true">•</span>
+                <span>Save</span>
+                <span aria-hidden="true">•</span>
+                <span>Grow</span>
+              </>
+            )}
+          </p>
+          <div
+            role="status"
+            aria-label={currentLanguage === 'bn' ? 'লোড হচ্ছে' : 'Loading'}
+            className="mt-6 h-8 w-8 animate-spin rounded-full border-[3px] border-emerald-100 border-t-[#16845B] dark:border-slate-800 dark:border-t-emerald-400"
+          />
+        </div>
       </LanguageProvider>
     );
   }
