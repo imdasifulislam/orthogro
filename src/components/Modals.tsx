@@ -1,11 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
-  ArrowDownLeft,
-  ArrowUpRight,
   Check,
   CheckCircle2,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   CornerDownRight,
   GitMerge,
@@ -55,11 +54,14 @@ import {
   filterTransactionsByPeriod,
   formatDisplayDate,
   formatMoney,
+  formatShortRangeLabel,
+  getFilterName,
   getPeriodLabel,
   getShiftedCustomRange,
   getTodayISO,
   parseLocalDate,
 } from '../utils/format';
+import { NetWorthOverviewPanel } from './NetWorthOverviewPanel';
 import { RecurringBillsPanel, type RecurringBillSavePayload } from './RecurringBillsPanel';
 import { type AddableItemKind, TransactionPickerDrawer } from './TransactionPickerDrawer';
 import { getTransactionHierarchy } from '../utils/transactionDisplay';
@@ -651,258 +653,6 @@ const DrilldownTxRow: React.FC<{
   );
 };
 
-/* --- Horizontal Swipeable Strip for Net Worth Breakdown Rows --- */
-const SwipeableBreakdownStrip: React.FC<{
-  children: React.ReactNode;
-}> = ({ children }) => {
-  const stripRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
-
-  const mouseDragRef = useRef({
-    active: false,
-    startX: 0,
-    startScrollLeft: 0,
-    moved: false,
-  });
-  const touchDragRef = useRef<{
-    active: boolean;
-    startX: number;
-    startY: number;
-    startScrollLeft: number;
-    lastX: number;
-    lastTime: number;
-    velocity: number;
-    axis: 'x' | 'y' | null;
-    moved: boolean;
-  }>({
-    active: false,
-    startX: 0,
-    startY: 0,
-    startScrollLeft: 0,
-    lastX: 0,
-    lastTime: 0,
-    velocity: 0,
-    axis: null,
-    moved: false,
-  });
-  const suppressClickRef = useRef(false);
-  const momentumRafRef = useRef<number | null>(null);
-
-  const stopMomentum = () => {
-    if (momentumRafRef.current !== null) {
-      cancelAnimationFrame(momentumRafRef.current);
-      momentumRafRef.current = null;
-    }
-  };
-
-  const updateScrollFades = () => {
-    const el = stripRef.current;
-    if (!el) return;
-    const maxScroll = el.scrollWidth - el.clientWidth;
-    setCanScrollLeft(el.scrollLeft > 4);
-    setCanScrollRight(maxScroll - el.scrollLeft > 4);
-  };
-
-  useEffect(() => {
-    const el = stripRef.current;
-    if (!el) return;
-
-    updateScrollFades();
-
-    const handleTouchStart = (e: TouchEvent) => {
-      if (e.touches.length !== 1) return;
-      stopMomentum();
-      const touch = e.touches[0];
-      touchDragRef.current = {
-        active: true,
-        startX: touch.clientX,
-        startY: touch.clientY,
-        startScrollLeft: el.scrollLeft,
-        lastX: touch.clientX,
-        lastTime: performance.now(),
-        velocity: 0,
-        axis: null,
-        moved: false,
-      };
-      suppressClickRef.current = false;
-    };
-
-    const handleTouchMove = (e: TouchEvent) => {
-      const state = touchDragRef.current;
-      if (!state.active || e.touches.length !== 1) return;
-      const touch = e.touches[0];
-      const dx = touch.clientX - state.startX;
-      const dy = touch.clientY - state.startY;
-
-      if (!state.axis && (Math.abs(dx) > 5 || Math.abs(dy) > 5)) {
-        state.axis = Math.abs(dx) >= Math.abs(dy) ? 'x' : 'y';
-      }
-
-      if (state.axis !== 'x') return;
-
-      const hasOverflow = el.scrollWidth > el.clientWidth + 1;
-      if (!hasOverflow) return;
-
-      if (e.cancelable) {
-        e.preventDefault();
-      }
-      e.stopPropagation();
-
-      if (Math.abs(dx) > 6) {
-        state.moved = true;
-        suppressClickRef.current = true;
-      }
-
-      const now = performance.now();
-      const dt = Math.max(1, now - state.lastTime);
-      const stepDx = touch.clientX - state.lastX;
-      state.velocity = stepDx / dt;
-      state.lastX = touch.clientX;
-      state.lastTime = now;
-
-      el.scrollLeft = state.startScrollLeft - dx;
-      updateScrollFades();
-    };
-
-    const handleTouchEnd = () => {
-      const state = touchDragRef.current;
-      if (!state.active) return;
-      state.active = false;
-      const wasHorizontal = state.axis === 'x';
-      const moved = state.moved;
-      const isRecentMove = performance.now() - state.lastTime < 90;
-      let velocity = isRecentMove ? state.velocity : 0;
-      state.axis = null;
-      state.moved = false;
-
-      if (wasHorizontal && Math.abs(velocity) > 0.12) {
-        let lastFrame = performance.now();
-        const step = (now: number) => {
-          const dt = Math.min(32, now - lastFrame);
-          lastFrame = now;
-          el.scrollLeft -= velocity * dt;
-          updateScrollFades();
-          velocity *= Math.pow(0.92, dt / 16);
-          const maxScroll = el.scrollWidth - el.clientWidth;
-          if (
-            Math.abs(velocity) > 0.03 &&
-            el.scrollLeft > 0 &&
-            el.scrollLeft < maxScroll
-          ) {
-            momentumRafRef.current = requestAnimationFrame(step);
-          } else {
-            momentumRafRef.current = null;
-          }
-        };
-        momentumRafRef.current = requestAnimationFrame(step);
-      }
-
-      if (moved) {
-        window.setTimeout(() => {
-          suppressClickRef.current = false;
-        }, 80);
-      }
-    };
-
-    el.addEventListener('touchstart', handleTouchStart, { passive: true });
-    el.addEventListener('touchmove', handleTouchMove, { passive: false });
-    el.addEventListener('touchend', handleTouchEnd, { passive: true });
-    el.addEventListener('touchcancel', handleTouchEnd, { passive: true });
-
-    let resizeObserver: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== 'undefined') {
-      resizeObserver = new ResizeObserver(updateScrollFades);
-      resizeObserver.observe(el);
-    }
-
-    return () => {
-      stopMomentum();
-      el.removeEventListener('touchstart', handleTouchStart);
-      el.removeEventListener('touchmove', handleTouchMove);
-      el.removeEventListener('touchend', handleTouchEnd);
-      el.removeEventListener('touchcancel', handleTouchEnd);
-      resizeObserver?.disconnect();
-    };
-  }, [children]);
-
-  const handleMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    const el = stripRef.current;
-    if (!el || e.button !== 0) return;
-    stopMomentum();
-    mouseDragRef.current = {
-      active: true,
-      startX: e.clientX,
-      startScrollLeft: el.scrollLeft,
-      moved: false,
-    };
-    suppressClickRef.current = false;
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const el = stripRef.current;
-    if (!el || !mouseDragRef.current.active) return;
-    const dx = e.clientX - mouseDragRef.current.startX;
-    if (Math.abs(dx) > 6) {
-      mouseDragRef.current.moved = true;
-      suppressClickRef.current = true;
-    }
-    if (mouseDragRef.current.moved) {
-      el.scrollLeft = mouseDragRef.current.startScrollLeft - dx;
-      updateScrollFades();
-    }
-  };
-
-  const handleMouseEnd = () => {
-    if (!mouseDragRef.current.active) return;
-    const moved = mouseDragRef.current.moved;
-    mouseDragRef.current.active = false;
-    mouseDragRef.current.moved = false;
-    if (moved) {
-      window.setTimeout(() => {
-        suppressClickRef.current = false;
-      }, 60);
-    }
-  };
-
-  const handleClickCapture = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (suppressClickRef.current) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  };
-
-  return (
-    <div className="relative">
-      <div
-        ref={stripRef}
-        onDragStart={(e) => e.preventDefault()}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseEnd}
-        onMouseLeave={handleMouseEnd}
-        onScroll={updateScrollFades}
-        onClickCapture={handleClickCapture}
-        className="no-scrollbar flex cursor-grab touch-pan-y select-none gap-1.5 overflow-x-auto overscroll-x-contain pb-0.5 active:cursor-grabbing"
-      >
-        {children}
-      </div>
-      {canScrollLeft && (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 left-0 w-4 bg-gradient-to-r from-white to-transparent dark:from-slate-900"
-        />
-      )}
-      {canScrollRight && (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-y-0 right-0 w-5 bg-gradient-to-l from-white to-transparent dark:from-slate-900"
-        />
-      )}
-    </div>
-  );
-};
-
 /* --- Drilldown Modal --- */
 export const DrilldownModal: React.FC<{
   drilldownType: DrilldownType | null;
@@ -918,6 +668,7 @@ export const DrilldownModal: React.FC<{
   currency: CurrencySymbol;
   customDateFrom: string;
   customDateTo: string;
+  onCustomDateRangeChange?: (from: string, to: string) => void;
   onStartBalanceCorrection: (accountName: string) => void;
   onEditAccount?: (type: 'wallet' | 'savings', accountName: string) => void;
   onInspectDebt: (tx: Transaction) => void;
@@ -942,6 +693,7 @@ export const DrilldownModal: React.FC<{
   currency,
   customDateFrom,
   customDateTo,
+  onCustomDateRangeChange,
   onStartBalanceCorrection,
   onEditAccount,
   onInspectDebt,
@@ -957,6 +709,21 @@ export const DrilldownModal: React.FC<{
   const [selectedSubCategory, setSelectedSubCategory] = useState<string | null>(null);
   const [openTxId, setOpenTxId] = useState<string | null>(null);
   const [netWorthView, setNetWorthView] = useState<'summary' | 'transactions'>('summary');
+  const [catMonthOffset, setCatMonthOffset] = useState(0);
+  const [catYearOffset, setCatYearOffset] = useState(0);
+  const [catCustomOffset, setCatCustomOffset] = useState(0);
+  const [showCategoryFilterPicker, setShowCategoryFilterPicker] = useState(false);
+  const [draftCustomFrom, setDraftCustomFrom] = useState(customDateFrom);
+  const [draftCustomTo, setDraftCustomTo] = useState(customDateTo);
+  const [customRangeError, setCustomRangeError] = useState<string | null>(null);
+  const [catSwipeX, setCatSwipeX] = useState(0);
+  const [isSwipingCat, setIsSwipingCat] = useState(false);
+  const catSwipeRef = useRef<{
+    startX: number;
+    startY: number;
+    dragging: boolean;
+    axis: 'x' | 'y' | null;
+  }>({ startX: 0, startY: 0, dragging: false, axis: null });
   const subStripRef = useRef<HTMLDivElement>(null);
   const subStripDragRef = useRef({
     active: false,
@@ -970,10 +737,25 @@ export const DrilldownModal: React.FC<{
     setSelectedSubCategory(null);
     setOpenTxId(null);
     setNetWorthView('summary');
+    setShowCategoryFilterPicker(false);
+    setCustomRangeError(null);
+    setCatMonthOffset(drilldownPeriodContext?.monthOffset ?? 0);
+    setCatYearOffset(drilldownPeriodContext?.yearOffset ?? 0);
+    setCatCustomOffset(drilldownPeriodContext?.customOffset ?? 0);
     if (subStripRef.current) {
       subStripRef.current.scrollLeft = 0;
     }
   }, [drilldownType, drilldownKey, drilldownFilter, drilldownPeriodContext]);
+
+  useEffect(() => {
+    setSelectedSubCategory(null);
+    setOpenTxId(null);
+  }, [catMonthOffset, catYearOffset, catCustomOffset]);
+
+  useEffect(() => {
+    setDraftCustomFrom(customDateFrom);
+    setDraftCustomTo(customDateTo);
+  }, [customDateFrom, customDateTo]);
 
   if (!drilldownType) return null;
 
@@ -1061,10 +843,75 @@ export const DrilldownModal: React.FC<{
   });
 
   const now = new Date();
+  const locale = lang === 'bn' ? 'bn-BD' : 'en-US';
   const hasExplicitGoalRange = Boolean(
     drilldownPeriodContext?.startDate || drilldownPeriodContext?.endDate
   );
-  if (drilldownFilter === 'monthly' && drilldownPeriodContext?.monthOffset !== undefined) {
+
+  const canStepCategoryPeriod =
+    isCategoryDrilldown &&
+    (drilldownFilter === 'monthly' ||
+      drilldownFilter === 'yearly' ||
+      (drilldownFilter === 'custom' && Boolean(customDateFrom && customDateTo)));
+
+  let categoryPeriodTitle = '';
+  let categoryFilterButtonLabel = '';
+
+  if (isCategoryDrilldown) {
+    if (drilldownFilter === 'monthly') {
+      const target = new Date(now.getFullYear(), now.getMonth() + catMonthOffset, 1);
+      const targetMonth = target.getMonth();
+      const targetYear = target.getFullYear();
+      periodFiltered = periodFiltered.filter((tx) => {
+        if (!tx.rawDate) return false;
+        const d = parseLocalDate(tx.rawDate);
+        return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
+      });
+      categoryPeriodTitle = target.toLocaleDateString(locale, {
+        month: 'long',
+        year: 'numeric',
+      });
+      categoryFilterButtonLabel = categoryPeriodTitle;
+    } else if (drilldownFilter === 'yearly') {
+      const targetYear = now.getFullYear() + catYearOffset;
+      periodFiltered = periodFiltered.filter((tx) => {
+        if (!tx.rawDate) return false;
+        return parseLocalDate(tx.rawDate).getFullYear() === targetYear;
+      });
+      const yearDisplay = new Date(targetYear, 0, 1).toLocaleDateString(locale, {
+        year: 'numeric',
+      });
+      categoryPeriodTitle =
+        lang === 'bn' ? `জানুয়ারি – ডিসেম্বর ${yearDisplay}` : `Jan – Dec ${yearDisplay}`;
+      categoryFilterButtonLabel = yearDisplay;
+    } else if (drilldownFilter === 'custom' && customDateFrom && customDateTo) {
+      const { from, to } = getShiftedCustomRange(customDateFrom, customDateTo, catCustomOffset);
+      periodFiltered = periodFiltered.filter(
+        (tx) => !tx.rawDate || (tx.rawDate >= from && tx.rawDate <= to)
+      );
+      categoryPeriodTitle =
+        from === to
+          ? formatDisplayDate(from, lang)
+          : `${formatDisplayDate(from, lang)} – ${formatDisplayDate(to, lang)}`;
+      categoryFilterButtonLabel = formatShortRangeLabel(from, to, lang);
+    } else {
+      periodFiltered = filterTransactionsByPeriod(
+        periodFiltered,
+        drilldownFilter,
+        customDateFrom,
+        customDateTo
+      );
+      categoryFilterButtonLabel = getFilterName(drilldownFilter, lang);
+      categoryPeriodTitle = getPeriodLabel(drilldownFilter, customDateFrom, customDateTo, lang);
+      if (drilldownFilter === 'previous_month') {
+        categoryPeriodTitle = new Date(now.getFullYear(), now.getMonth() - 1, 1).toLocaleDateString(
+          locale,
+          { month: 'long', year: 'numeric' }
+        );
+        categoryFilterButtonLabel = categoryPeriodTitle;
+      }
+    }
+  } else if (drilldownFilter === 'monthly' && drilldownPeriodContext?.monthOffset !== undefined) {
     const target = new Date(
       now.getFullYear(),
       now.getMonth() + drilldownPeriodContext.monthOffset,
@@ -1114,6 +961,55 @@ export const DrilldownModal: React.FC<{
       customDateTo
     );
   }
+
+  const stepCategoryPeriod = (step: -1 | 1) => {
+    if (drilldownFilter === 'monthly') {
+      setCatMonthOffset((prev) => prev + step);
+    } else if (drilldownFilter === 'yearly') {
+      setCatYearOffset((prev) => prev + step);
+    } else if (drilldownFilter === 'custom') {
+      setCatCustomOffset((prev) => prev + step);
+    }
+  };
+
+  const handleCatSwipeStart = (clientX: number, clientY: number) => {
+    if (!canStepCategoryPeriod) return;
+    catSwipeRef.current = {
+      startX: clientX,
+      startY: clientY,
+      dragging: true,
+      axis: null,
+    };
+    setIsSwipingCat(true);
+  };
+
+  const handleCatSwipeMove = (clientX: number, clientY: number) => {
+    const state = catSwipeRef.current;
+    if (!state.dragging) return;
+    const dx = clientX - state.startX;
+    const dy = clientY - state.startY;
+    if (!state.axis && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
+      state.axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+    }
+    if (state.axis !== 'x') return;
+    if (Math.abs(dx) > 10) {
+      setOpenTxId(null);
+    }
+    setCatSwipeX(Math.max(-84, Math.min(84, dx * 0.45)));
+  };
+
+  const handleCatSwipeEnd = () => {
+    const state = catSwipeRef.current;
+    if (!state.dragging) return;
+    state.dragging = false;
+    setIsSwipingCat(false);
+    if (state.axis === 'x') {
+      if (catSwipeX > 36) stepCategoryPeriod(-1);
+      else if (catSwipeX < -36) stepCategoryPeriod(1);
+    }
+    state.axis = null;
+    setCatSwipeX(0);
+  };
 
   const getSavingGoalTxDelta = (tx: Transaction, accountSet: Set<string>): number => {
     if (tx.type === 'transfer') {
@@ -1223,9 +1119,10 @@ export const DrilldownModal: React.FC<{
       ? t.common.borrow
       : drilldownType.toUpperCase();
 
-  const activePeriodLabel =
-    drilldownPeriodContext?.periodLabel ||
-    getPeriodLabel(drilldownFilter, customDateFrom, customDateTo, lang);
+  const activePeriodLabel = isCategoryDrilldown
+    ? categoryPeriodTitle
+    : drilldownPeriodContext?.periodLabel ||
+      getPeriodLabel(drilldownFilter, customDateFrom, customDateTo, lang);
   const categoryTotal =
     isSavingGoalDrilldown && savingTargetAccounts
       ? periodFiltered.reduce((sum, tx) => sum + getSavingGoalTxDelta(tx, savingTargetAccounts), 0)
@@ -1263,7 +1160,8 @@ export const DrilldownModal: React.FC<{
       (drilldownFilter === 'monthly' || (drilldownFilter === 'custom' && hasExplicitGoalRange))) ||
       (drilldownType === 'expense_category' &&
         Boolean(drilldownPeriodContext?.budgetGoalId) &&
-        drilldownFilter === 'monthly'));
+        drilldownFilter === 'monthly' &&
+        catMonthOffset === 0));
 
   const monthlyOptionLabel =
     drilldownFilter === 'monthly' &&
@@ -1352,8 +1250,10 @@ export const DrilldownModal: React.FC<{
       onClick={onClose}
     >
       <div
-        className={`flex w-full max-w-md flex-col rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900 ${
-          showNetWorthSummary ? 'h-[min(88vh,700px)]' : 'h-[min(84vh,640px)]'
+        className={`flex w-full max-w-md flex-col rounded-2xl border border-slate-200 p-4 shadow-xl sm:p-5 dark:border-slate-800 ${
+          showNetWorthSummary
+            ? 'h-[min(90vh,760px)] bg-[#F4F7F5] dark:bg-slate-950'
+            : 'h-[min(84vh,640px)] bg-white dark:bg-slate-900'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -1397,21 +1297,39 @@ export const DrilldownModal: React.FC<{
               )}
           </div>
           {!showNetWorthSummary ? (
-            <select
-              value={drilldownFilter}
-              onChange={(e) => setDrilldownFilter(e.target.value as PeriodFilter)}
-              className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-            >
-              <option value="all">{t.common.allTime}</option>
-              <option value="monthly">{monthlyOptionLabel}</option>
-              <option value="previous_month">{t.common.prevMonthShort}</option>
-              <option value="yearly">{yearlyOptionLabel}</option>
-              {(drilldownFilter === 'custom' ||
-                hasExplicitGoalRange ||
-                (Boolean(customDateFrom) && Boolean(customDateTo))) && (
-                <option value="custom">{customOptionLabel}</option>
-              )}
-            </select>
+            isCategoryDrilldown ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setDraftCustomFrom(customDateFrom);
+                  setDraftCustomTo(customDateTo);
+                  setCustomRangeError(null);
+                  setShowCategoryFilterPicker(true);
+                }}
+                aria-label={t.modals.selectTimePeriod}
+                title={t.modals.selectTimePeriod}
+                className="inline-flex min-h-[32px] max-w-[165px] shrink-0 cursor-pointer items-center gap-1 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-[#102A43] transition-colors hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:hover:bg-slate-800"
+              >
+                <span className="truncate">{categoryFilterButtonLabel}</span>
+                <ChevronDown className="h-3.5 w-3.5 shrink-0 text-slate-400 dark:text-slate-500" />
+              </button>
+            ) : (
+              <select
+                value={drilldownFilter}
+                onChange={(e) => setDrilldownFilter(e.target.value as PeriodFilter)}
+                className="shrink-0 rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-1.5 text-xs font-semibold text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+              >
+                <option value="all">{t.common.allTime}</option>
+                <option value="monthly">{monthlyOptionLabel}</option>
+                <option value="previous_month">{t.common.prevMonthShort}</option>
+                <option value="yearly">{yearlyOptionLabel}</option>
+                {(drilldownFilter === 'custom' ||
+                  hasExplicitGoalRange ||
+                  (Boolean(customDateFrom) && Boolean(customDateTo))) && (
+                  <option value="custom">{customOptionLabel}</option>
+                )}
+              </select>
+            )
           ) : (
             <button
               type="button"
@@ -1452,256 +1370,17 @@ export const DrilldownModal: React.FC<{
         )}
 
         {showNetWorthSummary && netWorthSummary ? (
-          <div className="no-scrollbar min-h-0 flex-1 space-y-3.5 overflow-y-auto pr-0.5">
-            {/* Compact Hero Net Worth & Green/Red Composition Bar */}
-            <div className="net-worth-card relative overflow-hidden rounded-2xl p-3 text-white">
-              <div className="relative z-10">
-                <div className="flex items-center justify-between gap-2 text-[11px] font-medium text-slate-300">
-                  <span>{t.dashboard.netWorth}</span>
-                  <span>{formatDisplayDate(getTodayISO(), lang)}</span>
-                </div>
-                <div className="font-mono-num mt-0.5 text-xl font-extrabold tracking-tight sm:text-2xl">
-                  {formatMoney(netWorthSummary.netWorth, currency)}
-                </div>
-
-                {/* 2-Color Green (Assets) vs Red (Borrowed) Bar */}
-                {(() => {
-                  const positiveAssets = Math.max(0, netWorthSummary.totalAssets);
-                  const positiveBorrowed = Math.max(0, netWorthSummary.totalBorrow);
-                  const barTotal = positiveAssets + positiveBorrowed;
-                  if (barTotal <= 0) return null;
-                  return (
-                    <div className="mt-2 flex h-[3px] w-full overflow-hidden rounded-full bg-white/10">
-                      {positiveAssets > 0 && (
-                        <div
-                          style={{ width: `${(positiveAssets / barTotal) * 100}%` }}
-                          className="h-full bg-emerald-400"
-                        />
-                      )}
-                      {positiveBorrowed > 0 && (
-                        <div
-                          style={{ width: `${(positiveBorrowed / barTotal) * 100}%` }}
-                          className="h-full bg-rose-400"
-                        />
-                      )}
-                    </div>
-                  );
-                })()}
-
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-0.5 border-t border-white/10 pt-1.5 text-[11px] text-slate-300">
-                  <span>
-                    {t.modals.totalAssetsLabel}:{' '}
-                    <strong className="font-mono-num font-semibold text-emerald-300">
-                      +{formatMoney(netWorthSummary.totalAssets, currency)}
-                    </strong>
-                  </span>
-                  <span>
-                    {t.modals.lessBorrowedLabel}:{' '}
-                    <strong className="font-mono-num font-semibold text-rose-300">
-                      −{formatMoney(netWorthSummary.totalBorrow, currency)}
-                    </strong>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Row 1: Wallets (Compact 3-up Swipeable Cards) */}
-            <div>
-              <div className="mb-1.5 flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
-                    <Wallet className="h-3 w-3" />
-                  </span>
-                  <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
-                    {t.dashboard.wallets}{' '}
-                    <span className="font-medium text-slate-400 dark:text-slate-500">
-                      ({wallets.length})
-                    </span>
-                  </span>
-                </div>
-                <span className="font-mono-num shrink-0 text-xs font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
-                  {netWorthSummary.availableCashBalance >= 0 ? '+' : ''}
-                  {formatMoney(netWorthSummary.availableCashBalance, currency)}
-                </span>
-              </div>
-
-              <SwipeableBreakdownStrip>
-                {wallets.map((w) => {
-                  const bal = walletBalances[w] || 0;
-                  return (
-                    <button
-                      key={w}
-                      type="button"
-                      onClick={() => onSelectDrilldown?.('wallet', w)}
-                      className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2.5 py-2.5 text-left transition-colors hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-emerald-500/40"
-                    >
-                      <span className="truncate text-[11px] font-medium leading-tight text-slate-500 dark:text-slate-400">
-                        {w}
-                      </span>
-                      <span className="font-mono-num mt-1 truncate text-xs font-bold leading-tight tabular-nums text-slate-600 dark:text-slate-300">
-                        {formatMoney(bal, currency)}
-                      </span>
-                    </button>
-                  );
-                })}
-              </SwipeableBreakdownStrip>
-            </div>
-
-            {/* Row 2: Savings & Investments (Compact 3-up Swipeable Cards) */}
-            <div>
-              <div className="mb-1.5 flex items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-1.5">
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
-                    <PiggyBank className="h-3 w-3" />
-                  </span>
-                  <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
-                    {t.dashboard.savingsInvestments}{' '}
-                    <span className="font-medium text-slate-400 dark:text-slate-500">
-                      ({savingsList.length})
-                    </span>
-                  </span>
-                </div>
-                <span className="font-mono-num shrink-0 text-xs font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
-                  +{formatMoney(netWorthSummary.totalSavings, currency)}
-                </span>
-              </div>
-
-              {savingsList.length === 0 ? (
-                <p className="py-0.5 text-[11px] text-slate-400 dark:text-slate-500">
-                  {t.modals.noSavingsAccounts}
-                </p>
-              ) : (
-                <SwipeableBreakdownStrip>
-                  {savingsList.map((s) => {
-                    const bal = walletBalances[s] || 0;
-                    return (
-                      <button
-                        key={s}
-                        type="button"
-                        onClick={() => onSelectDrilldown?.('savings', s)}
-                        className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2.5 py-2.5 text-left transition-colors hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-emerald-500/40"
-                      >
-                        <span className="truncate text-[11px] font-medium leading-tight text-slate-500 dark:text-slate-400">
-                          {s}
-                        </span>
-                        <span className="font-mono-num mt-1 truncate text-xs font-bold leading-tight tabular-nums text-slate-600 dark:text-slate-300">
-                          {formatMoney(bal, currency)}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </SwipeableBreakdownStrip>
-              )}
-            </div>
-
-            {/* Row 3: Lent / Receivable (Compact 3-up Swipeable Cards) */}
-            <div>
-              <button
-                type="button"
-                onClick={() => onSelectDrilldown?.('lend', null)}
-                className="mb-1.5 flex w-full cursor-pointer items-center justify-between gap-2 text-left"
-              >
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-emerald-50 text-[#16845B] dark:bg-emerald-950/60 dark:text-emerald-400">
-                    <ArrowUpRight className="h-3 w-3" />
-                  </span>
-                  <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
-                    {t.dashboard.lentReceivable}{' '}
-                    <span className="font-medium text-slate-400 dark:text-slate-500">
-                      ({netWorthSummary.lendCount})
-                    </span>
-                  </span>
-                </span>
-                <span className="flex shrink-0 items-center gap-0.5">
-                  <span className="font-mono-num text-xs font-extrabold tabular-nums text-[#16845B] dark:text-emerald-400">
-                    +{formatMoney(netWorthSummary.totalLend, currency)}
-                  </span>
-                  <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                </span>
-              </button>
-
-              {netWorthSummary.activeLendItems.length === 0 ? (
-                <p className="py-0.5 text-[11px] text-slate-400 dark:text-slate-500">
-                  {t.modals.noActiveLent}
-                </p>
-              ) : (
-                <SwipeableBreakdownStrip>
-                  {netWorthSummary.activeLendItems.map(({ tx, due }) => (
-                    <button
-                      key={tx.id}
-                      type="button"
-                      onClick={() => {
-                        onClose();
-                        onInspectDebt(tx);
-                      }}
-                      className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2.5 py-2.5 text-left transition-colors hover:border-emerald-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-emerald-500/40"
-                    >
-                      <span className="truncate text-[11px] font-medium leading-tight text-slate-500 dark:text-slate-400">
-                        {tx.title || t.dashboard.lentReceivable}
-                      </span>
-                      <span className="font-mono-num mt-1 truncate text-xs font-bold leading-tight tabular-nums text-slate-600 dark:text-slate-300">
-                        {formatMoney(due, currency)}
-                      </span>
-                    </button>
-                  ))}
-                </SwipeableBreakdownStrip>
-              )}
-            </div>
-
-            {/* Row 4: Borrowed / Payable (Compact 3-up Swipeable Cards) */}
-            <div>
-              <button
-                type="button"
-                onClick={() => onSelectDrilldown?.('borrow', null)}
-                className="mb-1.5 flex w-full cursor-pointer items-center justify-between gap-2 text-left"
-              >
-                <span className="flex min-w-0 items-center gap-1.5">
-                  <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-md bg-rose-50 text-[#D94848] dark:bg-rose-950/60 dark:text-rose-400">
-                    <ArrowDownLeft className="h-3 w-3" />
-                  </span>
-                  <span className="truncate text-xs font-bold text-[#102A43] dark:text-slate-100">
-                    {t.dashboard.borrowedPayable}{' '}
-                    <span className="font-medium text-slate-400 dark:text-slate-500">
-                      ({netWorthSummary.borrowCount})
-                    </span>
-                  </span>
-                </span>
-                <span className="flex shrink-0 items-center gap-0.5">
-                  <span className="font-mono-num text-xs font-extrabold tabular-nums text-[#D94848] dark:text-rose-400">
-                    −{formatMoney(netWorthSummary.totalBorrow, currency)}
-                  </span>
-                  <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                </span>
-              </button>
-
-              {netWorthSummary.activeBorrowItems.length === 0 ? (
-                <p className="py-0.5 text-[11px] text-slate-400 dark:text-slate-500">
-                  {t.modals.noActiveBorrowed}
-                </p>
-              ) : (
-                <SwipeableBreakdownStrip>
-                  {netWorthSummary.activeBorrowItems.map(({ tx, due }) => (
-                    <button
-                      key={tx.id}
-                      type="button"
-                      onClick={() => {
-                        onClose();
-                        onInspectDebt(tx);
-                      }}
-                      className="flex w-[calc((100%-12px)/3)] min-w-[92px] shrink-0 snap-start cursor-pointer flex-col rounded-lg border border-slate-200/80 bg-[#F7F9F8] px-2.5 py-2.5 text-left transition-colors hover:border-rose-300 dark:border-slate-800 dark:bg-slate-800/60 dark:hover:border-rose-500/40"
-                    >
-                      <span className="truncate text-[11px] font-medium leading-tight text-slate-500 dark:text-slate-400">
-                        {tx.title || t.dashboard.borrowedPayable}
-                      </span>
-                      <span className="font-mono-num mt-1 truncate text-xs font-bold leading-tight tabular-nums text-slate-600 dark:text-slate-300">
-                        {formatMoney(due, currency)}
-                      </span>
-                    </button>
-                  ))}
-                </SwipeableBreakdownStrip>
-              )}
-            </div>
-          </div>
+          <NetWorthOverviewPanel
+            summary={netWorthSummary}
+            transactions={transactions}
+            wallets={wallets}
+            savingsList={savingsList}
+            walletBalances={walletBalances}
+            currency={currency}
+            onSelectDrilldown={onSelectDrilldown}
+            onInspectDebt={onInspectDebt}
+            onClose={onClose}
+          />
         ) : (
           <>
             {hasSubCategoryStrip && (
@@ -1805,30 +1484,81 @@ export const DrilldownModal: React.FC<{
                 </div>
               )}
 
-            <div className="no-scrollbar min-h-0 flex-1 divide-y divide-slate-100 overflow-y-auto dark:divide-slate-800">
-              {filtered.length === 0 ? (
-                <p className="py-10 text-center text-xs text-slate-500 dark:text-slate-400">
-                  {t.modals.noTxForFilter}
-                </p>
-              ) : (
-                filtered.map((tx) => (
-                  <DrilldownTxRow
-                    key={tx.id}
-                    tx={tx}
-                    currency={currency}
-                    isReadOnly={isReadOnly}
-                    isOpen={openTxId === tx.id}
-                    onToggleOpen={setOpenTxId}
-                    onInspectDebt={(item) => {
-                      onClose();
-                      onInspectDebt(item);
-                    }}
-                    onEdit={onEditTransaction}
-                    onDelete={onDeleteTransaction}
-                  />
-                ))
-              )}
+            <div
+              onTouchStart={(e) => {
+                if (canStepCategoryPeriod) {
+                  handleCatSwipeStart(e.touches[0].clientX, e.touches[0].clientY);
+                }
+              }}
+              onTouchMove={(e) => {
+                if (canStepCategoryPeriod) {
+                  handleCatSwipeMove(e.touches[0].clientX, e.touches[0].clientY);
+                }
+              }}
+              onTouchEnd={handleCatSwipeEnd}
+              onTouchCancel={handleCatSwipeEnd}
+              className="no-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
+            >
+              <div
+                style={
+                  canStepCategoryPeriod
+                    ? { transform: `translateX(${catSwipeX}px)` }
+                    : undefined
+                }
+                className={`divide-y divide-slate-100 dark:divide-slate-800 ${
+                  canStepCategoryPeriod && !isSwipingCat
+                    ? 'transition-transform duration-200 ease-out'
+                    : ''
+                }`}
+              >
+                {filtered.length === 0 ? (
+                  <p className="py-10 text-center text-xs text-slate-500 dark:text-slate-400">
+                    {t.modals.noTxForFilter}
+                  </p>
+                ) : (
+                  filtered.map((tx) => (
+                    <DrilldownTxRow
+                      key={tx.id}
+                      tx={tx}
+                      currency={currency}
+                      isReadOnly={isReadOnly}
+                      isOpen={openTxId === tx.id}
+                      onToggleOpen={setOpenTxId}
+                      onInspectDebt={(item) => {
+                        onClose();
+                        onInspectDebt(item);
+                      }}
+                      onEdit={onEditTransaction}
+                      onDelete={onDeleteTransaction}
+                    />
+                  ))
+                )}
+              </div>
             </div>
+
+            {canStepCategoryPeriod && (
+              <div className="mt-2 flex shrink-0 items-center justify-between border-t border-slate-100 pt-2 text-[11px] text-slate-400 dark:border-slate-800 dark:text-slate-500">
+                <span className="truncate">{t.dashboard.swipePrevNextPeriod}</span>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    aria-label={t.common.previousMonth}
+                    onClick={() => stepCategoryPeriod(-1)}
+                    className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-[#102A43] dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={t.common.nextMonth}
+                    onClick={() => stepCategoryPeriod(1)}
+                    className="flex h-7 w-7 cursor-pointer items-center justify-center rounded-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-[#102A43] dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
 
@@ -1869,6 +1599,126 @@ export const DrilldownModal: React.FC<{
           </button>
         )}
       </div>
+
+      {isCategoryDrilldown && showCategoryFilterPicker && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/60 p-4 backdrop-blur-sm"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowCategoryFilterPicker(false);
+          }}
+        >
+          <div
+            className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-5 shadow-xl dark:border-slate-800 dark:bg-slate-900"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h3 className="text-base font-bold text-[#102A43] dark:text-slate-100">
+                {t.modals.selectTimePeriod}
+              </h3>
+              <button
+                type="button"
+                onClick={() => setShowCategoryFilterPicker(false)}
+                aria-label={t.common.close}
+                className="flex h-8 w-8 cursor-pointer items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {(
+                [
+                  { key: 'monthly', label: t.common.monthlyByMonth },
+                  { key: 'yearly', label: t.common.yearlyByYear },
+                  { key: 'all', label: t.common.allTime },
+                ] as Array<{ key: PeriodFilter; label: string }>
+              ).map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => {
+                    setCatMonthOffset(0);
+                    setCatYearOffset(0);
+                    setCatCustomOffset(0);
+                    setDrilldownFilter(p.key);
+                    setShowCategoryFilterPicker(false);
+                  }}
+                  className={`min-h-[42px] w-full cursor-pointer rounded-xl px-4 py-2.5 text-sm font-bold transition-colors ${
+                    drilldownFilter === p.key
+                      ? 'bg-[#16845B] text-white'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-4 border-t border-slate-200 pt-4 dark:border-slate-800">
+              <div className="mb-2 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                {t.modals.customDateRange}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="mb-1 block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                    {t.modals.startDateLabel}
+                  </label>
+                  <input
+                    type="date"
+                    value={draftCustomFrom}
+                    onChange={(e) => {
+                      setDraftCustomFrom(e.target.value);
+                      setCustomRangeError(null);
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                    {t.modals.endDateLabel}
+                  </label>
+                  <input
+                    type="date"
+                    value={draftCustomTo}
+                    onChange={(e) => {
+                      setDraftCustomTo(e.target.value);
+                      setCustomRangeError(null);
+                    }}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-2.5 py-2 text-xs text-[#102A43] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  />
+                </div>
+              </div>
+              {customRangeError && (
+                <p className="mt-2 text-xs font-medium text-[#D94848] dark:text-rose-400">
+                  {customRangeError}
+                </p>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  if (!draftCustomFrom || !draftCustomTo) {
+                    setCustomRangeError(t.toasts.selectStartEndDates);
+                    return;
+                  }
+                  if (draftCustomFrom > draftCustomTo) {
+                    setCustomRangeError(t.toasts.invalidSavingDateRange);
+                    return;
+                  }
+                  onCustomDateRangeChange?.(draftCustomFrom, draftCustomTo);
+                  setCatCustomOffset(0);
+                  setDrilldownFilter('custom');
+                  setCustomRangeError(null);
+                  setShowCategoryFilterPicker(false);
+                }}
+                className="mt-2.5 min-h-[40px] w-full cursor-pointer rounded-xl bg-[#102A43] py-2 text-xs font-bold text-white hover:bg-slate-800 dark:bg-sky-700 dark:hover:bg-sky-600"
+              >
+                {t.modals.applyCustomRange}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -4375,7 +4225,7 @@ export const GoalsOverviewModal: React.FC<{
 
                   {/* Animated Bar + Inline Percentage */}
                   <div className="mt-2.5 flex items-center gap-2.5">
-                    <div className="relative h-2 flex-1 rounded-full bg-[#E3E9EC] dark:bg-slate-700">
+                    <div className="relative h-1 flex-1 rounded-full bg-[#E3E9EC] dark:bg-slate-700">
                       <div
                         className={`goal-bar-fill h-full rounded-full ${
                           budgetIsOver
@@ -4393,7 +4243,7 @@ export const GoalsOverviewModal: React.FC<{
                       <span
                         aria-hidden="true"
                         style={{ left: `${todayPacePct}%` }}
-                        className="pointer-events-none absolute -top-[2px] h-3 w-[2px] -translate-x-1/2 rounded-full bg-[#112A46]/70 dark:bg-slate-200/80"
+                        className="pointer-events-none absolute -top-[2px] h-2 w-[2px] -translate-x-1/2 rounded-full bg-[#112A46]/70 dark:bg-slate-200/80"
                       />
                     </div>
                     <span
@@ -4436,110 +4286,81 @@ export const GoalsOverviewModal: React.FC<{
                 {/* Per-Category Budget Rows */}
                 <div className="space-y-1.5">
                   {sortedBudgetItems.map(({ goal, spent, pct }) => {
-                    const roundedPct = Math.round(pct);
                     const isOver = pct > 100;
                     const isNear = !isOver && pct >= 80;
                     const remaining = Math.max(0, goal.monthlyLimit - spent);
                     const exceeded = Math.max(0, spent - goal.monthlyLimit);
 
                     return (
-                      <div
+                      <button
                         key={goal.id}
-                        className="flex items-stretch gap-1 rounded-xl border border-slate-100 bg-white transition-colors hover:border-slate-200 hover:bg-slate-50/70 dark:border-slate-800/80 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-800/40"
+                        type="button"
+                        onClick={() => {
+                          if (isReadOnly) onInspectBudgetGoal(goal);
+                          else onEditBudgetGoal(goal);
+                        }}
+                        title={!isReadOnly ? t.modals.editBudgetGoal : undefined}
+                        className="w-full cursor-pointer rounded-xl border border-slate-100 bg-white p-3 text-left transition-colors hover:border-slate-200 hover:bg-slate-50/70 dark:border-slate-800/80 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-800/40"
                       >
-                        <button
-                          type="button"
-                          onClick={() => onInspectBudgetGoal(goal)}
-                          className="min-w-0 flex-1 cursor-pointer p-3 text-left"
+                        <div className="mb-1.5 flex items-center justify-between gap-2">
+                          <div className="flex min-w-0 items-center gap-2">
+                            <CategoryIconBadge
+                              style={getCategoryStyle(categoryStyles, 'exp', goal.category)}
+                              size="xs"
+                            />
+                            <span className="truncate text-[13px] font-semibold text-[#102A43] dark:text-slate-100">
+                              {goal.category}
+                            </span>
+                          </div>
+                          <span className="font-mono-num shrink-0 text-xs tabular-nums">
+                            <span className="font-bold text-[#102A43] dark:text-slate-100">
+                              {formatMoney(spent, currency)}
+                            </span>
+                            <span className="font-normal text-slate-400 dark:text-slate-500">
+                              {' / '}
+                              {fmtPlainAmount(goal.monthlyLimit)}
+                            </span>
+                          </span>
+                        </div>
+
+                        <div
+                          className={`h-[3px] w-full overflow-hidden rounded-full ${
+                            isOver
+                              ? 'bg-rose-500/15 dark:bg-rose-400/20'
+                              : isNear
+                              ? 'bg-amber-500/15 dark:bg-amber-400/20'
+                              : 'bg-emerald-500/12 dark:bg-emerald-400/15'
+                          }`}
                         >
-                          <div className="mb-1.5 flex items-center justify-between gap-2">
-                            <div className="flex min-w-0 items-center gap-2">
-                              <CategoryIconBadge
-                                style={getCategoryStyle(categoryStyles, 'exp', goal.category)}
-                                size="xs"
-                              />
-                              <span className="truncate text-[13px] font-semibold text-[#102A43] dark:text-slate-100">
-                                {goal.category}
-                              </span>
-                            </div>
-                            <span className="font-mono-num shrink-0 text-xs tabular-nums">
-                              <span className="font-bold text-[#102A43] dark:text-slate-100">
-                                {formatMoney(spent, currency)}
-                              </span>
-                              <span className="font-normal text-slate-400 dark:text-slate-500">
-                                {' / '}
-                                {fmtPlainAmount(goal.monthlyLimit)}
-                              </span>
-                            </span>
-                          </div>
-
-                          <div className="flex items-center gap-2.5">
-                            <div
-                              className={`h-1.5 flex-1 overflow-hidden rounded-full ${
-                                isOver
-                                  ? 'bg-rose-500/15 dark:bg-rose-400/20'
-                                  : isNear
-                                  ? 'bg-amber-500/15 dark:bg-amber-400/20'
-                                  : 'bg-emerald-500/12 dark:bg-emerald-400/15'
-                              }`}
-                            >
-                              <div
-                                className={`goal-bar-fill h-full rounded-full ${
-                                  isOver
-                                    ? 'bg-[#EF4444] dark:bg-rose-400'
-                                    : isNear
-                                    ? 'bg-[#E8A317] dark:bg-amber-400'
-                                    : 'bg-[#10B981] dark:bg-emerald-400'
-                                }`}
-                                style={{
-                                  width: `${barsReady ? Math.min(100, Math.max(0, pct)) : 0}%`,
-                                }}
-                              />
-                            </div>
-                            <span
-                              className={`font-mono-num w-9 shrink-0 text-right text-[11px] font-semibold tabular-nums ${
-                                isOver
-                                  ? 'text-[#B42318] dark:text-rose-400'
-                                  : isNear
-                                  ? 'text-[#8A5300] dark:text-amber-400'
-                                  : 'text-[#0F6B45] dark:text-emerald-400'
-                              }`}
-                            >
-                              {roundedPct}%
-                            </span>
-                          </div>
-
-                          <div className="mt-1 flex items-center justify-between gap-2 text-[11px]">
-                            <span
-                              className={`font-mono-num font-medium ${
-                                isOver
-                                  ? 'text-[#B42318] dark:text-rose-400'
-                                  : 'text-slate-400 dark:text-slate-500'
-                              }`}
-                            >
-                              {isOver
-                                ? `+${formatMoney(exceeded, currency)} ${t.dashboard.overBudget}`
-                                : `${formatMoney(remaining, currency)} ${t.modals.remainingShort}`}
-                            </span>
-                            <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 dark:text-slate-600" />
-                          </div>
-                        </button>
-
-                        {!isReadOnly && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              onEditBudgetGoal(goal);
+                          <div
+                            className={`goal-bar-fill h-full rounded-full ${
+                              isOver
+                                ? 'bg-[#EF4444] dark:bg-rose-400'
+                                : isNear
+                                ? 'bg-[#E8A317] dark:bg-amber-400'
+                                : 'bg-[#10B981] dark:bg-emerald-400'
+                            }`}
+                            style={{
+                              width: `${barsReady ? Math.min(100, Math.max(0, pct)) : 0}%`,
                             }}
-                            aria-label={`${t.modals.editBudgetGoal} ${goal.category}`}
-                            title={t.modals.editBudgetGoal}
-                            className="flex w-10 shrink-0 cursor-pointer items-center justify-center rounded-r-xl border-l border-slate-100 text-slate-400 transition-colors hover:bg-slate-100 hover:text-[#102A43] dark:border-slate-800/80 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                          />
+                        </div>
+
+                        <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px]">
+                          <span
+                            className={`font-mono-num font-medium ${
+                              isOver
+                                ? 'text-[#B42318] dark:text-rose-400'
+                                : 'text-slate-400 dark:text-slate-500'
+                            }`}
                           >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </button>
-                        )}
-                      </div>
+                            {isOver
+                              ? `+${formatMoney(exceeded, currency)} ${t.dashboard.overBudget}`
+                              : `${formatMoney(remaining, currency)} ${t.modals.remainingShort}`}
+                          </span>
+                          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 dark:text-slate-600" />
+                        </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -4582,7 +4403,7 @@ export const GoalsOverviewModal: React.FC<{
 
                 {/* Animated Bar + Inline Percentage */}
                 <div className="mt-2.5 flex items-center gap-2.5">
-                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-[#E3E9EC] dark:bg-slate-700">
+                  <div className="h-1 flex-1 overflow-hidden rounded-full bg-[#E3E9EC] dark:bg-slate-700">
                     <div
                       className="goal-bar-fill h-full rounded-full bg-[#10B981] dark:bg-emerald-400"
                       style={{
@@ -4621,7 +4442,6 @@ export const GoalsOverviewModal: React.FC<{
               {/* Per-Saving-Goal Rows */}
               <div className="space-y-1.5">
                 {sortedSavingItems.map(({ goal, progress }) => {
-                  const roundedPct = Math.max(0, Math.round(progress.pct));
                   const reached = progress.pct >= 100;
                   const showAccountSuffix = Boolean(
                     goal.account &&
@@ -4642,95 +4462,75 @@ export const GoalsOverviewModal: React.FC<{
                       : '';
 
                   return (
-                    <div
+                    <button
                       key={goal.id}
-                      className="flex items-stretch gap-1 rounded-xl border border-slate-100 bg-white transition-colors hover:border-slate-200 hover:bg-slate-50/70 dark:border-slate-800/80 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-800/40"
+                      type="button"
+                      onClick={() => {
+                        if (isReadOnly) onInspectSavingGoal(goal, progress);
+                        else onEditSavingGoal(goal);
+                      }}
+                      title={!isReadOnly ? t.modals.editSavingGoal : undefined}
+                      className="w-full cursor-pointer rounded-xl border border-slate-100 bg-white p-3 text-left transition-colors hover:border-slate-200 hover:bg-slate-50/70 dark:border-slate-800/80 dark:bg-slate-900 dark:hover:border-slate-700 dark:hover:bg-slate-800/40"
                     >
-                      <button
-                        type="button"
-                        onClick={() => onInspectSavingGoal(goal, progress)}
-                        className="min-w-0 flex-1 cursor-pointer p-3 text-left"
-                      >
-                        <div className="mb-1.5 flex items-center justify-between gap-2">
-                          <div className="flex min-w-0 items-center gap-2">
-                            <CategoryIconBadge
-                              style={getCategoryStyle(
-                                categoryStyles,
-                                'sav',
-                                goal.account || savingsList[0] || 'Savings'
-                              )}
-                              size="xs"
-                            />
-                            <span className="truncate text-[13px] font-semibold text-[#102A43] dark:text-slate-100">
-                              {goal.title}
-                              {showAccountSuffix && (
-                                <span className="font-normal text-slate-400 dark:text-slate-500">
-                                  {' · '}
-                                  {goal.account}
-                                </span>
-                              )}
-                            </span>
-                          </div>
-                          <span className="font-mono-num shrink-0 text-xs tabular-nums">
-                            <span className="font-bold text-[#102A43] dark:text-slate-100">
-                              {formatMoney(progress.savedAmount, currency)}
-                            </span>
-                            <span className="font-normal text-slate-400 dark:text-slate-500">
-                              {' / '}
-                              {fmtPlainAmount(goal.targetAmount)}
-                            </span>
+                      <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <CategoryIconBadge
+                            style={getCategoryStyle(
+                              categoryStyles,
+                              'sav',
+                              goal.account || savingsList[0] || 'Savings'
+                            )}
+                            size="xs"
+                          />
+                          <span className="truncate text-[13px] font-semibold text-[#102A43] dark:text-slate-100">
+                            {goal.title}
+                            {showAccountSuffix && (
+                              <span className="font-normal text-slate-400 dark:text-slate-500">
+                                {' · '}
+                                {goal.account}
+                              </span>
+                            )}
                           </span>
                         </div>
-
-                        <div className="flex items-center gap-2.5">
-                          <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-emerald-500/12 dark:bg-emerald-400/15">
-                            <div
-                              className="goal-bar-fill h-full rounded-full bg-[#10B981] dark:bg-emerald-400"
-                              style={{
-                                width: `${
-                                  barsReady ? Math.min(100, Math.max(0, progress.pct)) : 0
-                                }%`,
-                              }}
-                            />
-                          </div>
-                          <span className="font-mono-num w-9 shrink-0 text-right text-[11px] font-semibold tabular-nums text-[#0F6B45] dark:text-emerald-400">
-                            {roundedPct}%
+                        <span className="font-mono-num shrink-0 text-xs tabular-nums">
+                          <span className="font-bold text-[#102A43] dark:text-slate-100">
+                            {formatMoney(progress.savedAmount, currency)}
                           </span>
-                        </div>
-
-                        <div className="mt-1 flex items-center justify-between gap-2 text-[11px]">
-                          <span
-                            className={`truncate font-medium ${
-                              reached
-                                ? 'text-[#0F6B45] dark:text-emerald-400'
-                                : 'text-slate-400 dark:text-slate-500'
-                            }`}
-                          >
-                            {reached
-                              ? t.dashboard.goalReached
-                              : daysText
-                              ? `${daysText} · ${formatMoney(progress.remaining, currency)} ${t.modals.remainingShort}`
-                              : `${formatMoney(progress.remaining, currency)} ${t.modals.remainingShort}`}
+                          <span className="font-normal text-slate-400 dark:text-slate-500">
+                            {' / '}
+                            {fmtPlainAmount(goal.targetAmount)}
                           </span>
-                          <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 dark:text-slate-600" />
-                        </div>
-                      </button>
+                        </span>
+                      </div>
 
-                      {!isReadOnly && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onEditSavingGoal(goal);
+                      <div className="h-[3px] w-full overflow-hidden rounded-full bg-emerald-500/12 dark:bg-emerald-400/15">
+                        <div
+                          className="goal-bar-fill h-full rounded-full bg-[#10B981] dark:bg-emerald-400"
+                          style={{
+                            width: `${
+                              barsReady ? Math.min(100, Math.max(0, progress.pct)) : 0
+                            }%`,
                           }}
-                          aria-label={`${t.modals.editSavingGoal} ${goal.title}`}
-                          title={t.modals.editSavingGoal}
-                          className="flex w-10 shrink-0 cursor-pointer items-center justify-center rounded-r-xl border-l border-slate-100 text-slate-400 transition-colors hover:bg-slate-100 hover:text-[#102A43] dark:border-slate-800/80 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                        />
+                      </div>
+
+                      <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px]">
+                        <span
+                          className={`truncate font-medium ${
+                            reached
+                              ? 'text-[#0F6B45] dark:text-emerald-400'
+                              : 'text-slate-400 dark:text-slate-500'
+                          }`}
                         >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
+                          {reached
+                            ? t.dashboard.goalReached
+                            : daysText
+                            ? `${daysText} · ${formatMoney(progress.remaining, currency)} ${t.modals.remainingShort}`
+                            : `${formatMoney(progress.remaining, currency)} ${t.modals.remainingShort}`}
+                        </span>
+                        <ChevronRight className="h-3.5 w-3.5 shrink-0 text-slate-300 dark:text-slate-600" />
+                      </div>
+                    </button>
                   );
                 })}
               </div>
