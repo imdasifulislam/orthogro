@@ -255,8 +255,8 @@ const DEFAULT_GRID_ORDER: GridKey[] = [
   'netWorth',
   'wallets',
   'savings',
-  'incExp',
   'lendBorrow',
+  'incExp',
   'budgetGoals',
   'categoryPieChart',
   'transactions',
@@ -977,6 +977,7 @@ function OrthoGroApp() {
     lendBorrow: 'all',
     incExp: 'monthly',
     categoryPieChart: 'monthly',
+    transactions: 'monthly',
   });
   const [activeFilterCard, setActiveFilterCard] = useState<FilterCardKey | null>(null);
   const [customDateFrom, setCustomDateFrom] = useState('');
