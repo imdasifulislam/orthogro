@@ -155,9 +155,8 @@ const DEFAULT_WALLETS = ['Cash', 'Bkash', 'Nagad', 'Bank'];
 const DEFAULT_SAVINGS = [
   'Emergency Fund',
   'Wishlist',
-  'Invest',
   'Saving',
-  'Samity',
+  'Invest',
 ];
 
 const DEFAULT_EXPENSE_CATS = [
@@ -173,8 +172,6 @@ const DEFAULT_INCOME_CATS = [
   'Salary',
   'Business',
   'Investment Return',
-  'Freelance',
-  'Rental',
   'Festival Bonus',
   'Gift',
   'Others',
