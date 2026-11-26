@@ -1,11 +1,28 @@
 import React, { useState } from 'react';
-import { Delete } from 'lucide-react';
+import { Delete, TrendingDown, TrendingUp } from 'lucide-react';
+import { useTranslation } from '../i18n';
 import { safeEvaluateExpression } from '../utils/format';
 
-export const CalculatorView: React.FC = () => {
+interface CalculatorViewProps {
+  isReadOnly?: boolean;
+  onLogTransaction?: (type: 'income' | 'expense', amount: number) => void;
+}
+
+export const CalculatorView: React.FC<CalculatorViewProps> = ({
+  isReadOnly = false,
+  onLogTransaction,
+}) => {
+  const { t } = useTranslation();
   const [expression, setExpression] = useState('');
   const [currentVal, setCurrentVal] = useState('0');
   const [isCalculated, setIsCalculated] = useState(false);
+
+  const calculatedAmount = React.useMemo(() => {
+    if (!isCalculated || currentVal === 'Error') return null;
+    const parsed = Number(currentVal);
+    if (!Number.isFinite(parsed) || parsed <= 0) return null;
+    return Math.round(parsed * 100) / 100;
+  }, [isCalculated, currentVal]);
 
   const livePreview = React.useMemo(() => {
     if (isCalculated || !expression) return null;
@@ -115,8 +132,31 @@ export const CalculatorView: React.FC = () => {
           <div className="font-mono-num mt-1 break-all text-4xl font-bold tracking-tight text-[#102A43] dark:text-slate-100">
             {currentVal}
           </div>
-          <div className="font-mono-num mt-1 min-h-[20px] text-xs font-medium text-[#16845B] dark:text-emerald-400">
-            {livePreview !== null ? `= ${livePreview}` : ''}
+          <div className="mt-2 flex min-h-[36px] items-center justify-end">
+            {calculatedAmount !== null && !isReadOnly && onLogTransaction ? (
+              <div className="grid w-full grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => onLogTransaction('income', calculatedAmount)}
+                  className="inline-flex min-h-[36px] cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-emerald-200/80 bg-emerald-50 px-3 py-1.5 text-xs font-bold text-[#16845B] shadow-xs transition-colors hover:border-emerald-300 hover:bg-emerald-100/80 active:scale-[0.97] whitespace-nowrap dark:border-emerald-900/60 dark:bg-emerald-950/60 dark:text-emerald-400 dark:hover:border-emerald-800 dark:hover:bg-emerald-950"
+                >
+                  <TrendingUp className="h-3.5 w-3.5 shrink-0" />
+                  <span>{t.common.income}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onLogTransaction('expense', calculatedAmount)}
+                  className="inline-flex min-h-[36px] cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-rose-200/80 bg-rose-50 px-3 py-1.5 text-xs font-bold text-[#D94848] shadow-xs transition-colors hover:border-rose-300 hover:bg-rose-100/80 active:scale-[0.97] whitespace-nowrap dark:border-rose-900/60 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:border-rose-800 dark:hover:bg-rose-950"
+                >
+                  <TrendingDown className="h-3.5 w-3.5 shrink-0" />
+                  <span>{t.common.expense}</span>
+                </button>
+              </div>
+            ) : (
+              <div className="font-mono-num text-xs font-medium text-[#16845B] dark:text-emerald-400">
+                {livePreview !== null ? `= ${livePreview}` : ''}
+              </div>
+            )}
           </div>
         </div>
 

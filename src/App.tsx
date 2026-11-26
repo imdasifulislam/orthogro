@@ -1005,8 +1005,13 @@ function OrthoGroApp() {
   } | null>(null);
   const [showBudgetGoalsModal, setShowBudgetGoalsModal] = useState(false);
   const [editingBudgetGoal, setEditingBudgetGoal] = useState<BudgetGoal | null>(null);
+  const [budgetGoalPrefillLimit, setBudgetGoalPrefillLimit] = useState<number | null>(null);
   const [showSavingGoalsModal, setShowSavingGoalsModal] = useState(false);
   const [editingSavingGoal, setEditingSavingGoal] = useState<SavingGoal | null>(null);
+  const [savingGoalPrefill, setSavingGoalPrefill] = useState<{
+    title?: string;
+    account?: string;
+  } | null>(null);
   const [showRecurringBillsModal, setShowRecurringBillsModal] = useState(false);
   const [showNotificationsModal, setShowNotificationsModal] = useState(false);
   const [activeMilestone, setActiveMilestone] = useState<SavingsMilestoneEvent | null>(null);
@@ -6341,21 +6346,50 @@ function OrthoGroApp() {
                 setDrilldownFilter(defaultFilter);
                 setDrilldownPeriodContext(periodContext ?? null);
               }}
-              onOpenBudgetGoalsModal={(goal) => {
+              onOpenBudgetGoalsModal={(goal, prefillLimit) => {
                 if (isReadOnlyPartner) {
                   notify('info', t.sharing.readOnlyToast);
                   return;
                 }
                 setEditingBudgetGoal(goal || null);
+                setBudgetGoalPrefillLimit(prefillLimit ?? null);
                 setShowBudgetGoalsModal(true);
               }}
-              onOpenSavingGoalsModal={(goal) => {
+              onOpenSavingGoalsModal={(goal, prefill) => {
                 if (isReadOnlyPartner) {
                   notify('info', t.sharing.readOnlyToast);
                   return;
                 }
                 setEditingSavingGoal(goal || null);
+                setSavingGoalPrefill(prefill ?? null);
                 setShowSavingGoalsModal(true);
+              }}
+              onQuickAddSaving={(account, goalTitle) => {
+                if (isReadOnlyPartner) {
+                  notify('info', t.sharing.readOnlyToast);
+                  return;
+                }
+                const targetTo = account || workspace.savingsList[0] || allAccountOptions[0] || 'Cash';
+                const sourceFrom =
+                  workspace.wallets.find((w) => w !== targetTo) ||
+                  allAccountOptions.find((a) => a !== targetTo) ||
+                  workspace.wallets[0] ||
+                  'Cash';
+                setPendingRecurringBillId(null);
+                setEntries([
+                  {
+                    ...defaultEntry,
+                    type: 'transfer',
+                    fromWallet: sourceFrom,
+                    toWallet: targetTo,
+                    title: goalTitle || targetTo,
+                    category: '',
+                    subCategory: '',
+                  },
+                ]);
+                setTxSubTab('new');
+                setShowTxTypeDrawer(false);
+                setShowTxFormDrawer(true);
               }}
               onOpenGoalsOverview={(tab) => setGoalsOverviewTab(tab)}
               onDeleteTx={handleDeleteTx}
@@ -6436,7 +6470,34 @@ function OrthoGroApp() {
             />
           )}
 
-          {activeTab === 'calculator' && <CalculatorView />}
+          {activeTab === 'calculator' && (
+            <CalculatorView
+              isReadOnly={isReadOnlyPartner}
+              onLogTransaction={(txType, amount) => {
+                if (isReadOnlyPartner) {
+                  notify('info', t.sharing.readOnlyToast);
+                  return;
+                }
+                setPendingRecurringBillId(null);
+                setEntries([
+                  {
+                    ...defaultEntry,
+                    type: txType,
+                    amount: String(amount),
+                    category:
+                      txType === 'income'
+                        ? workspace.incomeCategories[0] || 'Salary'
+                        : workspace.expenseCategories[0] || 'Personal',
+                    subCategory: '',
+                    title: '',
+                  },
+                ]);
+                setTxSubTab('new');
+                setShowTxTypeDrawer(false);
+                setShowTxFormDrawer(true);
+              }}
+            />
+          )}
 
           {activeTab === 'settings' && (
             <SettingsPanel
@@ -6964,6 +7025,7 @@ function OrthoGroApp() {
       <BudgetGoalsModal
         open={showBudgetGoalsModal}
         initialGoal={editingBudgetGoal}
+        prefillLimit={budgetGoalPrefillLimit}
         budgetGoals={budgetGoals}
         expenseCategories={workspace.expenseCategories}
         categoryStyles={normalizeCategoryStyles(workspace.categoryStyles)}
@@ -6975,12 +7037,14 @@ function OrthoGroApp() {
         onClose={() => {
           setShowBudgetGoalsModal(false);
           setEditingBudgetGoal(null);
+          setBudgetGoalPrefillLimit(null);
         }}
       />
 
       <SavingGoalsModal
         open={showSavingGoalsModal}
         initialGoal={editingSavingGoal}
+        prefill={savingGoalPrefill}
         savingGoals={savingGoals}
         savingsList={workspace.savingsList}
         categoryStyles={normalizeCategoryStyles(workspace.categoryStyles)}
@@ -6992,6 +7056,7 @@ function OrthoGroApp() {
         onClose={() => {
           setShowSavingGoalsModal(false);
           setEditingSavingGoal(null);
+          setSavingGoalPrefill(null);
         }}
       />
 
