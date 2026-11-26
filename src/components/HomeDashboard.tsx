@@ -1855,12 +1855,8 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
             ? 'bg-[#FDEBEA] text-[#B42318] dark:bg-rose-950/55 dark:text-rose-300'
             : 'bg-[#F4F7F6] text-[#5B6B7F] dark:bg-slate-800/70 dark:text-slate-400';
 
-        const barFillTheme =
-          cardState === 'over'
-            ? 'bg-[#D64545] dark:bg-rose-500'
-            : cardState === 'near'
-            ? 'bg-[#E8A317] dark:bg-amber-400'
-            : 'bg-[#1E9E6A] dark:bg-emerald-500';
+        const expenseBarPct = Math.min(100, Math.max(0, incExpSummary.expenseRatioPct));
+        const hasExpenseOnly = !hasIncome && incExpSummary.totalExpense > 0;
 
         const clampedTodayLabelPct =
           incExpSummary.todayPct !== null
@@ -2036,18 +2032,33 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                 </div>
               </div>
 
-              {/* Progress Bar with Today Pace Marker OR No-Income Hint */}
+              {/* Progress Bar (Red = Expense, Green = Remaining Income) with Today Pace Marker */}
               {hasIncome ? (
                 <div className="pt-3">
-                  <div className="relative h-2.5 w-full rounded-[5px] bg-[#E8EDF0] dark:bg-slate-800">
+                  <div className="relative h-2.5 w-full rounded-[5px]">
                     <div
-                      className={`h-2.5 rounded-[5px] transition-all duration-300 ${barFillTheme}`}
-                      style={{ width: `${Math.min(usedPct, 100)}%` }}
-                    />
+                      role="img"
+                      aria-label={`${usedPct}% ${t.dashboard.ofIncomeUsed}`}
+                      className="flex h-2.5 w-full overflow-hidden rounded-[5px] bg-[#E8EDF0] dark:bg-slate-800"
+                    >
+                      {expenseBarPct > 0 && (
+                        <div
+                          className={`h-full bg-[#D64545] transition-all duration-300 dark:bg-rose-500 ${
+                            expenseBarPct < 100
+                              ? 'border-r border-white/80 dark:border-slate-900/80'
+                              : ''
+                          }`}
+                          style={{ width: `${expenseBarPct}%` }}
+                        />
+                      )}
+                      {expenseBarPct < 100 && (
+                        <div className="h-full flex-1 bg-[#1E9E6A] transition-all duration-300 dark:bg-emerald-500" />
+                      )}
+                    </div>
                     {incExpSummary.todayPct !== null && (
                       <div
                         aria-hidden="true"
-                        className="absolute -top-[3px] h-4 w-[2px] rounded-[1px] bg-[#112A46] dark:bg-slate-200"
+                        className="absolute -top-[3px] h-4 w-[2px] rounded-[1px] bg-[#112A46] ring-1 ring-white/80 dark:bg-slate-100 dark:ring-slate-900/80"
                         style={{ left: `${incExpSummary.todayPct}%` }}
                       />
                     )}
@@ -2067,11 +2078,16 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
                   </div>
                 </div>
               ) : (
-                <p className="pt-2.5 text-xs text-[#5B6B7F] dark:text-slate-400">
-                  {incExpSummary.isCurrentMonthView
-                    ? t.dashboard.addIncomeHint
-                    : t.dashboard.addPeriodIncomeHint}
-                </p>
+                <div className="pt-2.5">
+                  {hasExpenseOnly && (
+                    <div className="mb-2 h-2.5 w-full overflow-hidden rounded-[5px] bg-[#D64545] dark:bg-rose-500" />
+                  )}
+                  <p className="text-xs text-[#5B6B7F] dark:text-slate-400">
+                    {incExpSummary.isCurrentMonthView
+                      ? t.dashboard.addIncomeHint
+                      : t.dashboard.addPeriodIncomeHint}
+                  </p>
+                </div>
               )}
             </div>
           </div>

@@ -689,6 +689,7 @@ function clearGuestDeviceData() {
     localStorage.removeItem('orthogro_show_assistant_v1');
     localStorage.removeItem(getFeatureGuideStorageKey(null));
     localStorage.removeItem(getCelebratedMilestonesKey(null));
+    localStorage.removeItem(`${TUTORIAL_SEEN_STORAGE_PREFIX}guest`);
   } catch {
     // ignore storage errors
   }
@@ -2679,6 +2680,7 @@ function OrthoGroApp() {
     if (!isWorkspaceActive || activeSharedWorkspace || isReadOnlyPartner) return [];
 
     const totalTxCount = transactions.length;
+    let incomeTxCount = 0;
     let expenseTxCount = 0;
     let incExpCount = 0;
     const incExpCats = new Set<string>();
@@ -2689,6 +2691,7 @@ function OrthoGroApp() {
         incExpCount += 1;
         incExpCats.add((tx.category || 'Others').trim() || 'Others');
       } else if (tx.type === 'income') {
+        incomeTxCount += 1;
         incExpCount += 1;
         incExpCats.add((tx.category || 'Others').trim() || 'Others');
       }
@@ -2698,8 +2701,11 @@ function OrthoGroApp() {
     const usedSet = new Set(featureGuideState.used);
     const tips: FeatureTipId[] = [];
 
-    if (!dismissedSet.has('saving_goals') && totalTxCount >= 3 && savingGoals.length === 0) {
+    if (!dismissedSet.has('saving_goals') && incomeTxCount >= 1 && savingGoals.length === 0) {
       tips.push('saving_goals');
+    }
+    if (!dismissedSet.has('budget_goals') && expenseTxCount >= 1 && budgetGoals.length === 0) {
+      tips.push('budget_goals');
     }
     if (
       !dismissedSet.has('bazar_memo') &&
@@ -2708,14 +2714,6 @@ function OrthoGroApp() {
       !usedSet.has('bazar_memo')
     ) {
       tips.push('bazar_memo');
-    }
-    if (
-      !dismissedSet.has('budget_goals') &&
-      expenseTxCount >= 10 &&
-      budgetGoals.length === 0 &&
-      !workspace.visibleGrids.budgetGoals
-    ) {
-      tips.push('budget_goals');
     }
     if (!dismissedSet.has('recurring_bills') && totalTxCount >= 10 && recurringBills.length === 0) {
       tips.push('recurring_bills');
@@ -2760,7 +2758,6 @@ function OrthoGroApp() {
     memos.length,
     budgetGoals.length,
     recurringBills.length,
-    workspace.visibleGrids.budgetGoals,
     workspace.visibleGrids.categoryPieChart,
     showAssistantButton,
     currentUser,
@@ -2863,7 +2860,22 @@ function OrthoGroApp() {
   };
 
   const handleGuestLogin = (fromNewUserOnboarding = false) => {
-    if (fromNewUserOnboarding) {
+    let isFreshGuestSession = fromNewUserOnboarding;
+    if (!isFreshGuestSession) {
+      try {
+        const storedTxs = localStorage.getItem(GUEST_STORAGE_KEYS.transactions);
+        const parsedTxs = storedTxs ? JSON.parse(storedTxs) : [];
+        isFreshGuestSession = !Array.isArray(parsedTxs) || parsedTxs.length === 0;
+      } catch {
+        isFreshGuestSession = true;
+      }
+    }
+    if (isFreshGuestSession) {
+      try {
+        localStorage.removeItem(`${TUTORIAL_SEEN_STORAGE_PREFIX}guest`);
+      } catch {
+        // ignore storage errors
+      }
       pendingOnboardingTutorialRef.current = true;
     }
     try {
@@ -6833,6 +6845,32 @@ function OrthoGroApp() {
         onDeleteTransaction={(id) => {
           void handleDeleteTx(id);
         }}
+        onAddTransaction={(txType, category) => {
+          if (isReadOnlyPartner) {
+            notify('info', t.sharing.readOnlyToast);
+            return;
+          }
+          setDrilldownType(null);
+          setDrilldownPeriodContext(null);
+          setPendingRecurringBillId(null);
+          const defaultCategory =
+            category ||
+            (txType === 'income'
+              ? workspace.incomeCategories[0] || 'Salary'
+              : workspace.expenseCategories[0] || 'Personal');
+          setEntries([
+            {
+              ...defaultEntry,
+              type: txType,
+              category: defaultCategory,
+              subCategory: '',
+              title: '',
+            },
+          ]);
+          setTxSubTab('new');
+          setShowTxTypeDrawer(false);
+          setShowTxFormDrawer(true);
+        }}
         isReadOnly={isReadOnlyPartner}
         onClose={() => {
           setDrilldownType(null);
@@ -7128,6 +7166,32 @@ function OrthoGroApp() {
       <VideoTutorialModal
         open={showVideoTutorialModal}
         mode={videoTutorialMode}
+        showSalaryCtaInPlayer={!isReadOnlyPartner && transactions.length === 0}
+        onStartWithSalary={
+          isReadOnlyPartner
+            ? undefined
+            : () => {
+                markTutorialSeenForAccount(currentUser?.uid || 'guest');
+                setShowVideoTutorialModal(false);
+                setPendingRecurringBillId(null);
+                const salaryCategory =
+                  workspace.incomeCategories.find((c) => c.toLowerCase() === 'salary') ||
+                  workspace.incomeCategories[0] ||
+                  'Salary';
+                setEntries([
+                  {
+                    ...defaultEntry,
+                    type: 'income',
+                    category: salaryCategory,
+                    subCategory: '',
+                    title: '',
+                  },
+                ]);
+                setTxSubTab('new');
+                setShowTxTypeDrawer(false);
+                setShowTxFormDrawer(true);
+              }
+        }
         onWatchVideo={() => {
           markTutorialSeenForAccount(currentUser?.uid || 'guest');
           setVideoTutorialMode('player');

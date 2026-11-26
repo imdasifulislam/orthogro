@@ -75,7 +75,7 @@ const en = {
     subtitle: 'Personal Finance & Wealth Manager',
     welcomeBack: 'Welcome back',
     desc: 'Sign in with your Google account to restore your synced wallets, transactions, memos, and shared partner workspaces.',
-    signInGoogle: 'Sign In with Google',
+    signInGoogle: 'Continue with Google',
     signingIn: 'Signing in...',
     continueGuest: 'Continue as Guest',
     footnote: 'Guest data is temporary and deleted on exit. Connect Google to sync securely.',
@@ -86,7 +86,7 @@ const en = {
     newUserCardTitle: 'Start your workspace',
     newUserCardDesc:
       'No passwords to remember. Set up cloud sync with Google in seconds, or try everything locally first.',
-    getStartedGoogle: 'SIGN UP FOR FREE',
+    getStartedGoogle: 'Continue with Google',
     tryGuest: 'Explore as Guest',
     alreadyHaveAccount: 'Already have an account?',
     goToSignIn: 'Sign In',
@@ -118,6 +118,7 @@ const en = {
     nextBtn: 'Next',
     getStartedBtn: 'Get Started',
     backBtn: 'Back',
+    progressDone: 'done',
     signupReadyTitle: 'Ready to take control?',
     signupReadyDesc: 'Create your free account to sync securely across devices, or explore locally as a guest.',
     currencyBdt: 'Bangladeshi Taka',
@@ -490,10 +491,11 @@ const en = {
   tutorial: {
     welcomeTitle: 'Welcome to OrthoGro!',
     welcomeBody:
-      'Watch our short video guide to use OrthoGro effortlessly and discover every feature.',
+      'Log your salary or first income to see your dashboard come alive — or watch a quick guide first.',
     settingsHint:
-      'You can also watch it anytime later from Settings → Community & Support → App Guide & Video Tutorial.',
-    watchVideoBtn: 'Watch Video',
+      'You can watch the guide anytime later from Settings → Community & Support → App Guide.',
+    startWithSalaryBtn: 'Start with your Salary',
+    watchVideoBtn: 'Watch Short Guide',
     laterBtn: 'Maybe Later',
     laterToast:
       'No problem! You can watch the guide anytime from Settings → Community & Support → App Guide.',
@@ -1070,7 +1072,7 @@ const en = {
       budget_goals: {
         title: 'Track Monthly Budgets',
         desc: 'Set spending limits per category and see live budget progress on Home.',
-        action: 'Enable & Set',
+        action: 'Set Budget',
       },
       recurring_bills: {
         title: 'Automate Recurring Bills',
@@ -1225,7 +1227,7 @@ const bn: typeof en = {
     subtitle: 'ব্যক্তিগত অর্থ ও সম্পদ ব্যবস্থাপনা',
     welcomeBack: 'আবার স্বাগতম',
     desc: 'আপনার সিঙ্ক করা ওয়ালেট, লেনদেন, মেমো ও শেয়ার্ড হিসাব ফিরে পেতে গুগল দিয়ে সাইন ইন করুন।',
-    signInGoogle: 'গুগল দিয়ে সাইন ইন করুন',
+    signInGoogle: 'গুগল দিয়ে চালিয়ে যান',
     signingIn: 'সাইন ইন হচ্ছে...',
     continueGuest: 'গেস্ট হিসেবে চালিয়ে যান',
     footnote: 'গেস্ট ডেটা অস্থায়ী এবং এক্সিট করলে মুছে যাবে। নিরাপদ সিঙ্কের জন্য গুগল যুক্ত করুন।',
@@ -1236,7 +1238,7 @@ const bn: typeof en = {
     newUserCardTitle: 'নতুন ওয়ার্কস্পেস শুরু করুন',
     newUserCardDesc:
       'আলাদা পাসওয়ার্ডের ঝামেলা নেই। গুগল দিয়ে ক্লাউড সিঙ্ক শুরু করুন অথবা গেস্ট হিসেবে চেষ্টা করে দেখুন।',
-    getStartedGoogle: 'ফ্রিতে সাইন আপ করুন',
+    getStartedGoogle: 'গুগল দিয়ে চালিয়ে যান',
     tryGuest: 'গেস্ট হিসেবে দেখুন',
     alreadyHaveAccount: 'আগে থেকেই অ্যাকাউন্ট আছে?',
     goToSignIn: 'সাইন ইন করুন',
@@ -1268,6 +1270,7 @@ const bn: typeof en = {
     nextBtn: 'পরবর্তী',
     getStartedBtn: 'শুরু করুন',
     backBtn: 'পেছনে',
+    progressDone: 'সম্পন্ন',
     signupReadyTitle: 'আপনার হিসাব শুরু করতে প্রস্তুত?',
     signupReadyDesc: 'সব ডিভাইসে নিরাপদ সিঙ্ক পেতে ফ্রি অ্যাকাউন্ট তৈরি করুন, অথবা গেস্ট হিসেবে ঘুরে দেখুন।',
     currencyBdt: 'বাংলাদেশি টাকা',
@@ -1640,10 +1643,11 @@ const bn: typeof en = {
   tutorial: {
     welcomeTitle: 'স্বাগতম!',
     welcomeBody:
-      'অ্যাপটি আরও সহজে ব্যবহার করতে এবং সকল ফিচার সম্পর্কে জানতে আমাদের সংক্ষিপ্ত ভিডিও গাইডটি দেখে নিন।',
+      'আপনার বেতন বা প্রথম আয় যোগ করে এখনই ড্যাশবোর্ড শুরু করুন — অথবা আগে সংক্ষিপ্ত গাইডটি দেখে নিন।',
     settingsHint:
-      'আপনি চাইলে পরবর্তীতেও সেটিংস → কমিউনিটি ও সাপোর্ট → অ্যাপ ব্যবহারের নির্দেশিকা থেকে ভিডিওটি দেখতে পারবেন।',
-    watchVideoBtn: 'ভিডিও দেখুন',
+      'যেকোনো সময় সেটিংস → কমিউনিটি ও সাপোর্ট → অ্যাপ ব্যবহারের নির্দেশিকা থেকে গাইডটি দেখতে পারবেন।',
+    startWithSalaryBtn: 'আপনার বেতন দিয়ে শুরু করুন',
+    watchVideoBtn: 'সংক্ষিপ্ত গাইড দেখুন',
     laterBtn: 'পরে দেখব',
     laterToast:
       'কোনো সমস্যা নেই! যেকোনো সময় সেটিংস → কমিউনিটি ও সাপোর্ট → অ্যাপ ব্যবহারের নির্দেশিকা থেকে দেখতে পারবেন।',
@@ -2221,7 +2225,7 @@ const bn: typeof en = {
       budget_goals: {
         title: 'মাসিক বাজেট ট্র্যাক করুন',
         desc: 'খরচের খাতে সীমা নির্ধারণ করুন এবং হোমে সরাসরি অগ্রগতি দেখুন।',
-        action: 'চালু ও সেট করুন',
+        action: 'বাজেট ঠিক করুন',
       },
       recurring_bills: {
         title: 'নিয়মিত বিল অটোমেট করুন',

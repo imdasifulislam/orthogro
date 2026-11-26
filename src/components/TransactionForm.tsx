@@ -619,31 +619,45 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
                           isMulti ? '' : 'border-t border-slate-100 dark:border-slate-800/80'
                         }`}
                       >
-                        <div
-                          className={`flex min-h-[54px] items-center justify-between gap-3 py-2 transition-colors focus-within:bg-emerald-50/40 dark:focus-within:bg-emerald-950/20 ${
+                        <label
+                          className={`flex min-h-[54px] cursor-text items-center justify-between gap-3 py-2 transition-colors focus-within:bg-emerald-50/40 dark:focus-within:bg-emerald-950/20 ${
                             isMulti ? 'px-4' : 'px-1'
                           }`}
                         >
-                          <span className="shrink-0 text-xs font-semibold text-slate-400 dark:text-slate-500">
+                          <span className="shrink-0 text-base font-semibold leading-6 text-slate-500 dark:text-slate-400">
                             {t.txForm.amountLabel}
                           </span>
-                          <div className="flex min-w-0 flex-1 items-center justify-end gap-1.5">
-                            <span className="select-none text-sm font-medium text-slate-400 dark:text-slate-500">
+                          <div className="flex min-w-0 flex-1 items-center justify-end">
+                            <span
+                              className={`shrink-0 select-none text-base font-bold leading-6 ${
+                                entry.amount
+                                  ? 'text-[#102A43] dark:text-slate-100'
+                                  : 'text-slate-400 dark:text-slate-500'
+                              }`}
+                            >
                               {currency}
                             </span>
-                            <input
-                              type="number"
-                              inputMode="decimal"
-                              step="any"
-                              min="0.01"
-                              aria-label={`${t.txForm.amountLabel} (${currency})`}
-                              placeholder="0"
-                              value={entry.amount}
-                              onChange={(e) => handleEntryChange(index, 'amount', e.target.value)}
-                              className="no-spinner w-full max-w-[180px] bg-transparent py-1 text-right text-xl font-extrabold tabular-nums text-[#102A43] placeholder:font-normal placeholder:text-slate-300 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-600"
-                            />
+                            <span className="inline-grid min-w-0 max-w-full items-center">
+                              <span
+                                aria-hidden="true"
+                                className="invisible col-start-1 row-start-1 overflow-hidden whitespace-pre py-1 pl-1.5 pr-0.5 text-base font-bold leading-6 tabular-nums"
+                              >
+                                {entry.amount || '0'}
+                              </span>
+                              <input
+                                type="number"
+                                inputMode="decimal"
+                                step="any"
+                                min="0.01"
+                                aria-label={`${t.txForm.amountLabel} (${currency})`}
+                                placeholder="0"
+                                value={entry.amount}
+                                onChange={(e) => handleEntryChange(index, 'amount', e.target.value)}
+                                className="no-spinner col-start-1 row-start-1 w-full min-w-[1ch] bg-transparent py-1 pr-0.5 text-right text-base font-bold leading-6 tabular-nums text-[#102A43] placeholder:font-bold placeholder:text-slate-300 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-600"
+                              />
+                            </span>
                           </div>
-                        </div>
+                        </label>
 
                         {entry.type === 'transfer' && (
                           <div className={`py-2.5 ${isMulti ? 'px-4' : 'px-1'}`}>
@@ -660,24 +674,38 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
                                 {t.txForm.applyCharge}
                               </label>
                               {entry.useCharge && (
-                                <div className="flex items-center gap-1.5">
-                                  <span className="select-none text-xs text-slate-400 dark:text-slate-500">
+                                <label className="flex min-w-0 cursor-text items-center justify-end">
+                                  <span
+                                    className={`shrink-0 select-none text-sm font-semibold leading-5 ${
+                                      entry.charge
+                                        ? 'text-[#102A43] dark:text-slate-100'
+                                        : 'text-slate-400 dark:text-slate-500'
+                                    }`}
+                                  >
                                     {currency}
                                   </span>
-                                  <input
-                                    type="number"
-                                    inputMode="decimal"
-                                    step="any"
-                                    min="0"
-                                    aria-label={`${t.txForm.chargePlaceholder} (${currency})`}
-                                    placeholder="0"
-                                    value={entry.charge}
-                                    onChange={(e) =>
-                                      handleEntryChange(index, 'charge', e.target.value)
-                                    }
-                                    className="no-spinner w-24 bg-transparent py-1 text-right text-sm font-semibold tabular-nums text-[#102A43] placeholder:font-normal placeholder:text-slate-300 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-600"
-                                  />
-                                </div>
+                                  <span className="inline-grid min-w-0 max-w-[140px] items-center">
+                                    <span
+                                      aria-hidden="true"
+                                      className="invisible col-start-1 row-start-1 overflow-hidden whitespace-pre py-1 pl-1.5 pr-0.5 text-sm font-semibold leading-5 tabular-nums"
+                                    >
+                                      {entry.charge || '0'}
+                                    </span>
+                                    <input
+                                      type="number"
+                                      inputMode="decimal"
+                                      step="any"
+                                      min="0"
+                                      aria-label={`${t.txForm.chargePlaceholder} (${currency})`}
+                                      placeholder="0"
+                                      value={entry.charge}
+                                      onChange={(e) =>
+                                        handleEntryChange(index, 'charge', e.target.value)
+                                      }
+                                      className="no-spinner col-start-1 row-start-1 w-full min-w-[1ch] bg-transparent py-1 pr-0.5 text-right text-sm font-semibold leading-5 tabular-nums text-[#102A43] placeholder:font-semibold placeholder:text-slate-300 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-600"
+                                    />
+                                  </span>
+                                </label>
                               )}
                             </div>
                           </div>
@@ -733,7 +761,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({
                             }
                             value={entry.note}
                             onChange={(e) => handleEntryChange(index, 'note', e.target.value)}
-                            className="w-full bg-transparent py-1.5 text-sm text-[#102A43] placeholder:text-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
+                            className="w-full bg-transparent py-1.5 text-xs text-[#102A43] placeholder:text-slate-400 focus:outline-none dark:text-slate-100 dark:placeholder:text-slate-500"
                           />
                         </div>
                       </div>

@@ -678,6 +678,7 @@ export const DrilldownModal: React.FC<{
   onSelectDrilldown?: (type: DrilldownType, key?: string | null) => void;
   onEditBudgetGoal?: (goalId: string) => void;
   onEditSavingGoal?: (goalId: string) => void;
+  onAddTransaction?: (type: 'expense' | 'income' | 'lend' | 'borrow', category?: string) => void;
   isReadOnly?: boolean;
   onClose: () => void;
 }> = ({
@@ -703,6 +704,7 @@ export const DrilldownModal: React.FC<{
   onSelectDrilldown,
   onEditBudgetGoal,
   onEditSavingGoal,
+  onAddTransaction,
   isReadOnly = false,
   onClose,
 }) => {
@@ -1513,9 +1515,59 @@ export const DrilldownModal: React.FC<{
                 }`}
               >
                 {filtered.length === 0 ? (
-                  <p className="py-10 text-center text-xs text-slate-500 dark:text-slate-400">
-                    {t.modals.noTxForFilter}
-                  </p>
+                  <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">
+                      {t.modals.noTxForFilter}
+                    </p>
+                    {!isReadOnly &&
+                      onAddTransaction &&
+                      (drilldownType === 'expense' ||
+                        drilldownType === 'expense_category' ||
+                        drilldownType === 'income' ||
+                        drilldownType === 'income_category' ||
+                        drilldownType === 'lend' ||
+                        drilldownType === 'borrow') && (() => {
+                        const addType: 'expense' | 'income' | 'lend' | 'borrow' =
+                          drilldownType === 'expense' || drilldownType === 'expense_category'
+                            ? 'expense'
+                            : drilldownType === 'income' || drilldownType === 'income_category'
+                            ? 'income'
+                            : drilldownType;
+                        const addCategory =
+                          (drilldownType === 'expense_category' ||
+                            drilldownType === 'income_category') &&
+                          drilldownKey
+                            ? drilldownKey
+                            : undefined;
+                        const addLabel =
+                          addType === 'expense'
+                            ? t.txForm.addExpenseTitle
+                            : addType === 'income'
+                            ? t.txForm.addIncomeTitle
+                            : addType === 'lend'
+                            ? t.txForm.addLendTitle
+                            : t.txForm.addBorrowTitle;
+                        const addBtnClass =
+                          addType === 'expense'
+                            ? 'bg-[#D94848] hover:bg-[#C03A3A] dark:bg-rose-600 dark:hover:bg-rose-500'
+                            : addType === 'lend'
+                            ? 'bg-blue-600 hover:bg-blue-700'
+                            : addType === 'borrow'
+                            ? 'bg-purple-600 hover:bg-purple-700'
+                            : 'bg-[#16845B] hover:bg-[#126B4A]';
+
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => onAddTransaction(addType, addCategory)}
+                            className={`inline-flex min-h-[40px] cursor-pointer items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold text-white shadow-xs transition-colors active:scale-[0.98] ${addBtnClass}`}
+                          >
+                            <Plus className="h-3.5 w-3.5 shrink-0 stroke-[2.5]" />
+                            <span>{addLabel}</span>
+                          </button>
+                        );
+                      })()}
+                  </div>
                 ) : (
                   filtered.map((tx) => (
                     <DrilldownTxRow
