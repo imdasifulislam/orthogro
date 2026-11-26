@@ -470,7 +470,9 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
       price: it.price > 0 ? String(it.price) : '',
       checked: Boolean(it.checked),
     }));
-    loadedRows.push(createEmptyRow());
+    if (loadedRows.length === 0) {
+      loadedRows.push(createEmptyRow());
+    }
     setMemoRows(loadedRows);
     initialMemoSnapshotRef.current = serializeMemoSnapshot(
       memo.note || '',
@@ -590,8 +592,8 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
     field: 'name' | 'qty' | 'price',
     value: string
   ) => {
-    setMemoRows((prev) => {
-      const updated = prev.map((row, i) => {
+    setMemoRows((prev) =>
+      prev.map((row, i) => {
         if (i !== idx) return row;
         if (field === 'price') {
           const parsed = parseFloat(value);
@@ -599,18 +601,8 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
           return { ...row, price: value, checked: hasAmount };
         }
         return { ...row, [field]: value };
-      });
-      const editedRow = updated[idx];
-      if (
-        idx === updated.length - 1 &&
-        (editedRow.name.trim() !== '' ||
-          editedRow.qty.trim() !== '' ||
-          editedRow.price.trim() !== '')
-      ) {
-        updated.push(createEmptyRow());
-      }
-      return updated;
-    });
+      })
+    );
   };
 
   const handleToggleRowChecked = (idx: number) => {
@@ -989,17 +981,26 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                     aria-label={t.common.delete}
                     title={t.common.delete}
                     onClick={() => onDeleteMemo(editingMemoId)}
-                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-950"
+                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-rose-950/60 dark:hover:text-rose-400"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 )}
                 <button
                   type="button"
+                  onClick={openShareSheetForActiveMemo}
+                  aria-label={t.memo.shareMemo}
+                  title={t.memo.shareMemo}
+                  className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors hover:bg-sky-50 hover:text-sky-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-sky-950/60 dark:hover:text-sky-400"
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
                   aria-label={t.common.close}
                   title={t.common.close}
                   onClick={() => void handleExitMemoEditor()}
-                  className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                 >
                   <X className="h-4 w-4" />
                 </button>
@@ -1078,7 +1079,11 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') {
                             e.preventDefault();
-                            qtyInputRefs.current[idx]?.focus();
+                            if (idx < memoRows.length - 1) {
+                              itemInputRefs.current[idx + 1]?.focus();
+                            } else if (!isReadOnly) {
+                              appendAndFocusRow();
+                            }
                           }
                         }}
                         className={`min-w-0 flex-1 bg-transparent py-1 text-sm leading-snug focus:outline-none ${
@@ -1106,7 +1111,7 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                             e.preventDefault();
                             if (idx < memoRows.length - 1) {
                               itemInputRefs.current[idx + 1]?.focus();
-                            } else {
+                            } else if (!isReadOnly) {
                               appendAndFocusRow();
                             }
                           }
@@ -1121,23 +1126,23 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                       {/* Price */}
                       <div
                         onClick={() => priceInputRefs.current[idx]?.focus()}
-                        className="flex min-w-[68px] max-w-[96px] shrink-0 cursor-text items-baseline justify-end pl-1 sm:min-w-[82px] sm:max-w-[110px]"
+                        className="ml-2 flex min-w-[68px] max-w-[104px] shrink-0 cursor-text items-baseline justify-end sm:min-w-[84px] sm:max-w-[118px]"
                       >
                         <span
-                          className={`mr-[1px] shrink-0 select-none text-[11px] font-medium transition-colors ${
+                          className={`mr-0.5 shrink-0 select-none text-base font-normal leading-snug transition-colors ${
                             row.price.trim() !== ''
                               ? row.checked
                                 ? 'text-slate-400 dark:text-slate-500'
-                                : 'text-slate-500 dark:text-slate-400'
-                              : 'text-slate-300 group-focus-within:text-slate-400 dark:text-slate-700 dark:group-focus-within:text-slate-500'
+                                : 'text-[#102A43] dark:text-slate-100'
+                              : 'text-slate-300 group-focus-within:text-slate-400 dark:text-slate-600 dark:group-focus-within:text-slate-500'
                           }`}
                         >
                           {currency}
                         </span>
-                        <span className="inline-grid min-w-[1ch] max-w-full items-baseline overflow-hidden">
+                        <span className="relative inline-block min-w-[1ch] max-w-full overflow-hidden align-baseline">
                           <span
                             aria-hidden="true"
-                            className="invisible col-start-1 row-start-1 whitespace-pre pr-0.5 font-mono-num text-sm font-semibold tabular-nums"
+                            className="invisible block whitespace-pre py-1 pr-0.5 text-sm font-normal leading-snug tabular-nums"
                           >
                             {row.price || '0'}
                           </span>
@@ -1147,7 +1152,7 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                             }}
                             type="number"
                             inputMode="decimal"
-                            enterKeyHint={idx < memoRows.length - 1 ? 'next' : 'done'}
+                            enterKeyHint="next"
                             step="any"
                             min="0"
                             readOnly={isReadOnly}
@@ -1160,12 +1165,12 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                                 e.preventDefault();
                                 if (idx < memoRows.length - 1) {
                                   priceInputRefs.current[idx + 1]?.focus();
-                                } else {
-                                  e.currentTarget.blur();
+                                } else if (!isReadOnly) {
+                                  appendAndFocusRow();
                                 }
                               }
                             }}
-                            className={`no-spinner col-start-1 row-start-1 w-full min-w-0 bg-transparent py-1 pr-0.5 text-right font-mono-num text-sm font-semibold tabular-nums focus:outline-none ${
+                            className={`no-spinner absolute inset-0 h-full w-full bg-transparent py-1 pr-0.5 text-right text-sm font-normal leading-snug tabular-nums focus:outline-none ${
                               row.checked
                                 ? 'text-slate-400 dark:text-slate-500'
                                 : 'text-[#102A43] placeholder:font-normal placeholder:text-slate-300 dark:text-slate-100 dark:placeholder:text-slate-600'
@@ -1222,36 +1227,18 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                 </p>
               </div>
 
-              <div className="flex shrink-0 items-center gap-1.5">
-                {/* Share Memo Icon Button */}
+              {!isReadOnly && (
                 <button
                   type="button"
-                  onClick={openShareSheetForActiveMemo}
-                  title={t.memo.shareMemo}
-                  aria-label={t.memo.shareMemo}
-                  className="flex min-h-[44px] min-w-[48px] flex-col items-center justify-center gap-0.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[#102A43] transition-colors hover:border-sky-400/50 hover:bg-sky-50/60 hover:text-sky-700 active:scale-[0.97] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-sky-500/40 dark:hover:bg-sky-950/40 dark:hover:text-sky-400"
-                >
-                  <Share2 className="h-4 w-4" />
-                  <span className="text-[10px] font-bold leading-none whitespace-nowrap">
-                    {t.memo.shareShort}
-                  </span>
-                </button>
-
-                {/* Add as Expense Icon Button */}
-                <button
-                  type="button"
-                  disabled={isReadOnly}
                   onClick={openExpenseDrawerForActive}
                   title={t.memo.addAsExpense}
                   aria-label={t.memo.addAsExpense}
-                  className="flex min-h-[44px] min-w-[52px] flex-col items-center justify-center gap-0.5 rounded-xl border border-rose-200/80 bg-rose-50 px-3 py-1.5 text-[#D94848] shadow-xs transition-colors hover:border-rose-300 hover:bg-rose-100/80 active:scale-[0.97] disabled:opacity-50 dark:border-rose-900/60 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:border-rose-800 dark:hover:bg-rose-950"
+                  className="inline-flex min-h-[40px] shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-rose-200/80 bg-rose-50 px-3.5 py-2 text-xs font-bold text-[#D94848] shadow-xs transition-colors hover:border-rose-300 hover:bg-rose-100/80 active:scale-[0.97] whitespace-nowrap dark:border-rose-900/60 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:border-rose-800 dark:hover:bg-rose-950"
                 >
-                  <TrendingDown className="h-4 w-4" />
-                  <span className="text-[10px] font-bold leading-none whitespace-nowrap">
-                    {t.memo.expenseShort}
-                  </span>
+                  <TrendingDown className="h-4 w-4 shrink-0" />
+                  <span>{t.memo.expenseShort}</span>
                 </button>
-              </div>
+              )}
             </div>
           </div>
         </div>
@@ -1386,20 +1373,34 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                                   {memo.date} · {memo.items.length} {t.memo.itemsCountSuffix}
                                 </p>
                               </div>
-                              {!isReadOnly && (
+                              <div className="-mt-1 -mr-1 flex shrink-0 items-center gap-1">
+                                {!isReadOnly && (
+                                  <button
+                                    type="button"
+                                    aria-label={t.common.delete}
+                                    title={t.common.delete}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onDeleteMemo(memo.id);
+                                    }}
+                                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-rose-950/60 dark:hover:text-rose-400"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
                                 <button
                                   type="button"
-                                  aria-label={t.common.delete}
-                                  title={t.common.delete}
+                                  aria-label={t.memo.shareMemo}
+                                  title={t.memo.shareMemo}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    onDeleteMemo(memo.id);
+                                    openShareSheetForSavedMemo(memo);
                                   }}
-                                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-950"
+                                  className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors hover:bg-sky-50 hover:text-sky-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-sky-950/60 dark:hover:text-sky-400"
                                 >
-                                  <Trash2 className="h-3.5 w-3.5" />
+                                  <Share2 className="h-3.5 w-3.5" />
                                 </button>
-                              )}
+                              </div>
                             </div>
 
                             {/* Tight Borderless Item Preview */}
@@ -1429,7 +1430,7 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                                       </span>
                                     )}
                                   </span>
-                                  <span className="font-mono-num shrink-0 font-semibold tabular-nums text-[#102A43] dark:text-slate-200">
+                                  <span className="shrink-0 font-normal tabular-nums text-[#102A43] dark:text-slate-200">
                                     {item.price > 0 ? formatMoney(item.price, currency) : '—'}
                                   </span>
                                 </div>
@@ -1454,41 +1455,21 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                               </p>
                             </div>
 
-                            <div className="flex shrink-0 items-center gap-1.5">
+                            {!isReadOnly && (
                               <button
                                 type="button"
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  openShareSheetForSavedMemo(memo);
+                                  openExpenseDrawerForSaved(memo);
                                 }}
-                                title={t.memo.shareMemo}
-                                aria-label={t.memo.shareMemo}
-                                className="flex min-h-[40px] min-w-[46px] flex-col items-center justify-center gap-0.5 rounded-xl border border-slate-200 bg-white px-2.5 py-1.5 text-[#102A43] transition-colors hover:border-sky-400/50 hover:bg-sky-50/60 hover:text-sky-700 active:scale-[0.97] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:border-sky-500/40 dark:hover:bg-sky-950/40 dark:hover:text-sky-400"
+                                title={t.memo.addAsExpense}
+                                aria-label={t.memo.addAsExpense}
+                                className="inline-flex min-h-[38px] shrink-0 cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-rose-200/80 bg-rose-50 px-3 py-1.5 text-xs font-bold text-[#D94848] shadow-xs transition-colors hover:border-rose-300 hover:bg-rose-100/80 active:scale-[0.97] whitespace-nowrap dark:border-rose-900/60 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:border-rose-800 dark:hover:bg-rose-950"
                               >
-                                <Share2 className="h-3.5 w-3.5" />
-                                <span className="text-[10px] font-bold leading-none whitespace-nowrap">
-                                  {t.memo.shareShort}
-                                </span>
+                                <TrendingDown className="h-3.5 w-3.5 shrink-0" />
+                                <span>{t.memo.expenseShort}</span>
                               </button>
-
-                              {!isReadOnly && (
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openExpenseDrawerForSaved(memo);
-                                  }}
-                                  title={t.memo.addAsExpense}
-                                  aria-label={t.memo.addAsExpense}
-                                  className="flex min-h-[40px] min-w-[50px] flex-col items-center justify-center gap-0.5 rounded-xl border border-rose-200/80 bg-rose-50 px-2.5 py-1.5 text-[#D94848] shadow-xs transition-colors hover:border-rose-300 hover:bg-rose-100/80 active:scale-[0.97] dark:border-rose-900/60 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:border-rose-800 dark:hover:bg-rose-950"
-                                >
-                                  <TrendingDown className="h-3.5 w-3.5" />
-                                  <span className="text-[10px] font-bold leading-none whitespace-nowrap">
-                                    {t.memo.expenseShort}
-                                  </span>
-                                </button>
-                              )}
-                            </div>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -1570,18 +1551,6 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                                 {note.title}
                               </h4>
                               <div className="-mt-1 -mr-1 flex shrink-0 items-center gap-1">
-                                <button
-                                  type="button"
-                                  aria-label={t.memo.shareNote}
-                                  title={t.memo.shareNote}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    openShareSheetForNote(note.title, note.content);
-                                  }}
-                                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors hover:bg-sky-50 hover:text-sky-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-sky-950/60 dark:hover:text-sky-400"
-                                >
-                                  <Share2 className="h-3.5 w-3.5" />
-                                </button>
                                 {!isReadOnly && (
                                   <button
                                     type="button"
@@ -1591,11 +1560,23 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                                       e.stopPropagation();
                                       onDeleteNote(note.id);
                                     }}
-                                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-950"
+                                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-rose-950/60 dark:hover:text-rose-400"
                                   >
                                     <Trash2 className="h-3.5 w-3.5" />
                                   </button>
                                 )}
+                                <button
+                                  type="button"
+                                  aria-label={t.memo.shareNote}
+                                  title={t.memo.shareNote}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openShareSheetForNote(note.title, note.content);
+                                  }}
+                                  className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors hover:bg-sky-50 hover:text-sky-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-sky-950/60 dark:hover:text-sky-400"
+                                >
+                                  <Share2 className="h-3.5 w-3.5" />
+                                </button>
                               </div>
                             </div>
                             <p className="mt-1.5 line-clamp-4 whitespace-pre-line text-xs leading-relaxed text-slate-500 dark:text-slate-400">
@@ -1636,15 +1617,6 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                     {t.memo.autoSaveHint}
                   </span>
                 )}
-                <button
-                  type="button"
-                  onClick={() => openShareSheetForNote(currentTitle, currentContent)}
-                  aria-label={t.memo.shareNote}
-                  title={t.memo.shareNote}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors hover:bg-sky-50 hover:text-sky-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-sky-950/60 dark:hover:text-sky-400"
-                >
-                  <Share2 className="h-3.5 w-3.5" />
-                </button>
                 {selectedNote && !isReadOnly && (
                   <button
                     type="button"
@@ -1659,17 +1631,26 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                     }}
                     aria-label={t.common.delete}
                     title={t.common.delete}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 text-rose-600 transition-colors hover:bg-rose-100 dark:bg-rose-950/60 dark:text-rose-400 dark:hover:bg-rose-950"
+                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-slate-100 text-slate-500 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-rose-950/60 dark:hover:text-rose-400"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 )}
                 <button
                   type="button"
+                  onClick={() => openShareSheetForNote(currentTitle, currentContent)}
+                  aria-label={t.memo.shareNote}
+                  title={t.memo.shareNote}
+                  className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-slate-100 text-slate-600 transition-colors hover:bg-sky-50 hover:text-sky-700 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-sky-950/60 dark:hover:text-sky-400"
+                >
+                  <Share2 className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => void handleCloseNoteModal()}
                   aria-label={t.common.close}
                   title={t.common.close}
-                  className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                  className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-200"
                 >
                   <X className="h-4 w-4" />
                 </button>

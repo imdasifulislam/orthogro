@@ -121,10 +121,15 @@ export const TransactionTypeDrawer: React.FC<TransactionTypeDrawerProps> = ({
         </div>
 
         {/* Header */}
-        <div className="flex items-center justify-between gap-3 px-6 pt-3 pb-5">
-          <h3 className="truncate text-lg font-extrabold tracking-tight text-[#102A43] dark:text-slate-100">
-            {t.txForm.drawerChooseTypeTitle}
-          </h3>
+        <div className="flex items-start justify-between gap-3 px-6 pt-3 pb-5">
+          <div className="min-w-0">
+            <h3 className="truncate text-lg font-extrabold tracking-tight text-[#102A43] dark:text-slate-100">
+              {t.txForm.drawerChooseTypeTitle}
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+              {t.txForm.drawerChooseTypeSubtitle}
+            </p>
+          </div>
           <button
             type="button"
             onClick={onClose}

@@ -2880,6 +2880,7 @@ export const CustomizeGridsModal: React.FC<{
 export const BudgetGoalsModal: React.FC<{
   open: boolean;
   initialGoal: BudgetGoal | null;
+  prefillLimit?: number | null;
   budgetGoals: BudgetGoal[];
   expenseCategories: string[];
   categoryStyles?: Record<string, CategoryStyle>;
@@ -2896,6 +2897,7 @@ export const BudgetGoalsModal: React.FC<{
 }> = ({
   open,
   initialGoal,
+  prefillLimit = null,
   budgetGoals,
   expenseCategories,
   categoryStyles,
@@ -2930,10 +2932,16 @@ export const BudgetGoalsModal: React.FC<{
       const defaultCat = firstUnbudgeted || expenseCategories[0] || '';
       const existing = budgetGoals.find((g) => g.category === defaultCat);
       setSelectedCategory(defaultCat);
-      setLimitInput(existing ? String(existing.monthlyLimit) : '');
+      setLimitInput(
+        prefillLimit && prefillLimit > 0
+          ? String(prefillLimit)
+          : existing
+          ? String(existing.monthlyLimit)
+          : ''
+      );
       setEditingGoalId(existing ? existing.id : null);
     }
-  }, [open, initialGoal, expenseCategories, budgetGoals]);
+  }, [open, initialGoal, prefillLimit, expenseCategories, budgetGoals]);
 
   if (!open) return null;
 
@@ -3199,6 +3207,7 @@ export const BudgetGoalsModal: React.FC<{
 export const SavingGoalsModal: React.FC<{
   open: boolean;
   initialGoal: SavingGoal | null;
+  prefill?: { title?: string; account?: string } | null;
   savingGoals: SavingGoal[];
   savingsList: string[];
   categoryStyles?: Record<string, CategoryStyle>;
@@ -3225,6 +3234,7 @@ export const SavingGoalsModal: React.FC<{
 }> = ({
   open,
   initialGoal,
+  prefill = null,
   savingGoals,
   savingsList,
   categoryStyles,
@@ -3270,15 +3280,15 @@ export const SavingGoalsModal: React.FC<{
       setEndDate(initialGoal.endDate || getDefaultEndDate());
       setEditingGoalId(initialGoal.id);
     } else {
-      setTitleInput('');
+      setTitleInput(prefill?.title || '');
       setPeriodType('monthly');
-      setSelectedAccount(savingsList[0] || '');
+      setSelectedAccount(prefill?.account ?? (savingsList[0] || ''));
       setTargetInput('');
       setStartDate(getTodayISO());
       setEndDate(getDefaultEndDate());
       setEditingGoalId(null);
     }
-  }, [open, initialGoal, savingsList]);
+  }, [open, initialGoal, prefill, savingsList]);
 
   if (!open) return null;
 
