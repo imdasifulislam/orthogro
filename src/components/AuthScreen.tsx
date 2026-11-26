@@ -5,20 +5,42 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
-  FileSpreadsheet,
   HandCoins,
-  Lock,
-  LogIn,
   Mic,
   ReceiptText,
   Repeat,
   TrendingDown,
   TrendingUp,
   User,
-  Users,
 } from 'lucide-react';
 import { useTranslation } from '../i18n';
 import type { CurrencySymbol } from '../types';
+
+const GoogleBadgeIcon: React.FC = () => (
+  <span
+    aria-hidden="true"
+    className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white shadow-xs"
+  >
+    <svg viewBox="0 0 24 24" className="h-4 w-4">
+      <path
+        fill="#4285F4"
+        d="M23.49 12.27c0-.79-.07-1.54-.2-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.14-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
+      />
+    </svg>
+  </span>
+);
 
 export interface LastUserHint {
   name?: string;
@@ -54,7 +76,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   );
   const [stage, setStage] = useState<OnboardingStage>('setup');
   const [activeSlide, setActiveSlide] = useState(0);
-  const [isSlidePaused, setIsSlidePaused] = useState(false);
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
 
@@ -88,36 +109,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       title: t.auth.feature5Title,
       desc: t.auth.feature5Desc,
     },
-    {
-      id: 'family_security',
-      title: t.auth.feature6Title,
-      desc: t.auth.feature6Desc,
-    },
   ];
 
   const totalSlides = slides.length;
-  const isLastSlide = activeSlide === totalSlides - 1;
-
-  // Auto-advance feature slides until reaching the final slide
-  useEffect(() => {
-    if (mode !== 'onboarding' || stage !== 'features' || isSlidePaused || isLastSlide) return;
-    if (
-      typeof window !== 'undefined' &&
-      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-    ) {
-      return;
-    }
-    const timer = window.setInterval(() => {
-      setActiveSlide((prev) => Math.min(totalSlides - 1, prev + 1));
-    }, 4800);
-    return () => window.clearInterval(timer);
-  }, [mode, stage, isSlidePaused, isLastSlide, totalSlides]);
+  const safeSlideIndex = Math.min(activeSlide, totalSlides - 1);
+  const isLastSlide = safeSlideIndex === totalSlides - 1;
+  const progressPercent = Math.round(((safeSlideIndex + 1) / totalSlides) * 100);
 
   const goToPrevSlide = () => {
-    if (activeSlide === 0) {
+    if (safeSlideIndex === 0) {
       setStage('setup');
     } else {
-      setActiveSlide((prev) => prev - 1);
+      setActiveSlide((prev) => Math.max(0, prev - 1));
     }
   };
 
@@ -125,16 +128,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     if (isLastSlide) {
       setStage('signup');
     } else {
-      setActiveSlide((prev) => prev + 1);
+      setActiveSlide((prev) => Math.min(totalSlides - 1, prev + 1));
     }
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0]?.clientX ?? null;
     touchStartY.current = e.touches[0]?.clientY ?? null;
-    if (stage === 'features') {
-      setIsSlidePaused(true);
-    }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
@@ -165,9 +165,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     }
     touchStartX.current = null;
     touchStartY.current = null;
-    if (stage === 'features') {
-      setIsSlidePaused(false);
-    }
   };
 
   const currencyOptions: Array<{ symbol: CurrencySymbol; label: string }> = [
@@ -363,7 +360,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         );
       }
 
-      case 'analytics_goals': {
+      case 'analytics_goals':
+      default: {
         const categories = [
           {
             label: lang === 'bn' ? 'খাবার' : 'Food',
@@ -483,67 +481,6 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           </div>
         );
       }
-
-      case 'family_security':
-      default: {
-        return (
-          <div className="w-full max-w-[290px] space-y-2.5 text-left">
-            {/* Primary App Lock Card */}
-            <div className="animate-onboard-float flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3 shadow-lg shadow-black/15">
-              <div className="flex min-w-0 items-center gap-2.5">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-[#16845B]">
-                  <Lock className="h-4 w-4" />
-                </div>
-                <div className="min-w-0">
-                  <div className="truncate text-xs font-extrabold text-[#102A43]">
-                    {lang === 'bn' ? 'অ্যাপ লক' : 'App Lock'}
-                  </div>
-                  <div className="truncate text-[10px] font-semibold text-[#16845B]">
-                    {lang === 'bn' ? 'পিন সুরক্ষিত' : 'PIN Protected'}
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className="flex shrink-0 items-center gap-1.5"
-                aria-hidden="true"
-              >
-                <span className="h-2 w-2 rounded-full bg-[#0E6042]" />
-                <span className="h-2 w-2 rounded-full bg-[#0E6042]" />
-                <span className="h-2 w-2 rounded-full bg-[#0E6042]" />
-                <span className="h-2 w-2 rounded-full bg-[#0E6042]" />
-              </div>
-            </div>
-
-            {/* Paired Family Sharing & Tax Report Cards */}
-            <div className="grid grid-cols-2 gap-2.5">
-              <div className="rounded-xl bg-white/95 px-3 py-2.5 shadow-md shadow-black/10">
-                <div className="flex items-center gap-1.5 text-[10px] font-bold text-[#16845B]">
-                  <Users className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">
-                    {lang === 'bn' ? 'ফ্যামিলি শেয়ার' : 'Family Sync'}
-                  </span>
-                </div>
-                <div className="mt-1 truncate text-[11px] font-extrabold text-[#102A43]">
-                  {lang === 'bn' ? '২ জন · লাইভ' : '2 Members · Live'}
-                </div>
-              </div>
-
-              <div className="rounded-xl bg-white/95 px-3 py-2.5 shadow-md shadow-black/10">
-                <div className="flex items-center gap-1.5 text-[10px] font-bold text-amber-700">
-                  <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">
-                    {lang === 'bn' ? 'ট্যাক্স রিপোর্ট' : 'Tax Report'}
-                  </span>
-                </div>
-                <div className="mt-1 truncate text-[11px] font-extrabold text-[#102A43]">
-                  {lang === 'bn' ? 'জুলাই–জুন · PDF' : 'Jul–Jun · PDF'}
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      }
     }
   };
 
@@ -640,7 +577,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                   onClick={() => onGoogleLogin(false)}
                   className="flex min-h-[48px] w-full items-center justify-center gap-2.5 whitespace-nowrap rounded-xl bg-[#16845B] px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#126B4A] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] focus-visible:ring-offset-2"
                 >
-                  <LogIn className="h-4 w-4 shrink-0" />
+                  <GoogleBadgeIcon />
                   <span>{isSigningIn ? t.auth.signingIn : t.auth.signInGoogle}</span>
                 </button>
 
@@ -823,8 +760,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     );
   }
 
-  // STEP 2: Full-Screen Feature Walkthrough (6 Slides, No Signup Clutter)
+  // STEP 2: Full-Screen Feature Walkthrough (5 Slides + Percentage Progress Bar)
   if (stage === 'features') {
+    const numberLocale = lang === 'bn' ? 'bn-BD' : 'en-US';
+    const progressPercentText = progressPercent.toLocaleString(numberLocale);
+
     return (
       <div
         onTouchStart={handleTouchStart}
@@ -861,13 +801,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           <section
             aria-roledescription="carousel"
             aria-label={t.auth.slideLabel}
-            onMouseEnter={() => setIsSlidePaused(true)}
-            onMouseLeave={() => setIsSlidePaused(false)}
             className="overflow-hidden rounded-3xl border border-white/15 bg-white/[0.10] p-5 backdrop-blur-md sm:p-7"
           >
             <div
               className="flex items-stretch transition-transform duration-300 ease-out"
-              style={{ transform: `translateX(-${activeSlide * 100}%)` }}
+              style={{ transform: `translateX(-${safeSlideIndex * 100}%)` }}
             >
               {slides.map((slide) => (
                 <div key={slide.id} className="w-full shrink-0 px-0.5">
@@ -888,48 +826,83 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
             </div>
           </section>
 
-          {/* Indicator Dots + Prev/Next Controls */}
-          <div className="mt-5 flex items-center justify-center gap-3 sm:justify-between">
+          {/* Carousel-Only Percentage Progress Bar (Replaces Dots, Between Card & Button) */}
+          <div className="mx-auto mt-6 flex w-full max-w-md items-center gap-3 sm:max-w-none">
             <button
               type="button"
               onClick={goToPrevSlide}
-              aria-label={activeSlide === 0 ? t.auth.backBtn : t.auth.slidePrev}
-              className="hidden h-11 w-11 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-white transition-colors hover:bg-white/20 sm:flex"
+              aria-label={safeSlideIndex === 0 ? t.auth.backBtn : t.auth.slidePrev}
+              className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-white transition-colors hover:bg-white/20 sm:flex"
             >
               <ChevronLeft className="h-4 w-4" />
             </button>
 
-            <div
-              className="flex items-center justify-center gap-0.5"
-              role="tablist"
-              aria-label={t.auth.slideLabel}
-            >
-              {slides.map((slide, idx) => (
-                <button
-                  key={slide.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={idx === activeSlide}
-                  aria-label={slide.title}
-                  onClick={() => setActiveSlide(idx)}
-                  className="flex min-h-[44px] min-w-[22px] items-center justify-center px-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
+            <div className="min-w-0 flex-1">
+              <div className="mb-2.5 flex items-center justify-center">
+                <span
+                  key={progressPercent}
+                  className="animate-onboard-pct-pop inline-flex items-baseline gap-1 text-center tracking-tight"
                 >
                   <span
-                    className={`block h-1.5 rounded-full transition-all duration-300 ${
-                      idx === activeSlide
-                        ? 'w-7 bg-white'
-                        : 'w-1.5 bg-white/40 hover:bg-white/70'
+                    className={`font-mono-num text-base font-black tabular-nums drop-shadow-[0_1px_10px_rgba(167,243,208,0.55)] ${
+                      isLastSlide ? 'text-[#FEF08A]' : 'text-white'
                     }`}
-                  />
-                </button>
-              ))}
+                  >
+                    {progressPercentText}%
+                  </span>
+                  <span className="text-xs font-bold text-emerald-100/90">
+                    {t.auth.progressDone}
+                  </span>
+                </span>
+              </div>
+              <div
+                role="progressbar"
+                aria-label={t.auth.slideLabel}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={progressPercent}
+                className="relative h-3.5 w-full rounded-full bg-black/25 p-0.5 ring-1 ring-white/20 shadow-inner"
+              >
+                {/* Subtle checkpoint notches */}
+                <div
+                  aria-hidden="true"
+                  className="pointer-events-none absolute inset-y-0.5 right-0.5 left-0.5 flex"
+                >
+                  {[20, 40, 60, 80].map((tick) => (
+                    <span
+                      key={tick}
+                      style={{ left: `${tick}%` }}
+                      className="absolute inset-y-0 w-px bg-white/15"
+                    />
+                  ))}
+                </div>
+
+                {/* Dramatic glowing fill bar with animated forward sweep */}
+                <div
+                  className={`onboard-progress-fill h-full rounded-full ${
+                    isLastSlide
+                      ? 'bg-gradient-to-r from-[#34D399] via-[#A7F3D0] to-[#FEF08A] shadow-[0_0_20px_rgba(254,240,138,0.8)]'
+                      : 'bg-gradient-to-r from-[#34D399] via-[#A7F3D0] to-white shadow-[0_0_16px_rgba(167,243,208,0.75)]'
+                  }`}
+                  style={{ width: `${progressPercent}%` }}
+                />
+
+                {/* Pulsing leading-edge spark pulling the eye forward */}
+                <span
+                  aria-hidden="true"
+                  className={`onboard-progress-tip pointer-events-none absolute top-1/2 -mt-1.5 -ml-1.5 h-3 w-3 rounded-full shadow-[0_0_12px_rgba(255,255,255,0.95)] transition-[left] duration-500 ease-[cubic-bezier(0.22,1.2,0.36,1)] ${
+                    isLastSlide ? 'bg-[#FEF08A]' : 'bg-white'
+                  }`}
+                  style={{ left: `calc(${progressPercent}% - 2px)` }}
+                />
+              </div>
             </div>
 
             <button
               type="button"
               onClick={goToNextSlide}
               aria-label={t.auth.slideNext}
-              className="hidden h-11 w-11 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-white transition-colors hover:bg-white/20 sm:flex"
+              className="hidden h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-white transition-colors hover:bg-white/20 sm:flex"
             >
               <ChevronRight className="h-4 w-4" />
             </button>
@@ -1040,7 +1013,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 onClick={() => onGoogleLogin(true)}
                 className="flex min-h-[50px] w-full items-center justify-center gap-2.5 whitespace-nowrap rounded-xl bg-[#16845B] px-5 py-3 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#126B4A] active:scale-[0.98] disabled:opacity-60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#16845B] focus-visible:ring-offset-2"
               >
-                <LogIn className="h-4 w-4 shrink-0" />
+                <GoogleBadgeIcon />
                 <span>{isSigningIn ? t.auth.signingIn : t.auth.getStartedGoogle}</span>
               </button>
 

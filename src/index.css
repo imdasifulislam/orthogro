@@ -265,6 +265,72 @@ input[type='number'] {
   animation: onboardSyncPulse 2.2s ease-in-out infinite;
 }
 
+@keyframes onboardProgressSweep {
+  0% {
+    transform: translateX(-110%) skewX(-20deg);
+  }
+  100% {
+    transform: translateX(260%) skewX(-20deg);
+  }
+}
+
+@keyframes onboardProgressTipPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.95;
+  }
+  50% {
+    transform: scale(1.35);
+    opacity: 1;
+  }
+}
+
+@keyframes onboardPctPop {
+  0% {
+    transform: scale(0.86);
+    opacity: 0.7;
+  }
+  65% {
+    transform: scale(1.08);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.onboard-progress-fill {
+  position: relative;
+  overflow: hidden;
+  transition: width 520ms cubic-bezier(0.22, 1.2, 0.36, 1);
+  will-change: width;
+}
+
+.onboard-progress-fill::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 48%;
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.72) 50%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  animation: onboardProgressSweep 1.55s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.onboard-progress-tip {
+  animation: onboardProgressTipPulse 1.3s ease-in-out infinite;
+}
+
+.animate-onboard-pct-pop {
+  animation: onboardPctPop 340ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
 @keyframes netWorthOrbFloat {
   0%,
   100% {
@@ -381,18 +447,23 @@ input[type='number'] {
   .goal-bar-fill::after,
   .animate-goal-card-1,
   .animate-goal-card-2,
-  .animate-pie-card-entry {
+  .animate-pie-card-entry,
+  .onboard-progress-fill::after,
+  .onboard-progress-tip,
+  .animate-onboard-pct-pop {
     animation: none !important;
     transform: none !important;
     opacity: 1 !important;
     stroke-dashoffset: 0 !important;
   }
 
-  .goal-bar-fill {
+  .goal-bar-fill,
+  .onboard-progress-fill {
     transition: none !important;
   }
 
-  .goal-bar-fill::after {
+  .goal-bar-fill::after,
+  .onboard-progress-fill::after {
     display: none !important;
   }
 
