@@ -394,6 +394,7 @@ const en = {
     itemsCountSuffix: 'items',
     needItemToShare: 'Add at least one item before sharing.',
     needNoteToShare: 'Write something in the note before sharing.',
+    needNoteToSave: 'Write a title or note before saving.',
     toggleCheckAria: 'Mark item bought',
     addAsExpense: 'Add as Expense',
     logAsExpense: 'Log as Expense',
@@ -491,10 +492,10 @@ const en = {
   tutorial: {
     welcomeTitle: 'Welcome to OrthoGro!',
     welcomeBody:
-      'Log your salary or first income to see your dashboard come alive — or watch a quick guide first.',
+      'Add your first income to bring your dashboard to life — or watch a quick guide first.',
     settingsHint:
       'You can watch the guide anytime later from Settings → Community & Support → App Guide.',
-    startWithSalaryBtn: 'Start with your Salary',
+    startWithSalaryBtn: 'Log Your First Income',
     watchVideoBtn: 'Watch Short Guide',
     laterBtn: 'Maybe Later',
     laterToast:
@@ -1106,6 +1107,7 @@ const en = {
     privateBadge: 'Milestone Unlocked',
     amountTitlePrefix: 'Congratulations! Total Savings & Investments crossed',
     goalTitlePrefix: 'Congratulations! You reached 100% of your savings goal:',
+    borrowPaidTitlePrefix: 'Congratulations! You fully paid off your borrowed amount:',
     privateHint: 'Only you see this milestone. Your shared card stays 100% private with zero numbers or account details.',
     cardStyleEn: 'English',
     cardStyleBn: 'বাংলা',
@@ -1114,6 +1116,13 @@ const en = {
     downloadedToast: 'Share card saved! Ready to post.',
     sharedToast: 'Thanks for sharing!',
     shareCaption: 'Alhamdulillah! Tracked with OrthoGro.',
+    formatSquare: 'Post (1:1)',
+    formatStory: 'Story (9:16)',
+    shareViaLabel: 'Share directly to',
+    fbStory: 'FB Story',
+    otherApps: 'Other',
+    cardReadyForAppPrefix: 'Card saved & copied! Attach it in',
+    storyReadyToast: 'Story card saved! Upload it to your Story.',
   },
   appLock: {
     title: 'App Lock (PIN)',
@@ -1546,6 +1555,7 @@ const bn: typeof en = {
     itemsCountSuffix: 'টি পণ্য',
     needItemToShare: 'শেয়ার করার আগে অন্তত একটি পণ্য যোগ করুন।',
     needNoteToShare: 'শেয়ার করার আগে নোটে কিছু লিখুন।',
+    needNoteToSave: 'সংরক্ষণ করার আগে শিরোনাম বা নোট লিখুন।',
     toggleCheckAria: 'পণ্য কেনা হয়েছে চিহ্নিত করুন',
     addAsExpense: 'ব্যয় হিসেবে যোগ করুন',
     logAsExpense: 'খরচ হিসেবে লগ করুন',
@@ -1643,10 +1653,10 @@ const bn: typeof en = {
   tutorial: {
     welcomeTitle: 'স্বাগতম!',
     welcomeBody:
-      'আপনার বেতন বা প্রথম আয় যোগ করে এখনই ড্যাশবোর্ড শুরু করুন — অথবা আগে সংক্ষিপ্ত গাইডটি দেখে নিন।',
+      'আপনার ড্যাশবোর্ড সচল করতে প্রথম আয় যোগ করুন — অথবা আগে সংক্ষিপ্ত গাইডটি দেখে নিন।',
     settingsHint:
       'যেকোনো সময় সেটিংস → কমিউনিটি ও সাপোর্ট → অ্যাপ ব্যবহারের নির্দেশিকা থেকে গাইডটি দেখতে পারবেন।',
-    startWithSalaryBtn: 'আপনার বেতন দিয়ে শুরু করুন',
+    startWithSalaryBtn: 'আপনার প্রথম আয় লগ করুন',
     watchVideoBtn: 'সংক্ষিপ্ত গাইড দেখুন',
     laterBtn: 'পরে দেখব',
     laterToast:
@@ -2259,6 +2269,7 @@ const bn: typeof en = {
     privateBadge: 'মাইলফলক অর্জিত',
     amountTitlePrefix: 'অভিনন্দন! আপনার মোট সঞ্চয় ও বিনিয়োগ ছাড়িয়েছে',
     goalTitlePrefix: 'অভিনন্দন! আপনার সঞ্চয় লক্ষ্য ১০০% পূর্ণ হয়েছে:',
+    borrowPaidTitlePrefix: 'অভিনন্দন! আপনার ধারের পুরো টাকা পরিশোধ হয়েছে:',
     privateHint: 'এই মাইলফলক শুধু আপনিই দেখতে পাচ্ছেন। শেয়ার করা ছবিতে কোনো টাকার পরিমাণ বা অ্যাকাউন্ট তথ্য থাকবে না।',
     cardStyleEn: 'English',
     cardStyleBn: 'বাংলা',
@@ -2267,6 +2278,13 @@ const bn: typeof en = {
     downloadedToast: 'শেয়ার কার্ড সেভ হয়েছে! এখন পোস্ট করতে পারেন।',
     sharedToast: 'শেয়ার করার জন্য ধন্যবাদ!',
     shareCaption: 'আলহামদুলিল্লাহ! — OrthoGro',
+    formatSquare: 'পোস্ট (১:১)',
+    formatStory: 'স্টোরি (৯:১৬)',
+    shareViaLabel: 'সরাসরি শেয়ার করুন',
+    fbStory: 'FB স্টোরি',
+    otherApps: 'অন্যান্য',
+    cardReadyForAppPrefix: 'কার্ড সেভ ও কপি হয়েছে! এখন পোস্ট করুন:',
+    storyReadyToast: 'স্টোরি কার্ড সেভ হয়েছে! এখন আপনার স্টোরিতে আপলোড করুন।',
   },
   appLock: {
     title: 'অ্যাপ লক (পিন)',

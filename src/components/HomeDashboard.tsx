@@ -32,6 +32,7 @@ import type {
 } from '../types';
 import { CategoryIconBadge, getCategoryStyle } from '../utils/categoryVisuals';
 import {
+  computeAllSavingGoalProgress,
   computeSavingGoalProgress,
   filterTransactionsByPeriod,
   formatDisplayDate,
@@ -1350,10 +1351,18 @@ export const HomeDashboard: React.FC<HomeDashboardProps> = ({
   }, [budgetGoals, monthlySpentByCategory]);
 
   const savingSummary = useMemo(() => {
+    const progressMap = computeAllSavingGoalProgress(
+      savingGoals,
+      transactions,
+      savingsList,
+      lang
+    );
     const items = savingGoals
       .map((goal) => ({
         goal,
-        progress: computeSavingGoalProgress(goal, transactions, savingsList, lang),
+        progress:
+          progressMap.get(goal.id) ||
+          computeSavingGoalProgress(goal, transactions, savingsList, lang),
       }))
       .sort((a, b) => b.progress.pct - a.progress.pct);
 

@@ -283,53 +283,85 @@ export interface SavingGoalProgress {
   daysLeft: number | null;
 }
 
-export function computeSavingGoalProgress(
-  goal: Pick<SavingGoal, 'account' | 'periodType' | 'targetAmount' | 'startDate' | 'endDate'>,
-  transactions: Transaction[],
-  savingsList: string[],
-  lang: AppLanguage = 'en'
-): SavingGoalProgress {
-  const now = new Date();
-  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const savingsSet = new Set(savingsList);
-  const targetAccounts = goal.account ? new Set([goal.account]) : savingsSet;
+type SavingGoalAllocatable = Pick<
+  SavingGoal,
+  'id' | 'title' | 'account' | 'periodType' | 'targetAmount' | 'startDate' | 'endDate' | 'createdAt'
+>;
 
-  let savedAmount = 0;
-
-  transactions.forEach((t) => {
-    if (!t.rawDate) return;
-
-    if (goal.periodType === 'monthly') {
-      const d = parseLocalDate(t.rawDate);
-      if (d.getMonth() !== now.getMonth() || d.getFullYear() !== now.getFullYear()) {
-        return;
-      }
-    } else {
-      if (goal.startDate && t.rawDate < goal.startDate) return;
-      if (goal.endDate && t.rawDate > goal.endDate) return;
+function getGoalTimestampMs(val: unknown): number | null {
+  if (typeof val === 'number' && Number.isFinite(val)) return val;
+  if (val instanceof Date) return val.getTime();
+  if (typeof val === 'string') {
+    const parsed = Date.parse(val);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  if (val && typeof val === 'object') {
+    const maybeTs = val as { toMillis?: () => number; seconds?: number };
+    if (typeof maybeTs.toMillis === 'function') {
+      const ms = maybeTs.toMillis();
+      return Number.isFinite(ms) ? ms : null;
     }
-
-    if (t.type === 'transfer') {
-      const toTarget = t.toWallet ? targetAccounts.has(t.toWallet) : false;
-      const fromTarget = t.fromWallet ? targetAccounts.has(t.fromWallet) : false;
-      if (toTarget && !fromTarget) {
-        savedAmount += t.amount;
-      } else if (fromTarget && !toTarget) {
-        savedAmount -= t.amount + (t.charge || 0);
-      }
-    } else if (t.type === 'income' && t.wallet && targetAccounts.has(t.wallet)) {
-      savedAmount += t.amount;
-    } else if (t.type === 'expense' && t.wallet && targetAccounts.has(t.wallet)) {
-      savedAmount -= t.amount;
+    if (typeof maybeTs.seconds === 'number' && Number.isFinite(maybeTs.seconds)) {
+      return maybeTs.seconds * 1000;
     }
-    // Note: 'correction' and 'adjustment' entries (e.g., setting an existing opening balance)
-    // update the account's total balance and Net Worth, but are intentionally excluded from
-    // periodic Saving Goal progress so pre-existing savings do not inflate goal percentages.
-  });
+  }
+  return null;
+}
 
-  const pct = goal.targetAmount > 0 ? (savedAmount / goal.targetAmount) * 100 : 0;
-  const remaining = Math.max(0, goal.targetAmount - savedAmount);
+function getGoalPeriodBounds(
+  goal: Pick<SavingGoal, 'periodType' | 'startDate' | 'endDate'>,
+  now: Date
+): { start: string; end: string } {
+  if (goal.periodType === 'monthly') {
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const lastDay = String(new Date(y, now.getMonth() + 1, 0).getDate()).padStart(2, '0');
+    return { start: `${y}-${m}-01`, end: `${y}-${m}-${lastDay}` };
+  }
+  return {
+    start: goal.startDate || '0000-01-01',
+    end: goal.endDate || '9999-12-31',
+  };
+}
 
+function isTxInSavingGoalPeriod(
+  goal: Pick<SavingGoal, 'periodType' | 'startDate' | 'endDate'>,
+  rawDate: string,
+  now: Date
+): boolean {
+  if (goal.periodType === 'monthly') {
+    const d = parseLocalDate(rawDate);
+    return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  }
+  if (goal.startDate && rawDate < goal.startDate) return false;
+  if (goal.endDate && rawDate > goal.endDate) return false;
+  return true;
+}
+
+function savingGoalsSharePool(
+  a: Pick<SavingGoal, 'account' | 'periodType' | 'startDate' | 'endDate'>,
+  b: Pick<SavingGoal, 'account' | 'periodType' | 'startDate' | 'endDate'>,
+  savingsSet: Set<string>,
+  now: Date
+): boolean {
+  const boundsA = getGoalPeriodBounds(a, now);
+  const boundsB = getGoalPeriodBounds(b, now);
+  if (boundsA.start > boundsB.end || boundsB.start > boundsA.end) {
+    return false;
+  }
+  if (!a.account && !b.account) return true;
+  if (a.account && b.account) return a.account === b.account;
+  if (!a.account && b.account) return savingsSet.has(b.account);
+  if (a.account && !b.account) return savingsSet.has(a.account);
+  return false;
+}
+
+function buildSavingGoalMeta(
+  goal: Pick<SavingGoal, 'periodType' | 'startDate' | 'endDate'>,
+  now: Date,
+  todayMidnight: Date,
+  lang: AppLanguage
+): { periodLabel: string; daysLeft: number | null } {
   let periodLabel = '';
   let daysLeft: number | null = null;
 
@@ -358,11 +390,175 @@ export function computeSavingGoalProgress(
     }
   }
 
-  return {
-    savedAmount,
-    pct,
-    remaining,
-    periodLabel,
-    daysLeft,
-  };
+  return { periodLabel, daysLeft };
+}
+
+/**
+ * Computes progress for all Saving Goals together, allocating net deposits in
+ * shared accounts / overlapping periods sequentially (waterfall) so the same
+ * deposit is never double-counted across multiple goals.
+ */
+export function computeAllSavingGoalProgress(
+  goals: SavingGoalAllocatable[],
+  transactions: Transaction[],
+  savingsList: string[],
+  lang: AppLanguage = 'en'
+): Map<string, SavingGoalProgress> {
+  const result = new Map<string, SavingGoalProgress>();
+  if (goals.length === 0) return result;
+
+  const now = new Date();
+  const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const savingsSet = new Set(savingsList);
+
+  // Specific-account goals allocate first (they can only draw from their own account),
+  // then earlier deadline, then earlier creation time, then title/id for stability.
+  const orderedGoals = [...goals].sort((a, b) => {
+    const aSpecific = a.account ? 0 : 1;
+    const bSpecific = b.account ? 0 : 1;
+    if (aSpecific !== bSpecific) return aSpecific - bSpecific;
+
+    const aEnd = getGoalPeriodBounds(a, now).end;
+    const bEnd = getGoalPeriodBounds(b, now).end;
+    if (aEnd !== bEnd) return aEnd.localeCompare(bEnd);
+
+    const aTs = getGoalTimestampMs(a.createdAt);
+    const bTs = getGoalTimestampMs(b.createdAt);
+    if (aTs !== null && bTs !== null && aTs !== bTs) return aTs - bTs;
+    if (aTs !== null && bTs === null) return -1;
+    if (aTs === null && bTs !== null) return 1;
+
+    const titleCmp = a.title.localeCompare(b.title);
+    if (titleCmp !== 0) return titleCmp;
+    return a.id.localeCompare(b.id);
+  });
+
+  // Tracks how much of each positive deposit transaction on a given account
+  // has already been allocated to higher-priority goals.
+  const claimedByTxAccount = new Map<string, number>();
+
+  for (const goal of orderedGoals) {
+    const targetAccounts = goal.account ? new Set([goal.account]) : savingsSet;
+    const hasCompetitor = orderedGoals.some(
+      (other) => other.id !== goal.id && savingGoalsSharePool(goal, other, savingsSet, now)
+    );
+
+    let rawNet = 0;
+    let alreadyClaimed = 0;
+    const positiveSources: Array<{
+      txIdx: number;
+      acc: string;
+      rawDate: string;
+      remaining: number;
+    }> = [];
+
+    transactions.forEach((t, txIdx) => {
+      if (!t.rawDate) return;
+      if (!isTxInSavingGoalPeriod(goal, t.rawDate, now)) return;
+
+      let delta = 0;
+      let inflowAcc: string | null = null;
+
+      if (t.type === 'transfer') {
+        const toTarget = t.toWallet ? targetAccounts.has(t.toWallet) : false;
+        const fromTarget = t.fromWallet ? targetAccounts.has(t.fromWallet) : false;
+        if (toTarget && !fromTarget && t.toWallet) {
+          delta = t.amount;
+          inflowAcc = t.toWallet;
+        } else if (fromTarget && !toTarget) {
+          delta = -(t.amount + (t.charge || 0));
+        }
+      } else if (t.type === 'income' && t.wallet && targetAccounts.has(t.wallet)) {
+        delta = t.amount;
+        inflowAcc = t.wallet;
+      } else if (t.type === 'expense' && t.wallet && targetAccounts.has(t.wallet)) {
+        delta = -t.amount;
+      }
+      // Note: 'correction' and 'adjustment' entries (e.g., setting an existing opening balance)
+      // update the account's total balance and Net Worth, but are intentionally excluded from
+      // periodic Saving Goal progress so pre-existing savings do not inflate goal percentages.
+
+      if (delta === 0) return;
+      rawNet += delta;
+
+      if (delta > 0 && inflowAcc) {
+        const key = `${txIdx}::${inflowAcc}`;
+        const claimed = claimedByTxAccount.get(key) || 0;
+        const effectiveClaimed = Math.min(claimed, delta);
+        alreadyClaimed += effectiveClaimed;
+        const avail = delta - effectiveClaimed;
+        if (avail > 0) {
+          positiveSources.push({
+            txIdx,
+            acc: inflowAcc,
+            rawDate: t.rawDate,
+            remaining: avail,
+          });
+        }
+      }
+    });
+
+    const available = rawNet - alreadyClaimed;
+    let savedAmount: number;
+    if (!hasCompetitor) {
+      savedAmount = available;
+    } else if (available <= 0) {
+      savedAmount = 0;
+    } else {
+      savedAmount = Math.min(available, Math.max(0, goal.targetAmount));
+    }
+
+    const toClaim = Math.max(0, savedAmount);
+    if (toClaim > 0 && positiveSources.length > 0) {
+      positiveSources.sort((a, b) => a.rawDate.localeCompare(b.rawDate));
+      let leftToClaim = toClaim;
+      for (const src of positiveSources) {
+        if (leftToClaim <= 0) break;
+        const take = Math.min(leftToClaim, src.remaining);
+        if (take > 0) {
+          const key = `${src.txIdx}::${src.acc}`;
+          claimedByTxAccount.set(key, (claimedByTxAccount.get(key) || 0) + take);
+          leftToClaim -= take;
+        }
+      }
+    }
+
+    const pct = goal.targetAmount > 0 ? (savedAmount / goal.targetAmount) * 100 : 0;
+    const remaining = Math.max(0, goal.targetAmount - savedAmount);
+    const { periodLabel, daysLeft } = buildSavingGoalMeta(goal, now, todayMidnight, lang);
+
+    result.set(goal.id, {
+      savedAmount,
+      pct,
+      remaining,
+      periodLabel,
+      daysLeft,
+    });
+  }
+
+  return result;
+}
+
+export function computeSavingGoalProgress(
+  goal: Pick<SavingGoal, 'account' | 'periodType' | 'targetAmount' | 'startDate' | 'endDate'>,
+  transactions: Transaction[],
+  savingsList: string[],
+  lang: AppLanguage = 'en'
+): SavingGoalProgress {
+  const singleId = '__single__';
+  const progressMap = computeAllSavingGoalProgress(
+    [{ id: singleId, title: '', ...goal }],
+    transactions,
+    savingsList,
+    lang
+  );
+  return (
+    progressMap.get(singleId) || {
+      savedAmount: 0,
+      pct: 0,
+      remaining: Math.max(0, goal.targetAmount),
+      periodLabel: '',
+      daysLeft: null,
+    }
+  );
 }
