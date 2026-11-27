@@ -50,6 +50,7 @@ import {
   getSubCategoryTargetName,
 } from '../utils/categoryVisuals';
 import {
+  computeAllSavingGoalProgress,
   computeSavingGoalProgress,
   filterTransactionsByPeriod,
   formatDisplayDate,
@@ -3318,6 +3319,20 @@ export const SavingGoalsModal: React.FC<{
     return `${y}-${m}-${day}`;
   };
 
+  const savingGoalsRef = useRef(savingGoals);
+  savingGoalsRef.current = savingGoals;
+
+  const pickDefaultAccount = (extraUsedAccount?: string) => {
+    const usedAccounts = new Set(
+      savingGoalsRef.current.map((g) => g.account).filter((acc): acc is string => Boolean(acc))
+    );
+    if (extraUsedAccount) {
+      usedAccounts.add(extraUsedAccount);
+    }
+    const unused = savingsList.find((acc) => !usedAccounts.has(acc));
+    return unused ?? savingsList[0] ?? '';
+  };
+
   useEffect(() => {
     if (!open) {
       setAccountPickerOpen(false);
@@ -3334,12 +3349,13 @@ export const SavingGoalsModal: React.FC<{
     } else {
       setTitleInput(prefill?.title || '');
       setPeriodType('monthly');
-      setSelectedAccount(prefill?.account ?? (savingsList[0] || ''));
+      setSelectedAccount(prefill?.account ?? pickDefaultAccount());
       setTargetInput('');
       setStartDate(getTodayISO());
       setEndDate(getDefaultEndDate());
       setEditingGoalId(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialGoal, prefill, savingsList]);
 
   if (!open) return null;
@@ -3349,23 +3365,51 @@ export const SavingGoalsModal: React.FC<{
   ).filter(Boolean);
 
   const parsedTarget = parseFloat(targetInput);
-  const previewProgress = computeSavingGoalProgress(
-    {
-      account: selectedAccount || undefined,
-      periodType,
-      targetAmount: Number.isFinite(parsedTarget) && parsedTarget > 0 ? parsedTarget : 1,
-      startDate: periodType === 'period' ? startDate : undefined,
-      endDate: periodType === 'period' ? endDate : undefined,
-    },
+  const existingProgressMap = computeAllSavingGoalProgress(
+    savingGoals,
     transactions,
     savingsList,
     lang
   );
+  const previewGoalId = editingGoalId || '__draft_saving_goal__';
+  const editingExisting = editingGoalId
+    ? savingGoals.find((g) => g.id === editingGoalId)
+    : undefined;
+  const previewGoal = {
+    id: previewGoalId,
+    title: titleInput.trim() || '~',
+    account: selectedAccount || undefined,
+    periodType,
+    targetAmount:
+      Number.isFinite(parsedTarget) && parsedTarget > 0 ? parsedTarget : Number.MAX_SAFE_INTEGER,
+    startDate: periodType === 'period' ? startDate : undefined,
+    endDate: periodType === 'period' ? endDate : undefined,
+    createdAt: editingExisting ? editingExisting.createdAt : Number.MAX_SAFE_INTEGER,
+  };
+  const previewPoolGoals = editingGoalId
+    ? savingGoals.map((g) => (g.id === editingGoalId ? previewGoal : g))
+    : [...savingGoals, previewGoal];
+  const previewProgress =
+    computeAllSavingGoalProgress(previewPoolGoals, transactions, savingsList, lang).get(
+      previewGoalId
+    ) ||
+    computeSavingGoalProgress(
+      {
+        account: selectedAccount || undefined,
+        periodType,
+        targetAmount: Number.isFinite(parsedTarget) && parsedTarget > 0 ? parsedTarget : 1,
+        startDate: periodType === 'period' ? startDate : undefined,
+        endDate: periodType === 'period' ? endDate : undefined,
+      },
+      transactions,
+      savingsList,
+      lang
+    );
 
-  const resetForm = () => {
+  const resetForm = (justSavedAccount?: string) => {
     setTitleInput('');
     setPeriodType('monthly');
-    setSelectedAccount(savingsList[0] || '');
+    setSelectedAccount(pickDefaultAccount(justSavedAccount));
     setTargetInput('');
     setStartDate(getTodayISO());
     setEndDate(getDefaultEndDate());
@@ -3397,7 +3441,7 @@ export const SavingGoalsModal: React.FC<{
         editingGoalId || undefined
       );
       if (saved) {
-        resetForm();
+        resetForm(selectedAccount || undefined);
       }
     } finally {
       setIsSaving(false);
@@ -3568,7 +3612,7 @@ export const SavingGoalsModal: React.FC<{
             {editingGoalId && (
               <button
                 type="button"
-                onClick={resetForm}
+                onClick={() => resetForm()}
                 className="min-h-[42px] rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200"
               >
                 {t.modals.cancelEditBtn}
@@ -3605,7 +3649,9 @@ export const SavingGoalsModal: React.FC<{
           ) : (
             <div className="space-y-2">
               {savingGoals.map((goal) => {
-                const progress = computeSavingGoalProgress(goal, transactions, savingsList, lang);
+                const progress =
+                  existingProgressMap.get(goal.id) ||
+                  computeSavingGoalProgress(goal, transactions, savingsList, lang);
                 const roundedPct = Math.max(0, Math.round(progress.pct));
                 const reached = progress.pct >= 100;
                 const statusColor = reached
@@ -4126,10 +4172,18 @@ export const GoalsOverviewModal: React.FC<{
   const budgetIsOver = totalBudgetPct > 100 || budgetOverCount > 0;
   const budgetIsNear = !budgetIsOver && totalBudgetPct >= 80;
 
+  const savingProgressMap = computeAllSavingGoalProgress(
+    savingGoals,
+    transactions,
+    savingsList,
+    lang
+  );
   const sortedSavingItems = savingGoals
     .map((goal) => ({
       goal,
-      progress: computeSavingGoalProgress(goal, transactions, savingsList, lang),
+      progress:
+        savingProgressMap.get(goal.id) ||
+        computeSavingGoalProgress(goal, transactions, savingsList, lang),
     }))
     .sort((a, b) => b.progress.pct - a.progress.pct);
 

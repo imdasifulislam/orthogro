@@ -139,7 +139,7 @@ import {
   getSubCategoryTargetName,
 } from './utils/categoryVisuals';
 import {
-  computeSavingGoalProgress,
+  computeAllSavingGoalProgress,
   filterTransactionsByPeriod,
   formatDisplayDate,
   generateSafeId,
@@ -2335,6 +2335,7 @@ function OrthoGroApp() {
     showCustomizeModal,
     isAssistantOpen,
     isNoteModalOpen,
+    closeNoteModalSeq,
   ]);
 
   useEffect(() => {
@@ -3494,21 +3495,23 @@ function OrthoGroApp() {
           threshold: highest,
         };
       } else if (savingGoals.length > 0) {
+        const prevProgressMap = computeAllSavingGoalProgress(
+          savingGoals,
+          transactions,
+          workspace.savingsList,
+          currentLanguage
+        );
+        const nextProgressMap = computeAllSavingGoalProgress(
+          savingGoals,
+          nextTransactions,
+          workspace.savingsList,
+          currentLanguage
+        );
         const reachedGoal = savingGoals.find((goal) => {
           const key = `goal:${goal.id}`;
           if (celebratedSet.has(key)) return false;
-          const prevPct = computeSavingGoalProgress(
-            goal,
-            transactions,
-            workspace.savingsList,
-            currentLanguage
-          ).pct;
-          const nextPct = computeSavingGoalProgress(
-            goal,
-            nextTransactions,
-            workspace.savingsList,
-            currentLanguage
-          ).pct;
+          const prevPct = prevProgressMap.get(goal.id)?.pct ?? 0;
+          const nextPct = nextProgressMap.get(goal.id)?.pct ?? 0;
           return prevPct < 100 && nextPct >= 100;
         });
 
@@ -3740,10 +3743,28 @@ function OrthoGroApp() {
       ]);
     }
 
+    const settledBorrow =
+      isFullyPaid && !isLendPay
+        ? {
+            id: resolvingTx.id,
+            title: resolvingTx.title,
+            amount: resolvingTx.amount,
+          }
+        : null;
+
     setResolvingTx(null);
     setPartialAmount('');
     setPartialDate('');
     notify('success', isFullyPaid ? t.toasts.debtSettledFull : t.toasts.partialPaymentSaved);
+
+    if (settledBorrow) {
+      setActiveMilestone({
+        id: `borrow_paid:${settledBorrow.id}`,
+        kind: 'borrow_paid',
+        borrowTitle: settledBorrow.title,
+        borrowAmount: settledBorrow.amount,
+      });
+    }
   };
 
   const handleBalanceCorrection = async () => {
@@ -5630,6 +5651,7 @@ function OrthoGroApp() {
               targetAmount: payload.targetAmount,
               startDate,
               endDate,
+              createdAt: Date.now(),
             },
           ].sort((a, b) => a.title.localeCompare(b.title))
         );

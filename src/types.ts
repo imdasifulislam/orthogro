@@ -267,7 +267,9 @@ export type FeatureTipId =
 
 export interface SavingsMilestoneEvent {
   id: string;
-  kind: 'amount' | 'goal';
+  kind: 'amount' | 'goal' | 'borrow_paid';
   threshold?: number;
   goalTitle?: string;
+  borrowTitle?: string;
+  borrowAmount?: number;
 }

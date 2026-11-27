@@ -6,6 +6,7 @@ import {
   Copy,
   MessageSquare,
   Plus,
+  Save,
   Share2,
   Trash2,
   TrendingDown,
@@ -247,6 +248,7 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
 
   const initialMemoSnapshotRef = useRef<string>(serializeMemoSnapshot('', []));
   const isSavingMemoRef = useRef(false);
+  const [isSavingMemo, setIsSavingMemo] = useState(false);
 
   const itemInputRefs = useRef<Array<HTMLInputElement | null>>([]);
   const qtyInputRefs = useRef<Array<HTMLInputElement | null>>([]);
@@ -260,6 +262,8 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
   const [currentContent, setCurrentContent] = useState('');
   const initialNoteSnapshotRef = useRef<string>(serializeNoteSnapshot('', ''));
   const isSavingNoteRef = useRef(false);
+  const [isSavingNote, setIsSavingNote] = useState(false);
+  const lastCloseSeqRef = useRef(closeNoteModalSeq);
 
   // Expense bottom drawer & pickers
   const [expenseDrawer, setExpenseDrawer] = useState<ExpenseDrawerTarget | null>(null);
@@ -280,7 +284,7 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
   const [shareTextDraft, setShareTextDraft] = useState('');
   const [copiedJustNow, setCopiedJustNow] = useState(false);
 
-  // Keep latest state in a ref for unmount auto-save safety (e.g. tapping bottom nav tab directly)
+  // Keep latest state in a ref for unmount & back-button auto-save safety
   const latestRef = useRef({
     isMemoEditorOpen,
     isReadOnly,
@@ -297,6 +301,9 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
     currentTitle,
     currentContent,
     onSaveNote,
+    activeMemoPicker,
+    shareSheet,
+    expenseDrawer,
     untitled: t.common.untitled,
   });
 
@@ -316,6 +323,9 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
     currentTitle,
     currentContent,
     onSaveNote,
+    activeMemoPicker,
+    shareSheet,
+    expenseDrawer,
     untitled: t.common.untitled,
   };
 
@@ -481,31 +491,77 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
     setIsMemoEditorOpen(true);
   };
 
+  // Explicit Save button in Bazar Memo editor
+  const handleExplicitSaveMemo = async () => {
+    const s = latestRef.current;
+    if (s.isReadOnly || isSavingMemoRef.current) return;
+    const valid = extractSaveableItems(s.memoRows);
+    if (valid.length === 0) {
+      onNotify('info', t.toasts.needMemoItem);
+      return;
+    }
+
+    const currentSnap = serializeMemoSnapshot(s.memoNoteText, valid);
+    if (s.editingMemoId && currentSnap === initialMemoSnapshotRef.current) {
+      onNotify('success', t.toasts.memoSaved);
+      resetMemoFields();
+      setIsMemoEditorOpen(false);
+      return;
+    }
+
+    isSavingMemoRef.current = true;
+    setIsSavingMemo(true);
+    const total = valid.reduce((sum, item) => sum + item.price, 0);
+    try {
+      await s.onSaveMemo(
+        {
+          date: s.memoDate,
+          category: s.memoCategory,
+          ...(s.memoSubCategory ? { subCategory: s.memoSubCategory } : {}),
+          wallet: s.memoWallet,
+          items: valid,
+          total,
+          note: s.memoNoteText.trim(),
+        },
+        s.editingMemoId || undefined
+      );
+      initialMemoSnapshotRef.current = currentSnap;
+      resetMemoFields();
+      setIsMemoEditorOpen(false);
+    } finally {
+      isSavingMemoRef.current = false;
+      setIsSavingMemo(false);
+    }
+  };
+
   // Auto-save on Back / Exit without requiring explicit Save tap
   const handleExitMemoEditor = async () => {
     if (isSavingMemoRef.current) return;
-    const valid = extractSaveableItems(memoRows);
-    const currentSnap = serializeMemoSnapshot(memoNoteText, valid);
+    const s = latestRef.current;
+    const valid = extractSaveableItems(s.memoRows);
+    const currentSnap = serializeMemoSnapshot(s.memoNoteText, valid);
 
-    if (!isReadOnly && valid.length > 0 && currentSnap !== initialMemoSnapshotRef.current) {
+    if (!s.isReadOnly && valid.length > 0 && currentSnap !== initialMemoSnapshotRef.current) {
       isSavingMemoRef.current = true;
-      initialMemoSnapshotRef.current = currentSnap;
+      setIsSavingMemo(true);
       const total = valid.reduce((sum, item) => sum + item.price, 0);
       try {
-        await onSaveMemo(
+        await s.onSaveMemo(
           {
-            date: memoDate,
-            category: memoCategory,
-            ...(memoSubCategory ? { subCategory: memoSubCategory } : {}),
-            wallet: memoWallet,
+            date: s.memoDate,
+            category: s.memoCategory,
+            ...(s.memoSubCategory ? { subCategory: s.memoSubCategory } : {}),
+            wallet: s.memoWallet,
             items: valid,
             total,
-            note: memoNoteText.trim(),
+            note: s.memoNoteText.trim(),
           },
-          editingMemoId || undefined
+          s.editingMemoId || undefined
         );
+        initialMemoSnapshotRef.current = currentSnap;
       } finally {
         isSavingMemoRef.current = false;
+        setIsSavingMemo(false);
       }
     }
 
@@ -513,26 +569,67 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
     setIsMemoEditorOpen(false);
   };
 
+  // Explicit Save button in Notepad editor
+  const handleExplicitSaveNote = async () => {
+    const s = latestRef.current;
+    if (s.isReadOnly || isSavingNoteRef.current) return;
+    const hasText = Boolean(s.currentTitle.trim() || s.currentContent.trim());
+    if (!hasText) {
+      onNotify('info', t.memo.needNoteToSave);
+      return;
+    }
+
+    const currentSnap = serializeNoteSnapshot(s.currentTitle, s.currentContent);
+    if (s.selectedNote && currentSnap === initialNoteSnapshotRef.current) {
+      onNotify('success', t.toasts.noteSaved);
+      setIsAddingNote(false);
+      setSelectedNote(null);
+      return;
+    }
+
+    isSavingNoteRef.current = true;
+    setIsSavingNote(true);
+    try {
+      await s.onSaveNote(
+        {
+          title: s.currentTitle.trim() || s.untitled,
+          content: s.currentContent.trim(),
+          date: getTodayISO(),
+        },
+        s.selectedNote?.id
+      );
+      initialNoteSnapshotRef.current = currentSnap;
+      setIsAddingNote(false);
+      setSelectedNote(null);
+    } finally {
+      isSavingNoteRef.current = false;
+      setIsSavingNote(false);
+    }
+  };
+
   // Auto-save on Notepad Close / Back / Backdrop click
   const handleCloseNoteModal = async () => {
     if (isSavingNoteRef.current) return;
-    const hasText = Boolean(currentTitle.trim() || currentContent.trim());
-    const currentSnap = serializeNoteSnapshot(currentTitle, currentContent);
+    const s = latestRef.current;
+    const hasText = Boolean(s.currentTitle.trim() || s.currentContent.trim());
+    const currentSnap = serializeNoteSnapshot(s.currentTitle, s.currentContent);
 
-    if (!isReadOnly && hasText && currentSnap !== initialNoteSnapshotRef.current) {
+    if (!s.isReadOnly && hasText && currentSnap !== initialNoteSnapshotRef.current) {
       isSavingNoteRef.current = true;
-      initialNoteSnapshotRef.current = currentSnap;
+      setIsSavingNote(true);
       try {
-        await onSaveNote(
+        await s.onSaveNote(
           {
-            title: currentTitle.trim() || t.common.untitled,
-            content: currentContent.trim(),
+            title: s.currentTitle.trim() || s.untitled,
+            content: s.currentContent.trim(),
             date: getTodayISO(),
           },
-          selectedNote?.id
+          s.selectedNote?.id
         );
+        initialNoteSnapshotRef.current = currentSnap;
       } finally {
         isSavingNoteRef.current = false;
+        setIsSavingNote(false);
       }
     }
 
@@ -542,43 +639,59 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
 
   // Hardware / Browser Back button handler
   useEffect(() => {
-    if (closeNoteModalSeq > 0) {
-      if (activeMemoPicker) {
-        setActiveMemoPicker(null);
-        return;
-      }
-      if (shareSheet) {
-        setShareSheet(null);
-        return;
-      }
-      if (expenseDrawer) {
-        setExpenseDrawer(null);
-        return;
-      }
-      if (isAddingNote || selectedNote) {
-        void handleCloseNoteModal();
-        return;
-      }
-      if (isMemoEditorOpen) {
-        void handleExitMemoEditor();
-      }
+    if (closeNoteModalSeq === lastCloseSeqRef.current) return;
+    lastCloseSeqRef.current = closeNoteModalSeq;
+    const s = latestRef.current;
+    if (s.activeMemoPicker) {
+      setActiveMemoPicker(null);
+      return;
+    }
+    if (s.shareSheet) {
+      setShareSheet(null);
+      return;
+    }
+    if (s.expenseDrawer) {
+      setExpenseDrawer(null);
+      return;
+    }
+    if (s.isAddingNote || s.selectedNote) {
+      void handleCloseNoteModal();
+      return;
+    }
+    if (s.isMemoEditorOpen) {
+      void handleExitMemoEditor();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [closeNoteModalSeq]);
 
-  // Escape key closes top-most sheet/drawer/modal
+  // Escape key closes top-most sheet/drawer/modal; Ctrl/Cmd+S saves active editor
   useEffect(() => {
     if (!shareSheet && !expenseDrawer && !isAddingNote && !selectedNote && !isMemoEditorOpen) return;
     const handleKey = (e: KeyboardEvent) => {
+      const s = latestRef.current;
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
+        if (!s.shareSheet && !s.expenseDrawer && !s.activeMemoPicker && !s.isReadOnly) {
+          if (s.isAddingNote || s.selectedNote) {
+            e.preventDefault();
+            void handleExplicitSaveNote();
+            return;
+          }
+          if (s.isMemoEditorOpen) {
+            e.preventDefault();
+            void handleExplicitSaveMemo();
+            return;
+          }
+        }
+      }
       if (e.key !== 'Escape') return;
-      if (activeMemoPicker) return;
-      if (shareSheet) {
+      if (s.activeMemoPicker) return;
+      if (s.shareSheet) {
         setShareSheet(null);
-      } else if (expenseDrawer) {
+      } else if (s.expenseDrawer) {
         setExpenseDrawer(null);
-      } else if (isAddingNote || selectedNote) {
+      } else if (s.isAddingNote || s.selectedNote) {
         void handleCloseNoteModal();
-      } else if (isMemoEditorOpen) {
+      } else if (s.isMemoEditorOpen) {
         void handleExitMemoEditor();
       }
     };
@@ -971,7 +1084,7 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
               </span>
               <div className="-mr-1 flex shrink-0 items-center gap-1.5">
                 {!isReadOnly && (
-                  <span className="mr-0.5 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                  <span className="mr-0.5 hidden text-[11px] font-medium text-slate-400 sm:inline dark:text-slate-500">
                     {t.memo.autoSaveHint}
                   </span>
                 )}
@@ -995,6 +1108,18 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                 >
                   <Share2 className="h-3.5 w-3.5" />
                 </button>
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    disabled={isSavingMemo}
+                    onClick={() => void handleExplicitSaveMemo()}
+                    aria-label={t.common.save}
+                    title={t.common.save}
+                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-[#16845B] text-white shadow-xs transition-colors hover:bg-[#116948] active:scale-[0.96] disabled:opacity-50"
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <button
                   type="button"
                   aria-label={t.common.close}
@@ -1613,7 +1738,7 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
               </span>
               <div className="-mr-1 flex shrink-0 items-center gap-1.5">
                 {!isReadOnly && (
-                  <span className="mr-0.5 text-[11px] font-medium text-slate-400 dark:text-slate-500">
+                  <span className="mr-0.5 hidden text-[11px] font-medium text-slate-400 sm:inline dark:text-slate-500">
                     {t.memo.autoSaveHint}
                   </span>
                 )}
@@ -1645,6 +1770,18 @@ export const MemoNotepad: React.FC<MemoNotepadProps> = ({
                 >
                   <Share2 className="h-3.5 w-3.5" />
                 </button>
+                {!isReadOnly && (
+                  <button
+                    type="button"
+                    disabled={isSavingNote}
+                    onClick={() => void handleExplicitSaveNote()}
+                    aria-label={t.common.save}
+                    title={t.common.save}
+                    className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-lg bg-[#16845B] text-white shadow-xs transition-colors hover:bg-[#116948] active:scale-[0.96] disabled:opacity-50"
+                  >
+                    <Save className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => void handleCloseNoteModal()}
